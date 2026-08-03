@@ -1,36 +1,57 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# unplan
 
-## Getting Started
+An open-source, keyboard-first calendar for the web. unplan starts with the interaction quality that made Cron and Notion Calendar special, while keeping Google Calendar as the source of truth.
 
-First, run the development server:
+The current MVP includes:
+
+- A polished seven-day calendar with a compact imported-calendar sidebar
+- Google OAuth and import of every calendar in the connected account
+- Optimistic 15-minute event movement with automatic rollback on sync failure
+- Shift-drag marquee selection and Command/Ctrl-click multi-selection
+- Command/Ctrl-D duplication and Command/Ctrl-C / Command/Ctrl-V event copy/paste
+- Calendar visibility controls, week navigation, current-time indicator, shortcuts, toasts, and reduced-motion support
+- A complete demo calendar when Google credentials are not configured
+
+## Run locally
 
 ```bash
+npm install
+cp .env.example .env.local
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Connect Google Calendar
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+1. Create a project in [Google Cloud Console](https://console.cloud.google.com/).
+2. Enable the Google Calendar API.
+3. Configure the OAuth consent screen.
+4. Create an OAuth 2.0 Client ID with the **Web application** type.
+5. Add `http://localhost:3000/api/google/callback` as an authorized redirect URI.
+6. Copy the client ID and secret into `.env.local`.
 
-## Learn More
+The MVP stores short-lived Google access and refresh tokens in secure, HTTP-only cookies. Before a multi-user production deployment, replace this with encrypted server-side token storage and add a database-backed user/session model.
 
-To learn more about Next.js, take a look at the following resources:
+## Interaction model
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+| Action | Shortcut / gesture |
+| --- | --- |
+| Go to today | `T` |
+| Previous / next week | `K` / `J` |
+| Select a range | Hold `Shift` and drag over events |
+| Toggle an event in the selection | `Command/Ctrl` + click |
+| Duplicate selected events | `Command/Ctrl + D` |
+| Copy / paste selected events | `Command/Ctrl + C` / `Command/Ctrl + V` |
+| Clear selection | `Escape` |
+| Show shortcuts | `?` |
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Stack
 
-## Deploy on Vercel
+Next.js 16 App Router, React 19, TypeScript, Tailwind CSS 4, date-fns, Lucide, and Sonner.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+See [PRODUCT_PLAN.md](./PRODUCT_PLAN.md) for the product principles and staged roadmap.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## License
+
+MIT
