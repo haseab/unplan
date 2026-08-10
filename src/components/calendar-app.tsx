@@ -829,7 +829,7 @@ export function CalendarApp() {
               {events.filter((event) => event.allDay && visibleCalendars.has(event.calendarId)).map((event) => {
                 const { dayIndex } = eventGeometry(event, renderStart);
                 if (dayIndex < 0 || dayIndex >= renderedDayCount) return null;
-                return <button key={`${event.calendarId}-${event.id}`} className={`all-day-event ${selected.has(event.id) ? "event-selected" : ""}`} style={{ left: `calc(${dayIndex} * (100% / ${renderedDayCount}) + 3px)`, width: `calc(100% / ${renderedDayCount} - 6px)`, backgroundColor: event.color }} onPointerDown={(pointer) => beginEventDrag(pointer, event)}>{event.title}</button>;
+                return <button key={`${event.calendarId}-${event.id}`} className={`all-day-event ${selected.has(event.id) ? "event-selected" : ""}`} style={{ left: `calc(${dayIndex} * (100% / ${renderedDayCount}) + 3px)`, width: `calc(100% / ${renderedDayCount} - 6px)`, backgroundColor: event.color, borderLeftColor: event.calendarColor, color: event.textColor || "#fff" }} onPointerDown={(pointer) => beginEventDrag(pointer, event)}>{event.title}</button>;
               })}
             </div>
           </div>
@@ -856,6 +856,7 @@ export function CalendarApp() {
                     left: `calc(${geometry.dayIndex} * (100% / ${renderedDayCount}) + 3px)`,
                     width: `calc(100% / ${renderedDayCount} - 6px)`,
                     backgroundColor: event.color,
+                    borderLeftColor: event.calendarColor,
                     color: event.textColor || "#fff",
                   }}
                   onPointerDown={(pointer) => beginEventDrag(pointer, event)}

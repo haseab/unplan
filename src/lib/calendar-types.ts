@@ -14,7 +14,9 @@ export type CalendarEvent = {
   title: string;
   start: string;
   end: string;
+  calendarColor: string;
   color: string;
+  colorId?: string;
   textColor?: string;
   allDay?: boolean;
   location?: string;
@@ -29,4 +31,5 @@ export type GoogleCalendarEventPayload = {
   start: string;
   end: string;
   allDay?: boolean;
+  colorId?: string;
 };

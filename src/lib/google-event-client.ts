@@ -19,6 +19,7 @@ const mutateGoogleEvent = async (
       start: event.start,
       end: event.end,
       allDay: event.allDay,
+      colorId: event.colorId,
     }),
   });
   if (!response.ok) {
