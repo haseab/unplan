@@ -9,6 +9,10 @@ const validFlag = /^[A-Z0-9][A-Z0-9:_-]{1,63}$/;
 const debugLogPath = join(process.cwd(), "debug.log");
 
 export async function POST(request: NextRequest) {
+  if (process.env.NODE_ENV !== "development") {
+    return Response.json({ error: "Not found" }, { status: 404 });
+  }
+
   const body = (await request.json().catch(() => null)) as {
     level?: unknown;
     flag?: unknown;

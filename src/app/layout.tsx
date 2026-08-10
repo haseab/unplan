@@ -30,7 +30,7 @@ export default function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body>
-        <BrowserConsoleLogger />
+        {process.env.NODE_ENV === "development" && <BrowserConsoleLogger />}
         {children}
         <Toaster position="bottom-center" closeButton richColors />
       </body>

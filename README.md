@@ -32,6 +32,20 @@ Open [http://localhost:3000](http://localhost:3000).
 5. Add `http://localhost:3000/api/google/callback` as an authorized redirect URI.
 6. Copy the client ID and secret into `.env.local`.
 
+For production on `unplan.io`, add
+`https://unplan.io/api/google/callback` to the same OAuth Web application's
+authorized redirect URIs and configure these variables on the host:
+
+```env
+GOOGLE_CLIENT_ID=your-client-id
+GOOGLE_CLIENT_SECRET=your-client-secret
+GOOGLE_REDIRECT_URI=https://unplan.io/api/google/callback
+```
+
+OAuth clients in Google testing mode remain limited to accounts listed as test
+users. A public integration requires publishing the consent screen and may
+require Google verification for Calendar scopes.
+
 The MVP stores short-lived Google access and refresh tokens in secure, HTTP-only cookies. Before a multi-user production deployment, replace this with encrypted server-side token storage and add a database-backed user/session model.
 
 ## Interaction model

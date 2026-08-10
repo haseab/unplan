@@ -1,4 +1,8 @@
-import { googleConfigured, googleCookieOptions } from "@/lib/google-calendar";
+import {
+  getGoogleRedirectUri,
+  googleConfigured,
+  googleCookieOptions,
+} from "@/lib/google-calendar";
 import { cookies } from "next/headers";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -10,7 +14,7 @@ export async function GET(request: NextRequest) {
   const state = crypto.randomUUID();
   const store = await cookies();
   store.set("unplan_google_state", state, googleCookieOptions(600));
-  const redirectUri = process.env.GOOGLE_REDIRECT_URI ?? new URL("/api/google/callback", request.url).toString();
+  const redirectUri = getGoogleRedirectUri(request);
   const params = new URLSearchParams({
     client_id: process.env.GOOGLE_CLIENT_ID!,
     redirect_uri: redirectUri,

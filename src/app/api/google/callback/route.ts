@@ -1,4 +1,8 @@
-import { googleCookieOptions, saveGoogleTokens } from "@/lib/google-calendar";
+import {
+  getGoogleRedirectUri,
+  googleCookieOptions,
+  saveGoogleTokens,
+} from "@/lib/google-calendar";
 import { cookies } from "next/headers";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -14,7 +18,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(new URL("/?google=denied", request.url));
   }
 
-  const redirectUri = process.env.GOOGLE_REDIRECT_URI ?? new URL("/api/google/callback", request.url).toString();
+  const redirectUri = getGoogleRedirectUri(request);
   const tokenResponse = await fetch("https://oauth2.googleapis.com/token", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },

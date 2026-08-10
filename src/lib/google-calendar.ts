@@ -1,4 +1,5 @@
 import { cookies } from "next/headers";
+import type { NextRequest } from "next/server";
 
 const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
 const GOOGLE_API_ROOT = "https://www.googleapis.com/calendar/v3";
@@ -13,6 +14,24 @@ type GoogleTokenResponse = {
 
 export const googleConfigured = () =>
   Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET);
+
+export const getGoogleRedirectUri = (request: NextRequest) => {
+  if (process.env.GOOGLE_REDIRECT_URI) return process.env.GOOGLE_REDIRECT_URI;
+
+  const forwardedHost = request.headers
+    .get("x-forwarded-host")
+    ?.split(",")[0]
+    ?.trim();
+  const forwardedProtocol = request.headers
+    .get("x-forwarded-proto")
+    ?.split(",")[0]
+    ?.trim();
+  const host = forwardedHost || request.headers.get("host") || request.nextUrl.host;
+  const protocol =
+    forwardedProtocol || request.nextUrl.protocol.replace(/:$/, "") || "https";
+
+  return `${protocol}://${host}/api/google/callback`;
+};
 
 const cookieOptions = (maxAge?: number) => ({
   httpOnly: true,
