@@ -1,4 +1,5 @@
 import {
+  getAppOrigin,
   getGoogleRedirectUri,
   googleCookieOptions,
   saveGoogleTokens,
@@ -15,7 +16,7 @@ export async function GET(request: NextRequest) {
   const savedState = store.get("unplan_google_state")?.value;
   store.delete("unplan_google_state");
   if (!code || !state || state !== savedState) {
-    return NextResponse.redirect(new URL("/?google=denied", request.url));
+    return NextResponse.redirect(new URL("/?google=denied", getAppOrigin(request)));
   }
 
   const redirectUri = getGoogleRedirectUri(request);
@@ -32,7 +33,7 @@ export async function GET(request: NextRequest) {
   });
   const tokens = (await tokenResponse.json()) as TokenResponse;
   if (!tokenResponse.ok || !tokens.access_token) {
-    return NextResponse.redirect(new URL("/?google=error", request.url));
+    return NextResponse.redirect(new URL("/?google=error", getAppOrigin(request)));
   }
 
   await saveGoogleTokens(tokens);
@@ -45,5 +46,5 @@ export async function GET(request: NextRequest) {
       store.set("unplan_google_email", profile.email, googleCookieOptions(60 * 60 * 24 * 90));
     }
   }
-  return NextResponse.redirect(new URL("/?google=connected", request.url));
+  return NextResponse.redirect(new URL("/?google=connected", getAppOrigin(request)));
 }

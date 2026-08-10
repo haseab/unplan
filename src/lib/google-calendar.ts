@@ -15,8 +15,10 @@ type GoogleTokenResponse = {
 export const googleConfigured = () =>
   Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET);
 
-export const getGoogleRedirectUri = (request: NextRequest) => {
-  if (process.env.GOOGLE_REDIRECT_URI) return process.env.GOOGLE_REDIRECT_URI;
+export const getAppOrigin = (request: NextRequest) => {
+  if (process.env.GOOGLE_REDIRECT_URI) {
+    return new URL(process.env.GOOGLE_REDIRECT_URI).origin;
+  }
 
   const forwardedHost = request.headers
     .get("x-forwarded-host")
@@ -30,7 +32,13 @@ export const getGoogleRedirectUri = (request: NextRequest) => {
   const protocol =
     forwardedProtocol || request.nextUrl.protocol.replace(/:$/, "") || "https";
 
-  return `${protocol}://${host}/api/google/callback`;
+  return `${protocol}://${host}`;
+};
+
+export const getGoogleRedirectUri = (request: NextRequest) => {
+  if (process.env.GOOGLE_REDIRECT_URI) return process.env.GOOGLE_REDIRECT_URI;
+
+  return `${getAppOrigin(request)}/api/google/callback`;
 };
 
 const cookieOptions = (maxAge?: number) => ({

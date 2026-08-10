@@ -1,4 +1,5 @@
 import {
+  getAppOrigin,
   getGoogleRedirectUri,
   googleConfigured,
   googleCookieOptions,
@@ -8,7 +9,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 export async function GET(request: NextRequest) {
   if (!googleConfigured()) {
-    return NextResponse.redirect(new URL("/?google=missing", request.url));
+    return NextResponse.redirect(new URL("/?google=missing", getAppOrigin(request)));
   }
 
   const state = crypto.randomUUID();
