@@ -7,9 +7,7 @@ import {
   isWithinInterval,
 } from "date-fns";
 import {
-  CalendarDays,
   Check,
-  ChevronDown,
   ChevronLeft,
   ChevronRight,
   CircleHelp,
@@ -32,6 +30,16 @@ import {
 } from "lucide-react";
 import * as React from "react";
 import { toast } from "sonner";
+import { DayCountPicker } from "@/components/day-count-picker";
+import { SettingsDialog } from "@/components/settings-dialog";
+import { useDayCount } from "@/hooks/use-day-count";
+import { useInfiniteCalendarScroll } from "@/hooks/use-infinite-calendar-scroll";
+import { useToastSettings } from "@/hooks/use-toast-settings";
+import {
+  queueActionToast,
+  triggerToastSubmit,
+  triggerToastUndo,
+} from "@/lib/action-toast";
 import type { CalendarEvent, CalendarSource } from "@/lib/calendar-types";
 import {
   GRID_HEIGHT,
@@ -40,11 +48,16 @@ import {
   formatEventTime,
   getWeekDays,
   moveEvent,
+  resizeEvent,
   snapMinutes,
   startOfCalendarWeek,
   weekLabel,
 } from "@/lib/calendar-utils";
 import { demoCalendars, makeDemoEvents } from "@/lib/demo-data";
+import {
+  createGoogleEvent,
+  updateGoogleEvent,
+} from "@/lib/google-event-client";
 
 type GoogleStatus = {
   configured: boolean;
@@ -60,6 +73,15 @@ type DragSession = {
   dayWidth: number;
   dayDelta: number;
   minuteDelta: number;
+  maxDayDelta: number;
+  minDayDelta: number;
+};
+
+type ResizeSession = {
+  edge: "start" | "end";
+  minuteDelta: number;
+  original: CalendarEvent;
+  startY: number;
 };
 
 type Marquee = { x1: number; y1: number; x2: number; y2: number };
@@ -71,26 +93,6 @@ const isEditableTarget = (target: EventTarget | null) => {
   return Boolean(
     element?.closest("input, textarea, select, [contenteditable='true']"),
   );
-};
-
-const eventRequest = async (method: "PATCH" | "POST", event: CalendarEvent) => {
-  const response = await fetch("/api/google/events", {
-    method,
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      calendarId: event.calendarId,
-      eventId: method === "PATCH" ? event.id : undefined,
-      title: event.title,
-      start: event.start,
-      end: event.end,
-      allDay: event.allDay,
-    }),
-  });
-  if (!response.ok) {
-    const data = (await response.json().catch(() => ({}))) as { error?: string };
-    throw new Error(data.error || "Google Calendar rejected the change");
-  }
-  return response.json() as Promise<{ id?: string; htmlLink?: string }>;
 };
 
 function ProductMark() {
@@ -120,14 +122,20 @@ export function CalendarApp() {
   const [syncing, setSyncing] = React.useState(false);
   const [sidebarOpen, setSidebarOpen] = React.useState(true);
   const [showShortcuts, setShowShortcuts] = React.useState(false);
+  const [showSettings, setShowSettings] = React.useState(false);
   const [marquee, setMarquee] = React.useState<Marquee | null>(null);
   const [now, setNow] = React.useState(() => new Date());
+  const { duration: toastDuration } = useToastSettings();
+  const { dayCount, setDayCount } = useDayCount();
 
   const gridRef = React.useRef<HTMLDivElement>(null);
+  const headerScrollRef = React.useRef<HTMLDivElement>(null);
+  const allDayScrollRef = React.useRef<HTMLDivElement>(null);
   const scrollRef = React.useRef<HTMLDivElement>(null);
   const eventsRef = React.useRef(events);
   const visibleRef = React.useRef(visibleCalendars);
   const dragRef = React.useRef<DragSession | null>(null);
+  const resizeRef = React.useRef<ResizeSession | null>(null);
   const marqueeRef = React.useRef<Marquee | null>(null);
   const clipboardRef = React.useRef<CalendarEvent[]>([]);
 
@@ -136,7 +144,26 @@ export function CalendarApp() {
     visibleRef.current = visibleCalendars;
   }, [events, visibleCalendars]);
 
-  const days = React.useMemo(() => getWeekDays(weekStart), [weekStart]);
+  const visibleDays = React.useMemo(
+    () => getWeekDays(weekStart, dayCount),
+    [dayCount, weekStart],
+  );
+  const {
+    calendarGridStyle,
+    handleHeaderWheel,
+    handleHorizontalScroll,
+    headerGridStyle,
+    renderStart,
+    renderedDayCount,
+    renderedDays,
+  } = useInfiniteCalendarScroll({
+    allDayScrollRef,
+    dayCount,
+    headerScrollRef,
+    scrollRef,
+    setViewStart: setWeekStart,
+    viewStart: weekStart,
+  });
   const selectedEvents = React.useMemo(
     () => events.filter((event) => selected.has(event.id)),
     [events, selected],
@@ -207,8 +234,8 @@ export function CalendarApp() {
     }
     setSyncing(true);
     const params = new URLSearchParams({
-      timeMin: weekStart.toISOString(),
-      timeMax: addDays(weekStart, 7).toISOString(),
+      timeMin: renderStart.toISOString(),
+      timeMax: addDays(renderStart, renderedDayCount).toISOString(),
     });
     active.forEach((calendar) => {
       params.append("calendarId", calendar.id);
@@ -226,7 +253,7 @@ export function CalendarApp() {
     } finally {
       setSyncing(false);
     }
-  }, [calendars, google.connected, visibleCalendars, weekStart]);
+  }, [calendars, google.connected, renderStart, renderedDayCount, visibleCalendars]);
 
   React.useEffect(() => {
     if (!google.connected) return;
@@ -234,19 +261,13 @@ export function CalendarApp() {
     return () => window.clearTimeout(timer);
   }, [google.connected, loadGoogleEvents, visibleKey]);
 
-  const syncMovedEvents = React.useCallback(
-    async (moved: CalendarEvent[], originals: CalendarEvent[]) => {
+  const persistMovedEvents = React.useCallback(
+    async (moved: CalendarEvent[]) => {
       const googleEvents = moved.filter((event) => event.provider === "google");
       if (!googleEvents.length) return;
       setSyncing(true);
       try {
-        await Promise.all(googleEvents.map((event) => eventRequest("PATCH", event)));
-      } catch (error) {
-        const originalMap = new Map(originals.map((event) => [event.id, event]));
-        setEvents((current) =>
-          current.map((event) => originalMap.get(event.id) ?? event),
-        );
-        toast.error(error instanceof Error ? error.message : "Move could not be saved");
+        await Promise.all(googleEvents.map(updateGoogleEvent));
       } finally {
         setSyncing(false);
       }
@@ -256,12 +277,27 @@ export function CalendarApp() {
 
   React.useEffect(() => {
     const handlePointerMove = (pointer: PointerEvent) => {
+      if (resizeRef.current) {
+        const resize = resizeRef.current;
+        resize.minuteDelta = snapMinutes(pointer.clientY - resize.startY);
+        const resized = resizeEvent(
+          resize.original,
+          resize.edge,
+          resize.minuteDelta,
+        );
+        setEvents((current) =>
+          current.map((event) =>
+            event.id === resize.original.id ? resized : event,
+          ),
+        );
+      }
+
       if (dragRef.current) {
         const drag = dragRef.current;
         drag.dayDelta = clamp(
           Math.round((pointer.clientX - drag.startX) / drag.dayWidth),
-          -6,
-          6,
+          drag.minDayDelta,
+          drag.maxDayDelta,
         );
         drag.minuteDelta = snapMinutes(pointer.clientY - drag.startY);
         const originals = new Map(drag.originals.map((event) => [event.id, event]));
@@ -288,11 +324,11 @@ export function CalendarApp() {
         const right = Math.max(next.x1, next.x2);
         const top = Math.min(next.y1, next.y2);
         const bottom = Math.max(next.y1, next.y2);
-        const dayWidth = gridRect.width / 7;
+        const dayWidth = gridRect.width / renderedDayCount;
         const matches = eventsRef.current.filter((event) => {
           if (event.allDay || !visibleRef.current.has(event.calendarId)) return false;
-          const geometry = eventGeometry(event, weekStart);
-          if (geometry.dayIndex < 0 || geometry.dayIndex > 6) return false;
+          const geometry = eventGeometry(event, renderStart);
+          if (geometry.dayIndex < 0 || geometry.dayIndex >= renderedDayCount) return false;
           const eventLeft = geometry.dayIndex * dayWidth;
           const eventRight = eventLeft + dayWidth;
           return eventRight >= left && eventLeft <= right && geometry.top + geometry.height >= top && geometry.top <= bottom;
@@ -302,6 +338,42 @@ export function CalendarApp() {
     };
 
     const handlePointerUp = () => {
+      if (resizeRef.current) {
+        const resize = resizeRef.current;
+        resizeRef.current = null;
+        const resized = resizeEvent(
+          resize.original,
+          resize.edge,
+          resize.minuteDelta,
+        );
+        if (resized.start !== resize.original.start || resized.end !== resize.original.end) {
+          setEvents((current) =>
+            current.map((event) =>
+              event.id === resized.id ? resized : event,
+            ),
+          );
+          const restoreOriginal = () =>
+            setEvents((current) =>
+              current.map((event) =>
+                event.id === resize.original.id ? resize.original : event,
+              ),
+            );
+          queueActionToast(`Resized ${resized.title}`, {
+            duration: toastDuration,
+            onUndo: restoreOriginal,
+            onSubmit: () => persistMovedEvents([resized]),
+            onError: (error) => {
+              restoreOriginal();
+              toast.error(
+                error instanceof Error
+                  ? error.message
+                  : "Resize could not be saved",
+              );
+            },
+            submittingMessage: "Saving event duration…",
+          });
+        }
+      }
       if (dragRef.current) {
         const drag = dragRef.current;
         dragRef.current = null;
@@ -311,17 +383,31 @@ export function CalendarApp() {
           );
           const movedMap = new Map(moved.map((event) => [event.id, event]));
           setEvents((current) => current.map((event) => movedMap.get(event.id) ?? event));
-          void syncMovedEvents(moved, drag.originals);
-          toast(`Moved ${moved.length === 1 ? moved[0].title : `${moved.length} events`}`, {
-            action: {
-              label: "Undo",
-              onClick: () => {
-                const originals = new Map(drag.originals.map((event) => [event.id, event]));
-                setEvents((current) => current.map((event) => originals.get(event.id) ?? event));
-                void syncMovedEvents(drag.originals, moved);
+          const restoreOriginals = () => {
+            const originals = new Map(
+              drag.originals.map((event) => [event.id, event]),
+            );
+            setEvents((current) =>
+              current.map((event) => originals.get(event.id) ?? event),
+            );
+          };
+          queueActionToast(
+            `Moved ${moved.length === 1 ? moved[0].title : `${moved.length} events`}`,
+            {
+              duration: toastDuration,
+              onUndo: restoreOriginals,
+              onSubmit: () => persistMovedEvents(moved),
+              onError: (error) => {
+                restoreOriginals();
+                toast.error(
+                  error instanceof Error
+                    ? error.message
+                    : "Move could not be saved",
+                );
               },
+              submittingMessage: "Saving event move…",
             },
-          });
+          );
         }
       }
       if (marqueeRef.current) {
@@ -336,7 +422,7 @@ export function CalendarApp() {
       window.removeEventListener("pointermove", handlePointerMove);
       window.removeEventListener("pointerup", handlePointerUp);
     };
-  }, [syncMovedEvents, weekStart]);
+  }, [persistMovedEvents, renderStart, renderedDayCount, toastDuration]);
 
   const beginEventDrag = (pointer: React.PointerEvent, event: CalendarEvent) => {
     if (pointer.button !== 0) return;
@@ -353,21 +439,49 @@ export function CalendarApp() {
     const ids = selected.has(event.id) ? [...selected] : [event.id];
     if (!selected.has(event.id)) setSelected(new Set([event.id]));
     const originals = eventsRef.current.filter((item) => ids.includes(item.id));
+    const originalDayIndexes = originals.map(
+      (item) => eventGeometry(item, renderStart).dayIndex,
+    );
     const gridWidth = gridRef.current?.getBoundingClientRect().width ?? 700;
     dragRef.current = {
       ids,
       originals,
       startX: pointer.clientX,
       startY: pointer.clientY,
-      dayWidth: gridWidth / 7,
+      dayWidth: gridWidth / renderedDayCount,
       dayDelta: 0,
+      minDayDelta: -Math.min(...originalDayIndexes),
+      maxDayDelta: renderedDayCount - 1 - Math.max(...originalDayIndexes),
       minuteDelta: 0,
+    };
+  };
+
+  const beginEventResize = (
+    pointer: React.PointerEvent,
+    event: CalendarEvent,
+    edge: "start" | "end",
+  ) => {
+    if (pointer.button !== 0) return;
+    pointer.preventDefault();
+    pointer.stopPropagation();
+    if (!selected.has(event.id)) setSelected(new Set([event.id]));
+    resizeRef.current = {
+      edge,
+      minuteDelta: 0,
+      original: event,
+      startY: pointer.clientY,
     };
   };
 
   const beginMarquee = (pointer: React.PointerEvent<HTMLDivElement>) => {
     if (!pointer.shiftKey || pointer.button !== 0 || !gridRef.current) {
-      if (pointer.target === pointer.currentTarget) setSelected(new Set());
+      if (
+        pointer.button === 0 &&
+        !pointer.metaKey &&
+        !pointer.ctrlKey
+      ) {
+        setSelected(new Set());
+      }
       return;
     }
     pointer.preventDefault();
@@ -382,38 +496,96 @@ export function CalendarApp() {
     setMarquee(point);
   };
 
-  const duplicateEvents = React.useCallback(async (source: CalendarEvent[]) => {
+  const duplicateEvents = React.useCallback((source: CalendarEvent[]) => {
     if (!source.length) return;
     const nonce = Date.now();
+    const previousSelection = new Set(selected);
     const copies = source.map((event, index) => ({
       ...moveEvent(event, 0, 30),
       id: `copy-${nonce}-${index}`,
     }));
+    const copyIds = new Set(copies.map((event) => event.id));
     setEvents((current) => [...current, ...copies]);
-    setSelected(new Set(copies.map((event) => event.id)));
-    toast(`Duplicated ${copies.length === 1 ? source[0].title : `${copies.length} events`}`);
+    setSelected(new Set(copyIds));
 
-    await Promise.all(copies.map(async (copy, index) => {
-      if (copy.provider !== "google") return;
-      try {
-        const created = await eventRequest("POST", copy);
-        if (!created.id) throw new Error("Google did not return an event ID");
-        setEvents((current) => current.map((event) => event.id === copy.id ? { ...event, id: created.id!, htmlLink: created.htmlLink } : event));
-        setSelected((current) => {
-          const next = new Set(current);
-          if (next.delete(copy.id)) next.add(created.id!);
-          return next;
-        });
-      } catch (error) {
-        setEvents((current) => current.filter((event) => event.id !== copy.id));
-        toast.error(
-          error instanceof Error
-            ? error.message
-            : `Could not duplicate ${source[index].title}`,
-        );
-      }
-    }));
-  }, []);
+    queueActionToast(
+      `Duplicated ${copies.length === 1 ? source[0].title : `${copies.length} events`}`,
+      {
+        duration: toastDuration,
+        onUndo: () => {
+          setEvents((current) =>
+            current.filter((event) => !copyIds.has(event.id)),
+          );
+          setSelected((current) => {
+            const next = new Set(
+              [...current].filter((eventId) => !copyIds.has(eventId)),
+            );
+            if (next.size === 0) {
+              previousSelection.forEach((eventId) => next.add(eventId));
+            }
+            return next;
+          });
+        },
+        onSubmit: async () => {
+          const googleCopies = copies.filter(
+            (copy) => copy.provider === "google",
+          );
+          if (!googleCopies.length) return;
+          setSyncing(true);
+          try {
+            const results = await Promise.allSettled(
+              googleCopies.map(async (copy) => {
+                const created = await createGoogleEvent(copy);
+                if (!created.id) {
+                  throw new Error("Google did not return an event ID");
+                }
+                return { copy, created };
+              }),
+            );
+            const replacements = new Map<
+              string,
+              { id: string; htmlLink?: string }
+            >();
+            const failedIds = new Set<string>();
+            results.forEach((result, index) => {
+              const copy = googleCopies[index];
+              if (result.status === "fulfilled") {
+                replacements.set(copy.id, {
+                  id: result.value.created.id!,
+                  htmlLink: result.value.created.htmlLink,
+                });
+              } else {
+                failedIds.add(copy.id);
+              }
+            });
+            setEvents((current) =>
+              current.flatMap((event) => {
+                if (failedIds.has(event.id)) return [];
+                const replacement = replacements.get(event.id);
+                return replacement ? [{ ...event, ...replacement }] : [event];
+              }),
+            );
+            setSelected((current) => {
+              const next = new Set(current);
+              failedIds.forEach((eventId) => next.delete(eventId));
+              replacements.forEach((replacement, eventId) => {
+                if (next.delete(eventId)) next.add(replacement.id);
+              });
+              return next;
+            });
+            if (failedIds.size > 0) {
+              throw new Error(
+                `${failedIds.size} ${failedIds.size === 1 ? "event" : "events"} could not be duplicated`,
+              );
+            }
+          } finally {
+            setSyncing(false);
+          }
+        },
+        submittingMessage: "Creating duplicated events…",
+      },
+    );
+  }, [selected, toastDuration]);
 
   const copySelection = React.useCallback(() => {
     const source = eventsRef.current.filter((event) => selected.has(event.id));
@@ -422,35 +594,78 @@ export function CalendarApp() {
     toast(`Copied ${source.length === 1 ? source[0].title : `${source.length} events`}`);
   }, [selected]);
 
+  // Pending action toasts get first refusal on their shortcuts. If there is no
+  // matching action, native editor/browser behavior remains untouched.
+  React.useEffect(() => {
+    const handleToastShortcut = (event: KeyboardEvent) => {
+      const modifier = event.metaKey || event.ctrlKey;
+      if (
+        modifier &&
+        !event.shiftKey &&
+        !event.altKey &&
+        event.key === "Enter" &&
+        triggerToastSubmit()
+      ) {
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
+      if (
+        modifier &&
+        !event.shiftKey &&
+        !event.altKey &&
+        event.key.toLowerCase() === "z" &&
+        triggerToastUndo()
+      ) {
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
+      if (modifier && event.shiftKey && event.key === ",") {
+        event.preventDefault();
+        event.stopPropagation();
+        setShowShortcuts(false);
+        setShowSettings(true);
+      }
+    };
+    document.addEventListener("keydown", handleToastShortcut, true);
+    return () =>
+      document.removeEventListener("keydown", handleToastShortcut, true);
+  }, []);
+
   React.useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (isEditableTarget(event.target)) return;
       const modifier = event.metaKey || event.ctrlKey;
       if (modifier && event.key.toLowerCase() === "d") {
         event.preventDefault();
-        void duplicateEvents(eventsRef.current.filter((item) => selected.has(item.id)));
+        duplicateEvents(eventsRef.current.filter((item) => selected.has(item.id)));
       } else if (modifier && event.key.toLowerCase() === "c" && selected.size) {
         event.preventDefault();
         copySelection();
       } else if (modifier && event.key.toLowerCase() === "v" && clipboardRef.current.length) {
         event.preventDefault();
-        void duplicateEvents(clipboardRef.current);
+        duplicateEvents(clipboardRef.current);
+      } else if (!modifier && /^[1-9]$/.test(event.key)) {
+        event.preventDefault();
+        setDayCount(Number(event.key));
       } else if (!modifier && event.key.toLowerCase() === "t") {
         setWeekStart(startOfCalendarWeek(new Date()));
       } else if (!modifier && event.key.toLowerCase() === "j") {
-        setWeekStart((current) => addDays(current, 7));
+        setWeekStart((current) => addDays(current, dayCount));
       } else if (!modifier && event.key.toLowerCase() === "k") {
-        setWeekStart((current) => addDays(current, -7));
+        setWeekStart((current) => addDays(current, -dayCount));
       } else if (event.key === "?") {
         setShowShortcuts(true);
       } else if (event.key === "Escape") {
         setShowShortcuts(false);
+        setShowSettings(false);
         setSelected(new Set());
       }
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [copySelection, duplicateEvents, selected]);
+  }, [copySelection, dayCount, duplicateEvents, selected, setDayCount]);
 
   const toggleCalendar = (calendarId: string) => {
     setVisibleCalendars((current) => {
@@ -461,20 +676,49 @@ export function CalendarApp() {
     });
   };
 
-  const disconnectGoogle = async () => {
-    await fetch("/api/google/disconnect", { method: "POST" });
+  const disconnectGoogle = () => {
+    const previousGoogle = google;
+    const previousCalendars = calendars;
+    const previousEvents = events;
+    const previousVisibleCalendars = new Set(visibleCalendars);
+    const previousSelection = new Set(selected);
     setGoogle({ configured: google.configured, connected: false, email: null });
     setCalendars(demoCalendars);
     setVisibleCalendars(new Set(demoCalendars.map((calendar) => calendar.id)));
     setEvents(makeDemoEvents());
-    toast("Google Calendar disconnected");
+    setSelected(new Set());
+
+    const restoreConnection = () => {
+      setGoogle(previousGoogle);
+      setCalendars(previousCalendars);
+      setEvents(previousEvents);
+      setVisibleCalendars(previousVisibleCalendars);
+      setSelected(previousSelection);
+    };
+    queueActionToast("Google Calendar disconnected", {
+      duration: toastDuration,
+      onUndo: restoreConnection,
+      onSubmit: async () => {
+        const response = await fetch("/api/google/disconnect", { method: "POST" });
+        if (!response.ok) throw new Error("Google Calendar could not be disconnected");
+      },
+      onError: (error) => {
+        restoreConnection();
+        toast.error(
+          error instanceof Error
+            ? error.message
+            : "Google Calendar could not be disconnected",
+        );
+      },
+      submittingMessage: "Disconnecting Google Calendar…",
+    });
   };
 
   const todayInWeek = isWithinInterval(now, {
-    start: weekStart,
-    end: addDays(weekStart, 7),
+    start: renderStart,
+    end: addDays(renderStart, renderedDayCount),
   });
-  const nowDayIndex = days.findIndex((day) => isSameDay(day, now));
+  const nowDayIndex = renderedDays.findIndex((day) => isSameDay(day, now));
   const nowTop = now.getHours() * 60 + now.getMinutes();
   const selectionRect = marquee
     ? {
@@ -484,7 +728,6 @@ export function CalendarApp() {
         height: Math.abs(marquee.y2 - marquee.y1),
       }
     : null;
-
   return (
     <main className="calendar-shell">
       <aside className={`sidebar ${sidebarOpen ? "sidebar-open" : "sidebar-closed"}`}>
@@ -502,7 +745,7 @@ export function CalendarApp() {
             {Array.from({ length: 35 }, (_, index) => {
               const date = addDays(startOfCalendarWeek(new Date(weekStart.getFullYear(), weekStart.getMonth(), 1)), index);
               const isCurrent = isSameDay(date, now);
-              const isViewed = days.some((day) => isSameDay(day, date));
+              const isViewed = visibleDays.some((day) => isSameDay(day, date));
               return <button key={date.toISOString()} className={`${isCurrent ? "mini-today" : ""} ${isViewed ? "mini-viewed" : ""}`} onClick={() => setWeekStart(startOfCalendarWeek(date))}>{format(date, "d")}</button>;
             })}
           </div>
@@ -532,7 +775,7 @@ export function CalendarApp() {
           ) : (
             <a className="connect-button" href="/api/google/connect"><span className="google-g">G</span><span>Connect Google Calendar</span></a>
           )}
-          <button className="settings-button"><Settings size={15} /> Settings</button>
+          <button className="settings-button" onClick={() => setShowSettings(true)}><Settings size={15} /> Settings</button>
         </div>
       </aside>
 
@@ -541,15 +784,15 @@ export function CalendarApp() {
           <div className="topbar-left">
             {!sidebarOpen && <button className="icon-button" onClick={() => setSidebarOpen(true)} aria-label="Open sidebar"><Menu size={17} /></button>}
             <button className="today-button" onClick={() => setWeekStart(startOfCalendarWeek(new Date()))}>Today</button>
-            <div className="nav-pair"><button onClick={() => setWeekStart((current) => addDays(current, -7))}><ChevronLeft size={17} /></button><button onClick={() => setWeekStart((current) => addDays(current, 7))}><ChevronRight size={17} /></button></div>
-            <h1>{weekLabel(weekStart)}</h1>
+            <div className="nav-pair"><button onClick={() => setWeekStart((current) => addDays(current, -dayCount))}><ChevronLeft size={17} /></button><button onClick={() => setWeekStart((current) => addDays(current, dayCount))}><ChevronRight size={17} /></button></div>
+            <h1>{weekLabel(weekStart, dayCount)}</h1>
           </div>
 
           {selected.size > 0 ? (
             <div className="selection-toolbar">
               <span>{selected.size} selected</span>
               <button onClick={copySelection}><Clipboard size={14} /> Copy</button>
-              <button onClick={() => void duplicateEvents(selectedEvents)}><Copy size={14} /> Duplicate <kbd>⌘D</kbd></button>
+              <button onClick={() => duplicateEvents(selectedEvents)}><Copy size={14} /> Duplicate <kbd>⌘D</kbd></button>
               <button className="icon-button" onClick={() => setSelected(new Set())}><X size={14} /></button>
             </div>
           ) : (
@@ -558,7 +801,7 @@ export function CalendarApp() {
 
           <div className="topbar-right">
             <button className="icon-button" onClick={() => void loadGoogleEvents()} aria-label="Refresh" disabled={!google.connected}><RefreshCw size={15} /></button>
-            <button className="view-button"><CalendarDays size={14} /> Week <ChevronDown size={13} /></button>
+            <DayCountPicker dayCount={dayCount} onChange={setDayCount} />
             <button className="icon-button" onClick={() => setShowShortcuts(true)} aria-label="Keyboard shortcuts"><CircleHelp size={16} /></button>
           </div>
         </header>
@@ -567,37 +810,41 @@ export function CalendarApp() {
           <div className="setup-banner"><Sparkles size={15} /><span>Demo mode is ready. Add Google OAuth keys to import your real calendars.</span><a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noreferrer">Set up Google <ExternalLink size={12} /></a></div>
         )}
 
-        <div className="calendar-header">
+        <div className="calendar-header" onWheel={handleHeaderWheel}>
           <div className="timezone-cell">PDT</div>
-          <div className="day-headings">
-            {days.map((day) => {
-              const isToday = isSameDay(day, now);
-              return <button key={day.toISOString()} className={isToday ? "day-today" : ""}><span>{format(day, "EEE")}</span><strong>{format(day, "d")}</strong></button>;
-            })}
+          <div className="day-headings-viewport" ref={headerScrollRef}>
+            <div className="day-headings" style={{ ...headerGridStyle, gridTemplateColumns: `repeat(${renderedDayCount}, minmax(110px, 1fr))` }}>
+              {renderedDays.map((day) => {
+                const isToday = isSameDay(day, now);
+                return <button key={day.toISOString()} className={isToday ? "day-today" : ""}><span>{format(day, "EEE")}</span><strong>{format(day, "d")}</strong></button>;
+              })}
+            </div>
           </div>
         </div>
 
-        <div className="all-day-row">
+        <div className="all-day-row" onWheel={handleHeaderWheel}>
           <div className="all-day-label">all-day</div>
-          <div className="all-day-grid">
-            {events.filter((event) => event.allDay && visibleCalendars.has(event.calendarId)).map((event) => {
-              const { dayIndex } = eventGeometry(event, weekStart);
-              if (dayIndex < 0 || dayIndex > 6) return null;
-              return <button key={`${event.calendarId}-${event.id}`} className={`all-day-event ${selected.has(event.id) ? "event-selected" : ""}`} style={{ left: `calc(${dayIndex} * (100% / 7) + 3px)`, width: "calc(100% / 7 - 6px)", backgroundColor: event.color }} onPointerDown={(pointer) => beginEventDrag(pointer, event)}>{event.title}</button>;
-            })}
+          <div className="all-day-viewport" ref={allDayScrollRef}>
+            <div className="all-day-grid" style={{ ...headerGridStyle, backgroundSize: `calc(100% / ${renderedDayCount}) 100%` }}>
+              {events.filter((event) => event.allDay && visibleCalendars.has(event.calendarId)).map((event) => {
+                const { dayIndex } = eventGeometry(event, renderStart);
+                if (dayIndex < 0 || dayIndex >= renderedDayCount) return null;
+                return <button key={`${event.calendarId}-${event.id}`} className={`all-day-event ${selected.has(event.id) ? "event-selected" : ""}`} style={{ left: `calc(${dayIndex} * (100% / ${renderedDayCount}) + 3px)`, width: `calc(100% / ${renderedDayCount} - 6px)`, backgroundColor: event.color }} onPointerDown={(pointer) => beginEventDrag(pointer, event)}>{event.title}</button>;
+              })}
+            </div>
           </div>
         </div>
 
-        <div className="calendar-scroll" ref={scrollRef}>
+        <div className="calendar-scroll" ref={scrollRef} onScroll={handleHorizontalScroll}>
           <div className="time-axis" style={{ height: GRID_HEIGHT }}>
             {hours.map((hour) => <span key={hour} style={{ top: hour * 60 }}>{hour === 0 ? "" : format(new Date(2020, 0, 1, hour), "h a")}</span>)}
           </div>
-          <div className="week-grid" ref={gridRef} style={{ height: GRID_HEIGHT }} onPointerDown={beginMarquee}>
-            <div className="day-columns">{days.map((day) => <div key={day.toISOString()} className={isSameDay(day, now) ? "current-day-column" : ""} />)}</div>
+          <div className="week-grid" ref={gridRef} style={{ ...calendarGridStyle, height: GRID_HEIGHT }} onPointerDown={beginMarquee}>
+            <div className="day-columns" style={{ gridTemplateColumns: `repeat(${renderedDayCount}, 1fr)` }}>{renderedDays.map((day) => <div key={day.toISOString()} className={isSameDay(day, now) ? "current-day-column" : ""} />)}</div>
             <div className="hour-lines">{hours.map((hour) => <span key={hour} style={{ top: hour * 60 }} />)}</div>
             {events.filter((event) => !event.allDay && visibleCalendars.has(event.calendarId)).map((event) => {
-              const geometry = eventGeometry(event, weekStart);
-              if (geometry.dayIndex < 0 || geometry.dayIndex > 6) return null;
+              const geometry = eventGeometry(event, renderStart);
+              if (geometry.dayIndex < 0 || geometry.dayIndex >= renderedDayCount) return null;
               const isSelected = selected.has(event.id);
               return (
                 <button
@@ -606,8 +853,8 @@ export function CalendarApp() {
                   style={{
                     top: geometry.top + 1,
                     height: geometry.height - 2,
-                    left: `calc(${geometry.dayIndex} * (100% / 7) + 3px)`,
-                    width: "calc(100% / 7 - 6px)",
+                    left: `calc(${geometry.dayIndex} * (100% / ${renderedDayCount}) + 3px)`,
+                    width: `calc(100% / ${renderedDayCount} - 6px)`,
                     backgroundColor: event.color,
                     color: event.textColor || "#fff",
                   }}
@@ -615,13 +862,15 @@ export function CalendarApp() {
                   onDoubleClick={() => event.htmlLink && window.open(event.htmlLink, "_blank")}
                   aria-label={`${event.title}, ${formatEventTime(event)}`}
                 >
+                  <span className="event-resize-handle event-resize-start" onPointerDown={(pointer) => beginEventResize(pointer, event, "start")} aria-label={`Adjust start of ${event.title}`} />
                   <strong>{event.title}</strong>
                   {geometry.height >= 38 && <span>{formatEventTime(event)}</span>}
                   {geometry.height >= 58 && event.location && <small>{event.location}</small>}
+                  <span className="event-resize-handle event-resize-end" onPointerDown={(pointer) => beginEventResize(pointer, event, "end")} aria-label={`Adjust end of ${event.title}`} />
                 </button>
               );
             })}
-            {todayInWeek && nowDayIndex >= 0 && <div className="now-line" style={{ top: nowTop, left: `calc(${nowDayIndex} * (100% / 7))`, width: "calc(100% / 7)" }}><span /></div>}
+            {todayInWeek && nowDayIndex >= 0 && <div className="now-line" style={{ top: nowTop, left: `calc(${nowDayIndex} * (100% / ${renderedDayCount}))`, width: `calc(100% / ${renderedDayCount})` }}><span /></div>}
             {selectionRect && <div className="selection-marquee" style={selectionRect} />}
           </div>
         </div>
@@ -638,6 +887,8 @@ export function CalendarApp() {
               <span>Previous / next week</span><span><kbd>K</kbd> <kbd>J</kbd></span>
               <span>Duplicate selected events</span><kbd>⌘ D</kbd>
               <span>Copy / paste events</span><span><kbd>⌘ C</kbd> <kbd>⌘ V</kbd></span>
+              <span>Undo pending action</span><kbd>⌘ Z</kbd>
+              <span>Submit pending action now</span><kbd>⌘ ↵</kbd>
               <span>Toggle multiple events</span><kbd>⌘ click</kbd>
               <span>Marquee selection</span><kbd>⇧ drag</kbd>
               <span>Clear selection</span><kbd>Esc</kbd>
@@ -646,6 +897,7 @@ export function CalendarApp() {
           </section>
         </div>
       )}
+      <SettingsDialog open={showSettings} onOpenChange={setShowSettings} />
     </main>
   );
 }

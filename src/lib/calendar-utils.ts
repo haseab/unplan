@@ -18,8 +18,8 @@ export const SNAP_MINUTES = 15;
 export const startOfCalendarWeek = (date: Date) =>
   startOfWeek(date, { weekStartsOn: 1 });
 
-export const getWeekDays = (weekStart: Date) =>
-  Array.from({ length: 7 }, (_, index) => addDays(weekStart, index));
+export const getWeekDays = (weekStart: Date, dayCount = 7) =>
+  Array.from({ length: dayCount }, (_, index) => addDays(weekStart, index));
 
 export const minutesFromStartOfDay = (date: Date) =>
   date.getHours() * 60 + date.getMinutes();
@@ -60,8 +60,29 @@ export const moveEvent = (
   end: addMinutes(addDays(parseISO(event.end), dayDelta), minuteDelta).toISOString(),
 });
 
-export const weekLabel = (weekStart: Date) => {
-  const end = addDays(weekStart, 6);
+export const resizeEvent = (
+  event: CalendarEvent,
+  edge: "start" | "end",
+  requestedDelta: number,
+) => {
+  const start = parseISO(event.start);
+  const end = parseISO(event.end);
+  const duration = differenceInMinutes(end, start);
+  const startMinute = minutesFromStartOfDay(start);
+  const endMinute = minutesFromStartOfDay(end);
+  const delta = edge === "start"
+    ? clamp(requestedDelta, -startMinute, duration - SNAP_MINUTES)
+    : clamp(requestedDelta, -(duration - SNAP_MINUTES), MINUTES_IN_DAY - endMinute);
+  return {
+    ...event,
+    start: edge === "start" ? addMinutes(start, delta).toISOString() : event.start,
+    end: edge === "end" ? addMinutes(end, delta).toISOString() : event.end,
+  };
+};
+
+export const weekLabel = (weekStart: Date, dayCount = 7) => {
+  if (dayCount === 1) return format(weekStart, "EEEE, MMMM d, yyyy");
+  const end = addDays(weekStart, dayCount - 1);
   return weekStart.getMonth() === end.getMonth()
     ? `${format(weekStart, "MMMM d")} – ${format(end, "d, yyyy")}`
     : `${format(weekStart, "MMM d")} – ${format(end, "MMM d, yyyy")}`;

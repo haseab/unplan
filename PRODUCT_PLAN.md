@@ -20,9 +20,10 @@ The product does not include people-centric teammate overlays or team scheduling
 - Next.js, Tailwind, and TypeScript repository
 - Seven-day calendar and multi-calendar sidebar
 - Google OAuth, calendar list import, range-based event loading, token refresh, and disconnect
-- Optimistic drag movement with 15-minute snapping and rollback
+- Optimistic drag movement with 15-minute snapping, delayed commit, undo, and rollback
 - Shift-drag marquee selection and Command/Ctrl-click multi-selection
-- Duplicate, copy, and paste workflows
+- Duplicate, copy, and paste workflows with delayed Google submission
+- Configurable undo-toast timing and keyboard undo/submit commands
 - Today, previous/next week, current time, calendar visibility, shortcuts, toasts, and demo mode
 
 ## Phase 2 — complete the core editor

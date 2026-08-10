@@ -6,9 +6,10 @@ The current MVP includes:
 
 - A polished seven-day calendar with a compact imported-calendar sidebar
 - Google OAuth and import of every calendar in the connected account
-- Optimistic 15-minute event movement with automatic rollback on sync failure
+- Optimistic 15-minute event movement with delayed Google commits, undo, and automatic rollback on sync failure
 - Shift-drag marquee selection and Command/Ctrl-click multi-selection
-- Command/Ctrl-D duplication and Command/Ctrl-C / Command/Ctrl-V event copy/paste
+- Command/Ctrl-D duplication and Command/Ctrl-C / Command/Ctrl-V event copy/paste with an undo window before Google is changed
+- Configurable undo-toast timing plus keyboard shortcuts to undo or submit pending changes
 - Calendar visibility controls, week navigation, current-time indicator, shortcuts, toasts, and reduced-motion support
 - A complete demo calendar when Google credentials are not configured
 
@@ -43,6 +44,9 @@ The MVP stores short-lived Google access and refresh tokens in secure, HTTP-only
 | Toggle an event in the selection | `Command/Ctrl` + click |
 | Duplicate selected events | `Command/Ctrl + D` |
 | Copy / paste selected events | `Command/Ctrl + C` / `Command/Ctrl + V` |
+| Undo the latest pending action | `Command/Ctrl + Z` |
+| Submit the latest pending action immediately | `Command/Ctrl + Enter` |
+| Open settings | `Command/Ctrl + Shift + ,` |
 | Clear selection | `Escape` |
 | Show shortcuts | `?` |
 

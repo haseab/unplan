@@ -3,10 +3,10 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
-    "lint": "eslint"
+    "dev": "node scripts/run-with-debug-log.mjs next dev",
+    "build": "node scripts/run-with-debug-log.mjs next build",
+    "start": "node scripts/run-with-debug-log.mjs next start",
+    "lint": "node scripts/run-with-debug-log.mjs eslint"
   },
   "dependencies": {
     "date-fns": "^4.4.0",
