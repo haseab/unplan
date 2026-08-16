@@ -1,6 +1,7 @@
 "use client";
 
-import { Check, Command, Settings, X } from "lucide-react";
+import { Check, Command, Moon, Settings, Sun, X } from "lucide-react";
+import { useTheme } from "@/hooks/use-theme";
 import { useToastSettings } from "@/hooks/use-toast-settings";
 
 type SettingsDialogProps = {
@@ -14,6 +15,7 @@ const formatDuration = (duration: number) =>
   duration === 0 ? "Immediately" : `${(duration / 1000).toFixed(1)} seconds`;
 
 export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
+  const { theme, setTheme } = useTheme();
   const { duration, setDuration } = useToastSettings();
   if (!open) return null;
 
@@ -44,6 +46,37 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
         </div>
 
         <div className="settings-content">
+          <section className="settings-section">
+            <div className="settings-section-heading">
+              <span>Appearance</span>
+              <strong>{theme === "dark" ? "Dark" : "Light"}</strong>
+            </div>
+            <p>
+              Dark mode is the default. Your choice is remembered on this
+              device.
+            </p>
+            <div className="theme-choices" role="group" aria-label="Appearance">
+              <button
+                className={theme === "dark" ? "theme-choice-active" : ""}
+                onClick={() => setTheme("dark")}
+                aria-pressed={theme === "dark"}
+              >
+                <Moon size={13} />
+                Dark
+                {theme === "dark" && <Check size={11} />}
+              </button>
+              <button
+                className={theme === "light" ? "theme-choice-active" : ""}
+                onClick={() => setTheme("light")}
+                aria-pressed={theme === "light"}
+              >
+                <Sun size={13} />
+                Light
+                {theme === "light" && <Check size={11} />}
+              </button>
+            </div>
+          </section>
+
           <section className="settings-section">
             <div className="settings-section-heading">
               <span>Undo window</span>

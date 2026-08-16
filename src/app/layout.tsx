@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { Toaster } from "sonner";
 import { BrowserConsoleLogger } from "@/components/browser-console-logger";
+import { DEFAULT_THEME, THEME_BOOTSTRAP_SCRIPT } from "@/lib/theme";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -27,8 +28,13 @@ export default function RootLayout({
   return (
     <html
       lang="en"
+      data-theme={DEFAULT_THEME}
+      suppressHydrationWarning
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: THEME_BOOTSTRAP_SCRIPT }} />
+      </head>
       <body>
         {process.env.NODE_ENV === "development" && <BrowserConsoleLogger />}
         {children}
