@@ -58,6 +58,7 @@ import {
   createGoogleEvent,
   updateGoogleEvent,
 } from "@/lib/google-event-client";
+import { isEventPast } from "@/lib/event-time";
 
 type GoogleStatus = {
   configured: boolean;
@@ -829,7 +830,7 @@ export function CalendarApp() {
               {events.filter((event) => event.allDay && visibleCalendars.has(event.calendarId)).map((event) => {
                 const { dayIndex } = eventGeometry(event, renderStart);
                 if (dayIndex < 0 || dayIndex >= renderedDayCount) return null;
-                return <button key={`${event.calendarId}-${event.id}`} className={`all-day-event ${selected.has(event.id) ? "event-selected" : ""}`} style={{ left: `calc(${dayIndex} * (100% / ${renderedDayCount}) + 3px)`, width: `calc(100% / ${renderedDayCount} - 6px)`, backgroundColor: event.color, borderLeftColor: event.calendarColor, color: event.textColor || "#fff" }} onPointerDown={(pointer) => beginEventDrag(pointer, event)}>{event.title}</button>;
+                return <button key={`${event.calendarId}-${event.id}`} className={`all-day-event ${selected.has(event.id) ? "event-selected" : ""}`} data-past={isEventPast(event, now)} style={{ left: `calc(${dayIndex} * (100% / ${renderedDayCount}) + 3px)`, width: `calc(100% / ${renderedDayCount} - 6px)`, backgroundColor: event.color, borderLeftColor: event.calendarColor, color: event.textColor || "#fff" }} onPointerDown={(pointer) => beginEventDrag(pointer, event)}>{event.title}</button>;
               })}
             </div>
           </div>
@@ -838,6 +839,7 @@ export function CalendarApp() {
         <div className="calendar-scroll" ref={scrollRef} onScroll={handleHorizontalScroll}>
           <div className="time-axis" style={{ height: GRID_HEIGHT }}>
             {hours.map((hour) => <span key={hour} style={{ top: hour * 60 }}>{hour === 0 ? "" : format(new Date(2020, 0, 1, hour), "h a")}</span>)}
+            {todayInWeek && nowDayIndex >= 0 && <time className="now-time-label" style={{ top: nowTop }}>{format(now, "h:mm")}</time>}
           </div>
           <div className="week-grid" ref={gridRef} style={{ ...calendarGridStyle, height: GRID_HEIGHT }} onPointerDown={beginMarquee}>
             <div className="day-columns" style={{ gridTemplateColumns: `repeat(${renderedDayCount}, 1fr)` }}>{renderedDays.map((day) => <div key={day.toISOString()} className={isSameDay(day, now) ? "current-day-column" : ""} />)}</div>
@@ -862,6 +864,7 @@ export function CalendarApp() {
                   onPointerDown={(pointer) => beginEventDrag(pointer, event)}
                   onDoubleClick={() => event.htmlLink && window.open(event.htmlLink, "_blank")}
                   aria-label={`${event.title}, ${formatEventTime(event)}`}
+                  data-past={isEventPast(event, now)}
                 >
                   <span className="event-resize-handle event-resize-start" onPointerDown={(pointer) => beginEventResize(pointer, event, "start")} aria-label={`Adjust start of ${event.title}`} />
                   <strong>{event.title}</strong>
@@ -871,7 +874,17 @@ export function CalendarApp() {
                 </button>
               );
             })}
-            {todayInWeek && nowDayIndex >= 0 && <div className="now-line" style={{ top: nowTop, left: `calc(${nowDayIndex} * (100% / ${renderedDayCount}))`, width: `calc(100% / ${renderedDayCount})` }}><span /></div>}
+            {todayInWeek && nowDayIndex >= 0 && (
+              <div className="now-line" style={{ top: nowTop }}>
+                <span
+                  className="now-line-today"
+                  style={{
+                    left: `calc(${nowDayIndex} * (100% / ${renderedDayCount}))`,
+                    width: `calc(100% / ${renderedDayCount})`,
+                  }}
+                />
+              </div>
+            )}
             {selectionRect && <div className="selection-marquee" style={selectionRect} />}
           </div>
         </div>
