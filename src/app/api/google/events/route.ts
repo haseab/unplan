@@ -1,5 +1,6 @@
 import { googleFetch } from "@/lib/google-calendar";
 import type { CalendarEvent, GoogleCalendarEventPayload } from "@/lib/calendar-types";
+import { getEventTextColor } from "@/lib/event-color";
 import { format, parseISO } from "date-fns";
 import { NextRequest } from "next/server";
 
@@ -55,7 +56,6 @@ const mapGoogleEvent = (
   event: GoogleEvent,
   calendarId: string,
   calendarColor: string,
-  calendarTextColor: string,
   eventColors: Record<string, GoogleColor>,
 ): CalendarEvent => {
   const eventColor = event.colorId ? eventColors[event.colorId] : undefined;
@@ -69,7 +69,7 @@ const mapGoogleEvent = (
     calendarColor,
     color: eventColor?.background ?? calendarColor,
     colorId: event.colorId,
-    textColor: eventColor?.foreground ?? calendarTextColor,
+    textColor: getEventTextColor(eventColor?.background ?? calendarColor),
     location: event.location,
     htmlLink: event.htmlLink,
     provider: "google",
@@ -82,7 +82,6 @@ export async function GET(request: NextRequest) {
   const timeMax = request.nextUrl.searchParams.get("timeMax");
   if (!calendarIds.length || !timeMin || !timeMax) return Response.json({ error: "Missing calendar range" }, { status: 400 });
   const colors = request.nextUrl.searchParams.getAll("color");
-  const textColors = request.nextUrl.searchParams.getAll("textColor");
 
   try {
     const [eventColors, responses] = await Promise.all([
@@ -95,13 +94,11 @@ export async function GET(request: NextRequest) {
     ]);
     const events = responses.flatMap((calendarEvents, index) => {
       const calendarColor = colors[index] ?? "#4666e5";
-      const calendarTextColor = textColors[index] ?? "#ffffff";
       return calendarEvents.map((event) =>
         mapGoogleEvent(
           event,
           calendarIds[index],
           calendarColor,
-          calendarTextColor,
           eventColors,
         ),
       );
