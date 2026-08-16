@@ -4,6 +4,16 @@
 This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` before writing any code. Heed deprecation notices.
 <!-- END:nextjs-agent-rules -->
 
+# Git commits
+
+- Never create a Git commit unless the user explicitly asks you to commit the
+  current changes. Completing a feature, preparing changes, deploying, or
+  pushing does not implicitly authorize a commit.
+- Leave completed changes uncommitted by default so the user can inspect them.
+- When the user does explicitly request a commit, include only the files and
+  hunks that belong to the requested work and preserve unrelated worktree
+  changes.
+
 # Code organization and refactoring
 
 Bias toward extraction, reuse, and clear ownership. The codebase should become

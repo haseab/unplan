@@ -45,9 +45,61 @@ export const eventGeometry = (event: CalendarEvent, weekStart: Date) => {
   const top = minutesFromStartOfDay(start) * PIXELS_PER_MINUTE;
   const height = Math.max(
     differenceInMinutes(end, start) * PIXELS_PER_MINUTE,
-    24,
+    SNAP_MINUTES * PIXELS_PER_MINUTE,
   );
   return { dayIndex, top, height };
+};
+
+export type EventSegmentGeometry = {
+  dayIndex: number;
+  height: number;
+  isEnd: boolean;
+  isStart: boolean;
+  top: number;
+};
+
+export const eventSegmentGeometries = (
+  event: CalendarEvent,
+  renderStart: Date,
+  renderedDayCount: number,
+): EventSegmentGeometry[] => {
+  const eventStart = parseISO(event.start);
+  const eventEnd = parseISO(event.end);
+  if (eventEnd.getTime() <= eventStart.getTime()) return [];
+
+  const visibleStart = startOfDay(renderStart);
+  const visibleEnd = addDays(visibleStart, renderedDayCount);
+  let dayStart = startOfDay(eventStart);
+  if (dayStart.getTime() < visibleStart.getTime()) dayStart = visibleStart;
+
+  const segments: EventSegmentGeometry[] = [];
+  while (
+    dayStart.getTime() < visibleEnd.getTime() &&
+    dayStart.getTime() < eventEnd.getTime()
+  ) {
+    const nextDay = addDays(dayStart, 1);
+    const segmentStart = eventStart.getTime() > dayStart.getTime()
+      ? eventStart
+      : dayStart;
+    const segmentEnd = eventEnd.getTime() < nextDay.getTime()
+      ? eventEnd
+      : nextDay;
+    const top = minutesFromStartOfDay(segmentStart) * PIXELS_PER_MINUTE;
+    const bottom = segmentEnd.getTime() === nextDay.getTime()
+      ? MINUTES_IN_DAY * PIXELS_PER_MINUTE
+      : minutesFromStartOfDay(segmentEnd) * PIXELS_PER_MINUTE;
+
+    segments.push({
+      dayIndex: differenceInCalendarDays(dayStart, visibleStart),
+      height: Math.max(bottom - top, SNAP_MINUTES * PIXELS_PER_MINUTE),
+      isEnd: segmentEnd.getTime() === eventEnd.getTime(),
+      isStart: segmentStart.getTime() === eventStart.getTime(),
+      top,
+    });
+    dayStart = nextDay;
+  }
+
+  return segments;
 };
 
 export const moveEvent = (

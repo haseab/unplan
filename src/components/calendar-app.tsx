@@ -41,10 +41,14 @@ import {
   triggerToastUndo,
 } from "@/lib/action-toast";
 import type { CalendarEvent, CalendarSource } from "@/lib/calendar-types";
+import { getEventPalette } from "@/lib/event-color";
 import {
   GRID_HEIGHT,
+  PIXELS_PER_MINUTE,
+  SNAP_MINUTES,
   clamp,
   eventGeometry,
+  eventSegmentGeometries,
   formatEventTime,
   getWeekDays,
   moveEvent,
@@ -94,6 +98,14 @@ const isEditableTarget = (target: EventTarget | null) => {
   return Boolean(
     element?.closest("input, textarea, select, [contenteditable='true']"),
   );
+};
+
+const restoreEventSnapshots = (
+  current: CalendarEvent[],
+  originals: CalendarEvent[],
+) => {
+  const originalById = new Map(originals.map((event) => [event.id, event]));
+  return current.map((event) => originalById.get(event.id) ?? event);
 };
 
 function ProductMark() {
@@ -276,6 +288,15 @@ export function CalendarApp() {
     [],
   );
 
+  const cancelActiveDrag = React.useCallback(() => {
+    const drag = dragRef.current;
+    if (!drag) return false;
+
+    dragRef.current = null;
+    setEvents((current) => restoreEventSnapshots(current, drag.originals));
+    return true;
+  }, []);
+
   React.useEffect(() => {
     const handlePointerMove = (pointer: PointerEvent) => {
       if (resizeRef.current) {
@@ -328,11 +349,11 @@ export function CalendarApp() {
         const dayWidth = gridRect.width / renderedDayCount;
         const matches = eventsRef.current.filter((event) => {
           if (event.allDay || !visibleRef.current.has(event.calendarId)) return false;
-          const geometry = eventGeometry(event, renderStart);
-          if (geometry.dayIndex < 0 || geometry.dayIndex >= renderedDayCount) return false;
-          const eventLeft = geometry.dayIndex * dayWidth;
-          const eventRight = eventLeft + dayWidth;
-          return eventRight >= left && eventLeft <= right && geometry.top + geometry.height >= top && geometry.top <= bottom;
+          return eventSegmentGeometries(event, renderStart, renderedDayCount).some((geometry) => {
+            const eventLeft = geometry.dayIndex * dayWidth;
+            const eventRight = eventLeft + dayWidth;
+            return eventRight >= left && eventLeft <= right && geometry.top + geometry.height >= top && geometry.top <= bottom;
+          });
         });
         setSelected(new Set(matches.map((event) => event.id)));
       }
@@ -385,12 +406,7 @@ export function CalendarApp() {
           const movedMap = new Map(moved.map((event) => [event.id, event]));
           setEvents((current) => current.map((event) => movedMap.get(event.id) ?? event));
           const restoreOriginals = () => {
-            const originals = new Map(
-              drag.originals.map((event) => [event.id, event]),
-            );
-            setEvents((current) =>
-              current.map((event) => originals.get(event.id) ?? event),
-            );
+            setEvents((current) => restoreEventSnapshots(current, drag.originals));
           };
           queueActionToast(
             `Moved ${moved.length === 1 ? moved[0].title : `${moved.length} events`}`,
@@ -440,9 +456,12 @@ export function CalendarApp() {
     const ids = selected.has(event.id) ? [...selected] : [event.id];
     if (!selected.has(event.id)) setSelected(new Set([event.id]));
     const originals = eventsRef.current.filter((item) => ids.includes(item.id));
-    const originalDayIndexes = originals.map(
-      (item) => eventGeometry(item, renderStart).dayIndex,
-    );
+    const originalDayIndexes = originals.flatMap((item) => {
+      const segments = eventSegmentGeometries(item, renderStart, renderedDayCount);
+      return segments.length > 0
+        ? segments.map((segment) => segment.dayIndex)
+        : [eventGeometry(item, renderStart).dayIndex];
+    });
     const gridWidth = gridRef.current?.getBoundingClientRect().width ?? 700;
     dragRef.current = {
       ids,
@@ -659,6 +678,11 @@ export function CalendarApp() {
       } else if (event.key === "?") {
         setShowShortcuts(true);
       } else if (event.key === "Escape") {
+        if (cancelActiveDrag()) {
+          event.preventDefault();
+          event.stopPropagation();
+          return;
+        }
         setShowShortcuts(false);
         setShowSettings(false);
         setSelected(new Set());
@@ -666,7 +690,7 @@ export function CalendarApp() {
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [copySelection, dayCount, duplicateEvents, selected, setDayCount]);
+  }, [cancelActiveDrag, copySelection, dayCount, duplicateEvents, selected, setDayCount]);
 
   const toggleCalendar = (calendarId: string) => {
     setVisibleCalendars((current) => {
@@ -830,7 +854,8 @@ export function CalendarApp() {
               {events.filter((event) => event.allDay && visibleCalendars.has(event.calendarId)).map((event) => {
                 const { dayIndex } = eventGeometry(event, renderStart);
                 if (dayIndex < 0 || dayIndex >= renderedDayCount) return null;
-                return <button key={`${event.calendarId}-${event.id}`} className={`all-day-event ${selected.has(event.id) ? "event-selected" : ""}`} data-past={isEventPast(event, now)} style={{ left: `calc(${dayIndex} * (100% / ${renderedDayCount}) + 3px)`, width: `calc(100% / ${renderedDayCount} - 6px)`, backgroundColor: event.color, borderLeftColor: event.calendarColor, color: event.textColor || "#fff" }} onPointerDown={(pointer) => beginEventDrag(pointer, event)}>{event.title}</button>;
+                const palette = getEventPalette(event.color);
+                return <button key={`${event.calendarId}-${event.id}`} className={`all-day-event ${selected.has(event.id) ? "event-selected" : ""}`} data-past={isEventPast(event, now)} style={{ left: `calc(${dayIndex} * (100% / ${renderedDayCount}) + 3px)`, width: `calc(100% / ${renderedDayCount} - 6px)`, "--event-accent": palette.accent, "--event-surface-dark": palette.darkSurface, "--event-surface-light": palette.lightSurface } as React.CSSProperties} onPointerDown={(pointer) => beginEventDrag(pointer, event)}>{event.title}</button>;
               })}
             </div>
           </div>
@@ -842,37 +867,41 @@ export function CalendarApp() {
             {todayInWeek && nowDayIndex >= 0 && <time className="now-time-label" style={{ top: nowTop }}>{format(now, "h:mm")}</time>}
           </div>
           <div className="week-grid" ref={gridRef} style={{ ...calendarGridStyle, height: GRID_HEIGHT }} onPointerDown={beginMarquee}>
-            <div className="day-columns" style={{ gridTemplateColumns: `repeat(${renderedDayCount}, 1fr)` }}>{renderedDays.map((day) => <div key={day.toISOString()} className={isSameDay(day, now) ? "current-day-column" : ""} />)}</div>
+            <div className="day-columns" style={{ gridTemplateColumns: `repeat(${renderedDayCount}, 1fr)` }}>{renderedDays.map((day) => <div key={day.toISOString()} />)}</div>
             <div className="hour-lines">{hours.map((hour) => <span key={hour} style={{ top: hour * 60 }} />)}</div>
-            {events.filter((event) => !event.allDay && visibleCalendars.has(event.calendarId)).map((event) => {
-              const geometry = eventGeometry(event, renderStart);
-              if (geometry.dayIndex < 0 || geometry.dayIndex >= renderedDayCount) return null;
+            {events.filter((event) => !event.allDay && visibleCalendars.has(event.calendarId)).flatMap((event) => {
               const isSelected = selected.has(event.id);
-              return (
-                <button
-                  key={`${event.calendarId}-${event.id}`}
-                  className={`calendar-event ${isSelected ? "event-selected" : ""}`}
-                  style={{
-                    top: geometry.top + 1,
-                    height: geometry.height - 2,
-                    left: `calc(${geometry.dayIndex} * (100% / ${renderedDayCount}) + 3px)`,
-                    width: `calc(100% / ${renderedDayCount} - 6px)`,
-                    backgroundColor: event.color,
-                    borderLeftColor: event.calendarColor,
-                    color: event.textColor || "#fff",
-                  }}
-                  onPointerDown={(pointer) => beginEventDrag(pointer, event)}
-                  onDoubleClick={() => event.htmlLink && window.open(event.htmlLink, "_blank")}
-                  aria-label={`${event.title}, ${formatEventTime(event)}`}
-                  data-past={isEventPast(event, now)}
-                >
-                  <span className="event-resize-handle event-resize-start" onPointerDown={(pointer) => beginEventResize(pointer, event, "start")} aria-label={`Adjust start of ${event.title}`} />
-                  <strong>{event.title}</strong>
-                  {geometry.height >= 38 && <span>{formatEventTime(event)}</span>}
-                  {geometry.height >= 58 && event.location && <small>{event.location}</small>}
-                  <span className="event-resize-handle event-resize-end" onPointerDown={(pointer) => beginEventResize(pointer, event, "end")} aria-label={`Adjust end of ${event.title}`} />
-                </button>
-              );
+              const palette = getEventPalette(event.color);
+              return eventSegmentGeometries(event, renderStart, renderedDayCount).map((geometry) => {
+                const isCompact = geometry.height <= SNAP_MINUTES * PIXELS_PER_MINUTE;
+                const showsTime = geometry.height >= SNAP_MINUTES * 2 * PIXELS_PER_MINUTE;
+                const isCondensed = showsTime && geometry.height < 38;
+                return (
+                  <button
+                    key={`${event.calendarId}-${event.id}-${geometry.dayIndex}`}
+                    className={`calendar-event ${isCompact ? "event-compact" : ""} ${isCondensed ? "event-condensed" : ""} ${isSelected ? "event-selected" : ""}`}
+                    style={{
+                      top: geometry.top + 1,
+                      height: geometry.height - 2,
+                      left: `calc(${geometry.dayIndex} * (100% / ${renderedDayCount}) + 3px)`,
+                      width: `calc(100% / ${renderedDayCount} - 6px)`,
+                      "--event-accent": palette.accent,
+                      "--event-surface-dark": palette.darkSurface,
+                      "--event-surface-light": palette.lightSurface,
+                    } as React.CSSProperties}
+                    onPointerDown={(pointer) => beginEventDrag(pointer, event)}
+                    onDoubleClick={() => event.htmlLink && window.open(event.htmlLink, "_blank")}
+                    aria-label={`${event.title}, ${formatEventTime(event)}`}
+                    data-past={isEventPast(event, now)}
+                  >
+                    {geometry.isStart && <span className="event-resize-handle event-resize-start" onPointerDown={(pointer) => beginEventResize(pointer, event, "start")} aria-label={`Adjust start of ${event.title}`} />}
+                    <strong>{event.title}</strong>
+                    {showsTime && <span className="event-time">{formatEventTime(event)}</span>}
+                    {geometry.height >= 58 && event.location && <small>{event.location}</small>}
+                    {geometry.isEnd && <span className="event-resize-handle event-resize-end" onPointerDown={(pointer) => beginEventResize(pointer, event, "end")} aria-label={`Adjust end of ${event.title}`} />}
+                  </button>
+                );
+              });
             })}
             {todayInWeek && nowDayIndex >= 0 && (
               <div className="now-line" style={{ top: nowTop }}>
