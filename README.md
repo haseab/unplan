@@ -5,7 +5,7 @@ An open-source, keyboard-first calendar for the web. unplan starts with the inte
 The current MVP includes:
 
 - A polished seven-day calendar with a compact imported-calendar sidebar
-- Google OAuth and import of every calendar in the connected account
+- Multiple Google accounts with account-grouped calendar imports
 - Optimistic 15-minute event movement with delayed Google commits, undo, and automatic rollback on sync failure
 - Shift-drag marquee selection and Command/Ctrl-click multi-selection
 - Command/Ctrl-D duplication and Command/Ctrl-C / Command/Ctrl-V event copy/paste with an undo window before Google is changed
@@ -29,24 +29,32 @@ Open [http://localhost:3000](http://localhost:3000).
 2. Enable the Google Calendar API.
 3. Configure the OAuth consent screen.
 4. Create an OAuth 2.0 Client ID with the **Web application** type.
-5. Add `http://localhost:3000/api/google/callback` as an authorized redirect URI.
-6. Copy the client ID and secret into `.env.local`.
+5. Add `http://localhost:3000` as an authorized JavaScript origin.
+6. Copy the client ID into `.env.local` as `NEXT_PUBLIC_GOOGLE_CLIENT_ID`.
 
-For production on `unplan.io`, add
-`https://unplan.io/api/google/callback` to the same OAuth Web application's
-authorized redirect URIs and configure these variables on the host:
+For production on `unplan.io`, add `https://unplan.io` to the same OAuth Web
+application's authorized JavaScript origins and configure:
 
 ```env
-GOOGLE_CLIENT_ID=your-client-id
-GOOGLE_CLIENT_SECRET=your-client-secret
-GOOGLE_REDIRECT_URI=https://unplan.io/api/google/callback
+NEXT_PUBLIC_GOOGLE_CLIENT_ID=your-client-id
 ```
+
+Unplan uses Google Identity Services' browser token model. Short-lived access
+tokens and their expiry times are stored in this browser's local storage and
+sent only to same-origin API proxy routes. Unplan has no user database, does
+not request or store refresh tokens, and does not use a Google client secret.
+When a token expires, reconnect that Google account. Calendar data remains in
+Google Calendar; the app refreshes it when the window regains focus and every
+five minutes while visible.
 
 OAuth clients in Google testing mode remain limited to accounts listed as test
 users. A public integration requires publishing the consent screen and may
 require Google verification for Calendar scopes.
 
-The MVP stores short-lived Google access and refresh tokens in secure, HTTP-only cookies. Before a multi-user production deployment, replace this with encrypted server-side token storage and add a database-backed user/session model.
+Use the **+** beside Calendars or **Add another account** to connect additional
+Google accounts. Each account has its own browser token, so one expired account
+does not prevent the others from loading. Disconnecting removes that account's
+token from the browser.
 
 ## Interaction model
 
@@ -66,7 +74,7 @@ The MVP stores short-lived Google access and refresh tokens in secure, HTTP-only
 
 ## Stack
 
-Next.js 16 App Router, React 19, TypeScript, Tailwind CSS 4, date-fns, Lucide, and Sonner.
+Node.js 22+, Next.js 16 App Router, React 19, TypeScript, Tailwind CSS 4, date-fns, Lucide, and Sonner.
 
 See [PRODUCT_PLAN.md](./PRODUCT_PLAN.md) for the product principles and staged roadmap.
 

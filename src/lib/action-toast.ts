@@ -10,7 +10,7 @@ type PendingAction = {
 type ActionToastOptions = {
   duration: number;
   onUndo: () => void;
-  onSubmit: () => Promise<void> | void;
+  onSubmit: (reportProgress: (message: string) => void) => Promise<void> | void;
   onError?: (error: unknown) => void;
   submittingMessage?: string;
 };
@@ -61,7 +61,12 @@ export function queueActionToast(
       duration: Infinity,
     });
 
-    void Promise.resolve(options.onSubmit())
+    const reportProgress = (progressMessage: string) => {
+      if (state !== "submitting") return;
+      toast.loading(progressMessage, { id: toastId, duration: Infinity });
+    };
+
+    void Promise.resolve(options.onSubmit(reportProgress))
       .then(() => {
         state = "complete";
         toast.dismiss(toastId);

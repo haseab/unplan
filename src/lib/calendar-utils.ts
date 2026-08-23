@@ -38,20 +38,25 @@ export const formatEventTime = (event: CalendarEvent) => {
   )}`;
 };
 
-export const eventGeometry = (event: CalendarEvent, weekStart: Date) => {
+export const eventGeometry = (
+  event: CalendarEvent,
+  weekStart: Date,
+  pixelsPerMinute = PIXELS_PER_MINUTE,
+) => {
   const start = parseISO(event.start);
   const end = parseISO(event.end);
   const dayIndex = differenceInCalendarDays(startOfDay(start), weekStart);
-  const top = minutesFromStartOfDay(start) * PIXELS_PER_MINUTE;
+  const top = minutesFromStartOfDay(start) * pixelsPerMinute;
   const height = Math.max(
-    differenceInMinutes(end, start) * PIXELS_PER_MINUTE,
-    SNAP_MINUTES * PIXELS_PER_MINUTE,
+    differenceInMinutes(end, start) * pixelsPerMinute,
+    SNAP_MINUTES * pixelsPerMinute,
   );
   return { dayIndex, top, height };
 };
 
 export type EventSegmentGeometry = {
   dayIndex: number;
+  endMinute: number;
   height: number;
   isEnd: boolean;
   isStart: boolean;
@@ -62,6 +67,7 @@ export const eventSegmentGeometries = (
   event: CalendarEvent,
   renderStart: Date,
   renderedDayCount: number,
+  pixelsPerMinute = PIXELS_PER_MINUTE,
 ): EventSegmentGeometry[] => {
   const eventStart = parseISO(event.start);
   const eventEnd = parseISO(event.end);
@@ -84,14 +90,15 @@ export const eventSegmentGeometries = (
     const segmentEnd = eventEnd.getTime() < nextDay.getTime()
       ? eventEnd
       : nextDay;
-    const top = minutesFromStartOfDay(segmentStart) * PIXELS_PER_MINUTE;
+    const top = minutesFromStartOfDay(segmentStart) * pixelsPerMinute;
     const bottom = segmentEnd.getTime() === nextDay.getTime()
-      ? MINUTES_IN_DAY * PIXELS_PER_MINUTE
-      : minutesFromStartOfDay(segmentEnd) * PIXELS_PER_MINUTE;
+      ? MINUTES_IN_DAY * pixelsPerMinute
+      : minutesFromStartOfDay(segmentEnd) * pixelsPerMinute;
 
     segments.push({
       dayIndex: differenceInCalendarDays(dayStart, visibleStart),
-      height: Math.max(bottom - top, SNAP_MINUTES * PIXELS_PER_MINUTE),
+      endMinute: bottom / pixelsPerMinute,
+      height: Math.max(bottom - top, SNAP_MINUTES * pixelsPerMinute),
       isEnd: segmentEnd.getTime() === eventEnd.getTime(),
       isStart: segmentStart.getTime() === eventStart.getTime(),
       top,
@@ -117,20 +124,50 @@ export const resizeEvent = (
   edge: "start" | "end",
   requestedDelta: number,
 ) => {
+  if (requestedDelta === 0) return event;
+
   const start = parseISO(event.start);
   const end = parseISO(event.end);
-  const duration = differenceInMinutes(end, start);
-  const startMinute = minutesFromStartOfDay(start);
-  const endMinute = minutesFromStartOfDay(end);
-  const delta = edge === "start"
-    ? clamp(requestedDelta, -startMinute, duration - SNAP_MINUTES)
-    : clamp(requestedDelta, -(duration - SNAP_MINUTES), MINUTES_IN_DAY - endMinute);
+  const movingBoundary = edge === "start" ? start : end;
+  const stationaryBoundary = edge === "start" ? end : start;
+  const movingMinute = minutesFromStartOfDay(movingBoundary);
+  const delta = clamp(
+    requestedDelta,
+    -movingMinute,
+    MINUTES_IN_DAY - movingMinute,
+  );
+  let movedBoundary = addMinutes(movingBoundary, delta);
+  const minimumDuration = SNAP_MINUTES * 60 * 1000;
+  const distance = movedBoundary.getTime() - stationaryBoundary.getTime();
+
+  if (Math.abs(distance) < minimumDuration) {
+    const direction = distance === 0
+      ? edge === "start" ? -1 : 1
+      : Math.sign(distance);
+    movedBoundary = new Date(
+      stationaryBoundary.getTime() + direction * minimumDuration,
+    );
+  }
+
+  const resizedStart = movedBoundary.getTime() < stationaryBoundary.getTime()
+    ? movedBoundary
+    : stationaryBoundary;
+  const resizedEnd = movedBoundary.getTime() < stationaryBoundary.getTime()
+    ? stationaryBoundary
+    : movedBoundary;
+
   return {
     ...event,
-    start: edge === "start" ? addMinutes(start, delta).toISOString() : event.start,
-    end: edge === "end" ? addMinutes(end, delta).toISOString() : event.end,
+    start: resizedStart.toISOString(),
+    end: resizedEnd.toISOString(),
   };
 };
+
+export const eventTimesMatch = (
+  first: Pick<CalendarEvent, "start" | "end">,
+  second: Pick<CalendarEvent, "start" | "end">,
+) => parseISO(first.start).getTime() === parseISO(second.start).getTime()
+  && parseISO(first.end).getTime() === parseISO(second.end).getTime();
 
 export const weekLabel = (weekStart: Date, dayCount = 7) => {
   if (dayCount === 1) return format(weekStart, "EEEE, MMMM d, yyyy");

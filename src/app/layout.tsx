@@ -38,7 +38,7 @@ export default function RootLayout({
       <body>
         {process.env.NODE_ENV === "development" && <BrowserConsoleLogger />}
         {children}
-        <Toaster position="bottom-center" closeButton richColors />
+        <Toaster position="bottom-center" visibleToasts={10} closeButton richColors />
       </body>
     </html>
   );

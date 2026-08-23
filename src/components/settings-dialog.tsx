@@ -3,8 +3,12 @@
 import { Check, Command, Moon, Settings, Sun, X } from "lucide-react";
 import { useTheme } from "@/hooks/use-theme";
 import { useToastSettings } from "@/hooks/use-toast-settings";
+import type { CalendarSource } from "@/lib/calendar-types";
 
 type SettingsDialogProps = {
+  calendars: CalendarSource[];
+  defaultCalendarId: string | null;
+  onDefaultCalendarChange: (calendarId: string) => void;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 };
@@ -14,7 +18,13 @@ const durationChoices = [2000, 4000, 6000, 10000];
 const formatDuration = (duration: number) =>
   duration === 0 ? "Immediately" : `${(duration / 1000).toFixed(1)} seconds`;
 
-export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
+export function SettingsDialog({
+  calendars,
+  defaultCalendarId,
+  onDefaultCalendarChange,
+  open,
+  onOpenChange,
+}: SettingsDialogProps) {
   const { theme, setTheme } = useTheme();
   const { duration, setDuration } = useToastSettings();
   if (!open) return null;
@@ -46,6 +56,28 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
         </div>
 
         <div className="settings-content">
+          <section className="settings-section">
+            <div className="settings-section-heading">
+              <span>New events</span>
+              <strong>{calendars.find((calendar) => calendar.id === defaultCalendarId)?.name ?? "Unavailable"}</strong>
+            </div>
+            <p>
+              Events created by dragging empty calendar space will use this
+              calendar by default.
+            </p>
+            <select
+              className="settings-calendar-select"
+              value={defaultCalendarId ?? ""}
+              onChange={(event) => onDefaultCalendarChange(event.target.value)}
+              aria-label="Default calendar for new events"
+              disabled={calendars.length === 0}
+            >
+              {calendars.map((calendar) => (
+                <option key={calendar.id} value={calendar.id}>{calendar.name}{calendar.accountEmail ? ` — ${calendar.accountEmail}` : ""}</option>
+              ))}
+            </select>
+          </section>
+
           <section className="settings-section">
             <div className="settings-section-heading">
               <span>Appearance</span>

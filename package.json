@@ -2,16 +2,29 @@
   "name": "unplan",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": ">=20.9.0"
+  },
   "scripts": {
     "dev": "node scripts/run-with-debug-log.mjs next dev",
-    "build": "node scripts/run-with-debug-log.mjs next build",
+    "build": "node scripts/run-with-debug-log.mjs next build --webpack",
     "start": "node scripts/run-with-debug-log.mjs next start",
-    "lint": "node scripts/run-with-debug-log.mjs eslint"
+    "lint": "node scripts/run-with-debug-log.mjs eslint",
+    "test:event-layout": "tsc src/lib/event-layout.ts src/lib/event-layout.test.ts --outDir /tmp/unplan-event-layout-tests --module commonjs --target es2022 --esModuleInterop --skipLibCheck && node --test /tmp/unplan-event-layout-tests/event-layout.test.js",
+    "test:event-visual-density": "tsc src/lib/event-visual-density.ts src/lib/event-visual-density.test.ts --outDir /tmp/unplan-event-visual-density-tests --module commonjs --target es2022 --esModuleInterop --skipLibCheck && node --test /tmp/unplan-event-visual-density-tests/event-visual-density.test.js",
+    "test:event-participants": "tsc src/lib/calendar-types.ts src/lib/event-participants.ts src/lib/event-participants.test.ts --outDir /tmp/unplan-event-participants-tests --module commonjs --target es2022 --esModuleInterop --skipLibCheck && node --test /tmp/unplan-event-participants-tests/event-participants.test.js",
+    "test:multi-event-selection": "tsc src/lib/calendar-types.ts src/lib/multi-event-selection.ts src/lib/multi-event-selection.test.ts --outDir /tmp/unplan-multi-event-selection-tests --module commonjs --target es2022 --esModuleInterop --skipLibCheck && NODE_PATH=./node_modules node --test /tmp/unplan-multi-event-selection-tests/multi-event-selection.test.js",
+    "test:calendar-utils": "tsc src/lib/calendar-types.ts src/lib/calendar-utils.ts src/lib/calendar-utils.test.ts --outDir /tmp/unplan-calendar-utils-tests --module commonjs --target es2022 --esModuleInterop --skipLibCheck && NODE_PATH=./node_modules node --test /tmp/unplan-calendar-utils-tests/calendar-utils.test.js",
+    "test:calendar-time-scale": "tsc src/lib/calendar-time-scale.ts src/lib/calendar-time-scale.test.ts --outDir /tmp/unplan-calendar-time-scale-tests --module commonjs --target es2022 --esModuleInterop --skipLibCheck && node --test /tmp/unplan-calendar-time-scale-tests/calendar-time-scale.test.js",
+    "test:mutation-queue": "tsc src/lib/mutation-queue.ts src/lib/mutation-queue.test.ts --outDir /tmp/unplan-mutation-queue-tests --module commonjs --target es2022 --esModuleInterop --skipLibCheck && node --test /tmp/unplan-mutation-queue-tests/mutation-queue.test.js",
+    "test:event-search": "tsc src/lib/calendar-types.ts src/lib/event-search.ts src/lib/event-search.test.ts --outDir /tmp/unplan-event-search-tests --module commonjs --target es2022 --esModuleInterop --skipLibCheck && node --test /tmp/unplan-event-search-tests/event-search.test.js",
+    "test:google-failures": "tsc src/lib/calendar-types.ts src/lib/google-source-id.ts src/lib/http-client.ts src/lib/google-browser-auth.ts src/lib/google-calendar-client.ts src/lib/google-calendar-client.test.ts src/lib/event-search-client.ts src/lib/event-search-client.test.ts src/lib/google-browser-auth.test.ts --outDir /tmp/unplan-google-failure-tests --module commonjs --target es2022 --esModuleInterop --skipLibCheck && NODE_PATH=./node_modules node --test /tmp/unplan-google-failure-tests/google-calendar-client.test.js /tmp/unplan-google-failure-tests/event-search-client.test.js /tmp/unplan-google-failure-tests/google-browser-auth.test.js",
+    "test:position-history": "tsc src/lib/calendar-position-history.ts src/lib/calendar-position-history.test.ts --outDir /tmp/unplan-position-history-tests --module commonjs --target es2022 --esModuleInterop --skipLibCheck && node --test /tmp/unplan-position-history-tests/calendar-position-history.test.js"
   },
   "dependencies": {
     "date-fns": "^4.4.0",
     "lucide-react": "^1.28.0",
-    "next": "16.2.12",
+    "next": "16.3.2",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "sonner": "^2.0.7",
@@ -24,7 +37,7 @@
     "@types/react-dom": "^19",
     "@types/tinycolor2": "^1.4.6",
     "eslint": "^9",
-    "eslint-config-next": "16.2.12",
+    "eslint-config-next": "16.3.2",
     "tailwindcss": "^4",
     "typescript": "^5"
   }

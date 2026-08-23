@@ -1,0 +1,89 @@
+"use client";
+
+import { CalendarRange, CopyPlus, Pencil, Trash2 } from "lucide-react";
+import * as React from "react";
+import type { BulkConfirmationRequest } from "@/hooks/use-bulk-confirmation";
+
+type BulkConfirmationDialogProps = {
+  onCancel: () => void;
+  onConfirm: () => void;
+  request: BulkConfirmationRequest | null;
+};
+
+const actionCopy = {
+  create: {
+    description: "New events will be added to Google Calendar. You can still undo before they are saved.",
+    Icon: CopyPlus,
+    label: "Create",
+  },
+  delete: {
+    description: "These events will be removed from Google Calendar. You can still undo before they are deleted.",
+    Icon: Trash2,
+    label: "Delete",
+  },
+  move: {
+    description: "All selected events will move together. You can still undo before the changes are saved.",
+    Icon: CalendarRange,
+    label: "Move",
+  },
+  update: {
+    description: "The shared changes will be applied to every selected event. You can still undo before they are saved.",
+    Icon: Pencil,
+    label: "Update",
+  },
+};
+
+export function BulkConfirmationDialog({
+  onCancel,
+  onConfirm,
+  request,
+}: BulkConfirmationDialogProps) {
+  React.useEffect(() => {
+    if (!request) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      event.stopPropagation();
+      onCancel();
+    };
+    document.addEventListener("keydown", handleKeyDown, true);
+    return () => document.removeEventListener("keydown", handleKeyDown, true);
+  }, [onCancel, request]);
+
+  if (!request) return null;
+  const copy = actionCopy[request.action];
+  const Icon = copy.Icon;
+  const title = `${copy.label} ${request.count} events?`;
+
+  return (
+    <div className="modal-backdrop confirmation-backdrop" onMouseDown={onCancel}>
+      <section
+        className="confirmation-modal bulk-confirmation-modal"
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="bulk-confirmation-title"
+        aria-describedby="bulk-confirmation-description"
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <div className="confirmation-header">
+          <div className={`confirmation-icon confirmation-icon-${request.action}`}>
+            <Icon size={21} strokeWidth={1.8} />
+          </div>
+          <div className="confirmation-copy">
+            <strong id="bulk-confirmation-title">{title}</strong>
+            <p id="bulk-confirmation-description">{copy.description}</p>
+          </div>
+        </div>
+        <div className="confirmation-actions">
+          <button className="confirmation-cancel" autoFocus onClick={onCancel}>Cancel</button>
+          <button
+            className={request.action === "delete" ? "confirmation-danger" : "confirmation-primary"}
+            onClick={onConfirm}
+          >
+            {copy.label} {request.count}
+          </button>
+        </div>
+      </section>
+    </div>
+  );
+}
