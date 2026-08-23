@@ -21,7 +21,7 @@ const applyTheme = (theme: Theme) => {
 };
 
 export function useTheme() {
-  const [theme, setThemeState] = React.useState<Theme>(readTheme);
+  const [theme, setThemeState] = React.useState<Theme>(DEFAULT_THEME);
 
   React.useEffect(() => {
     const updateTheme = () => {

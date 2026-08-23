@@ -7,7 +7,8 @@ const segment = (
   startMinute: number,
   endMinute: number,
   dayIndex = 0,
-): TimedEventSegment => ({ dayIndex, endMinute, key, startMinute });
+  sortOrder = 0,
+): TimedEventSegment => ({ dayIndex, endMinute, key, sortOrder, startMinute });
 
 test("events that meet at an edge remain full width", () => {
   const layouts = layoutTimedEventSegments([
@@ -24,7 +25,7 @@ test("events that meet at an edge remain full width", () => {
   assert.deepEqual(layouts.get("second"), layouts.get("first"));
 });
 
-test("equal overlapping events expose equal columns without shrinking the left event", () => {
+test("equal overlapping events split into equal-width columns", () => {
   const layouts = layoutTimedEventSegments([
     segment("first", 60, 120),
     segment("second", 75, 135),
@@ -33,7 +34,7 @@ test("equal overlapping events expose equal columns without shrinking the left e
   assert.deepEqual(layouts.get("first"), {
     left: 0,
     overlapping: true,
-    width: 1,
+    width: 0.5,
     zIndex: 0,
   });
   assert.deepEqual(layouts.get("second"), {
@@ -44,19 +45,29 @@ test("equal overlapping events expose equal columns without shrinking the left e
   });
 });
 
-test("equal stacked events all retain width through the right edge", () => {
+test("equal stacked events divide the available width evenly", () => {
   const layouts = layoutTimedEventSegments([
-    segment("left", 60, 120),
-    segment("middle", 60, 120),
-    segment("right", 60, 120),
+    segment("left", 60, 120, 0, 1),
+    segment("middle", 60, 120, 0, 2),
+    segment("right", 60, 120, 0, 3),
   ]);
 
   assert.equal(layouts.get("left")?.left, 0);
-  assert.equal(layouts.get("left")?.width, 1);
+  assert.equal(layouts.get("left")?.width, 1 / 3);
   assert.equal(layouts.get("middle")?.left, 1 / 3);
-  assert.equal(layouts.get("middle")?.width, 2 / 3);
+  assert.equal(layouts.get("middle")?.width, 1 / 3);
   assert.equal(layouts.get("right")?.left, 2 / 3);
   assert.equal(layouts.get("right")?.width, 1 / 3);
+});
+
+test("newer equal-duration events are placed farther right regardless of ID", () => {
+  const layouts = layoutTimedEventSegments([
+    segment("z-old", 60, 120, 0, 100),
+    segment("a-new", 60, 120, 0, 200),
+  ]);
+
+  assert.equal(layouts.get("z-old")?.left, 0);
+  assert.equal(layouts.get("a-new")?.left, 0.5);
 });
 
 test("a shorter event cascades over a longer event below its label", () => {

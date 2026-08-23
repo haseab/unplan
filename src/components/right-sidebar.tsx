@@ -1,0 +1,48 @@
+"use client";
+
+import { CalendarDays, ListTodo } from "lucide-react";
+import * as React from "react";
+
+export type RightSidebarTab = "events" | "todos";
+
+type RightSidebarProps = {
+  activeTab: RightSidebarTab;
+  children: React.ReactNode;
+  eventCount: number;
+  onTabChange: (tab: RightSidebarTab) => void;
+  todoCount: number;
+};
+
+export function RightSidebar({
+  activeTab,
+  children,
+  eventCount,
+  onTabChange,
+  todoCount,
+}: RightSidebarProps) {
+  return (
+    <aside className="right-sidebar" data-todo-drop-target="true" aria-label="Tasks and event details">
+      <div className="right-sidebar-tabs" role="tablist" aria-label="Right sidebar">
+        <button
+          className={activeTab === "todos" ? "right-sidebar-tab-active" : ""}
+          type="button"
+          role="tab"
+          aria-selected={activeTab === "todos"}
+          onClick={() => onTabChange("todos")}
+        >
+          <ListTodo size={15} /> Tasks <span>{todoCount}</span>
+        </button>
+        <button
+          className={activeTab === "events" ? "right-sidebar-tab-active" : ""}
+          type="button"
+          role="tab"
+          aria-selected={activeTab === "events"}
+          onClick={() => onTabChange("events")}
+        >
+          <CalendarDays size={15} /> Event {eventCount > 0 && <span>{eventCount}</span>}
+        </button>
+      </div>
+      <div className="right-sidebar-content" role="tabpanel">{children}</div>
+    </aside>
+  );
+}

@@ -333,7 +333,7 @@ export function EventCreationSidebar({
   const isShowingMultiSelection = selectedEvents.length > 1 && !draft;
 
   return (
-    <aside className="event-creation-sidebar" aria-label={isShowingSelection ? "Event details" : "Create event"}>
+    <div className="event-sidebar-panel" aria-label={isShowingSelection ? "Event details" : "Create event"}>
       <div className="event-creation-heading">
         <div>{isShowingSelection ? <CalendarDays size={17} /> : <CalendarPlus size={17} />}<span><strong>{isShowingMultiSelection ? `${selectedEvents.length} events` : isShowingSelection ? "Event details" : "New event"}</strong><small>{isShowingMultiSelection ? "Bulk edit selection" : isShowingSelection ? selectedCalendar?.name ?? "Edit event" : "Add it to your calendar"}</small></span></div>
         {(draft || isShowingSelection) && <button className="icon-button" onClick={draft ? onCancel : onClearSelection} aria-label={draft ? "Cancel event creation" : "Close event details"}><X size={16} /></button>}
@@ -368,6 +368,6 @@ export function EventCreationSidebar({
       ) : (
         <div className="event-creation-empty"><span><MousePointer2 size={19} /></span><strong>Select a time</strong><p>Drag across empty calendar space to choose when the event should happen.</p></div>
       )}
-    </aside>
+    </div>
   );
 }

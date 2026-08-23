@@ -2,6 +2,7 @@ export type TimedEventSegment = {
   dayIndex: number;
   endMinute: number;
   key: string;
+  sortOrder: number;
   startMinute: number;
 };
 
@@ -36,6 +37,7 @@ const sortLargestFirst = (
   second: TimedEventSegment,
 ) =>
   duration(second) - duration(first) ||
+  first.sortOrder - second.sortOrder ||
   first.startMinute - second.startMinute ||
   first.key.localeCompare(second.key);
 
@@ -93,7 +95,7 @@ const layoutAsColumns = (
     layouts.set(segment.key, {
       left: left + (lane / laneCount) * width,
       overlapping: laneCount > 1 || left > 0,
-      width: ((laneCount - lane) / laneCount) * width,
+      width: width / laneCount,
       zIndex: zIndex + lane,
     });
   });
@@ -164,11 +166,11 @@ const layoutConflictGroup = (
 /**
  * Produces Cron-style overlap geometry within each day. A uniquely longest
  * event stays full-width underneath shorter events, which cascade from a 5%
- * inset. Equal events expose equal columns while retaining their full width
- * behind the events to their right. Only the shorter row that collides
- * with the longest event's label moves to the right half. The same rule is
- * applied recursively, so every locally longest event keeps its full width
- * behind its shorter children.
+ * inset. Equal-duration conflicts use equal-width columns, ordered oldest to
+ * newest from left to right. Only the shorter row that collides with the
+ * longest event's label moves to the right half. The same rule is applied
+ * recursively, so every locally longest event keeps its full width behind its
+ * shorter children.
  */
 export const layoutTimedEventSegments = (segments: TimedEventSegment[]) => {
   const layouts = new Map<string, TimedEventLayout>();

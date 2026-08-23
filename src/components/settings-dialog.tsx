@@ -1,9 +1,13 @@
 "use client";
 
-import { Check, Command, Moon, Settings, Sun, X } from "lucide-react";
+import { Check, Eye, EyeOff, LoaderCircle, Moon, Settings, Sun, X } from "lucide-react";
+import * as React from "react";
+import { toast } from "sonner";
 import { useTheme } from "@/hooks/use-theme";
 import { useToastSettings } from "@/hooks/use-toast-settings";
 import type { CalendarSource } from "@/lib/calendar-types";
+import type { Theme } from "@/lib/theme";
+import type { TodoistProject, TodoistSection } from "@/lib/todoist";
 
 type SettingsDialogProps = {
   calendars: CalendarSource[];
@@ -11,6 +15,15 @@ type SettingsDialogProps = {
   onDefaultCalendarChange: (calendarId: string) => void;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  todoistConnected: boolean;
+  todoistToken: string;
+  onSaveTodoistToken: (token: string) => Promise<unknown>;
+  onDisconnectTodoist: () => void;
+  todoistProjects: TodoistProject[];
+  todoistSections: TodoistSection[];
+  todoistProjectId: string;
+  todoistSectionId: string;
+  onTodoistDestinationChange: (projectId: string, sectionId?: string) => void;
 };
 
 const durationChoices = [2000, 4000, 6000, 10000];
@@ -18,19 +31,90 @@ const durationChoices = [2000, 4000, 6000, 10000];
 const formatDuration = (duration: number) =>
   duration === 0 ? "Immediately" : `${(duration / 1000).toFixed(1)} seconds`;
 
+const showSettingsSaved = (message: string) =>
+  toast.success(message, { id: "settings-saved" });
+
 export function SettingsDialog({
   calendars,
   defaultCalendarId,
   onDefaultCalendarChange,
   open,
   onOpenChange,
+  todoistConnected,
+  todoistToken,
+  onSaveTodoistToken,
+  onDisconnectTodoist,
+  todoistProjects,
+  todoistSections,
+  todoistProjectId,
+  todoistSectionId,
+  onTodoistDestinationChange,
 }: SettingsDialogProps) {
   const { theme, setTheme } = useTheme();
   const { duration, setDuration } = useToastSettings();
+  const [todoistCandidate, setTodoistCandidate] = React.useState(todoistToken);
+  const [todoistEnabled, setTodoistEnabled] = React.useState(todoistConnected);
+  const [showTodoistToken, setShowTodoistToken] = React.useState(false);
+  const [savingTodoist, setSavingTodoist] = React.useState(false);
+  const availableTodoistSections = todoistSections.filter(
+    (section) => section.projectId === todoistProjectId,
+  );
+  const todoistDestinationName = todoistProjects.find(
+    (project) => project.id === todoistProjectId,
+  )?.name ?? "Inbox";
+
+  const toggleTodoist = () => {
+    if (!todoistEnabled) {
+      setTodoistEnabled(true);
+      return;
+    }
+
+    if (todoistConnected) {
+      onDisconnectTodoist();
+      showSettingsSaved("Todoist disconnected");
+    }
+    setTodoistCandidate("");
+    setShowTodoistToken(false);
+    setTodoistEnabled(false);
+  };
+
+  const saveTodoist = async () => {
+    setSavingTodoist(true);
+    try {
+      await onSaveTodoistToken(todoistCandidate);
+      showSettingsSaved(todoistConnected ? "Todoist token updated" : "Todoist connected");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Todoist could not be connected");
+    } finally {
+      setSavingTodoist(false);
+    }
+  };
+
+  const updateDefaultCalendar = (calendarId: string) => {
+    onDefaultCalendarChange(calendarId);
+    const calendarName = calendars.find((calendar) => calendar.id === calendarId)?.name;
+    showSettingsSaved(calendarName ? `${calendarName} set as the default calendar` : "Default calendar updated");
+  };
+
+  const updateTheme = (nextTheme: Theme) => {
+    if (nextTheme === theme) return;
+    setTheme(nextTheme);
+    showSettingsSaved(`${nextTheme === "dark" ? "Dark" : "Light"} appearance selected`);
+  };
+
+  const updateDuration = (nextDuration: number) => {
+    setDuration(nextDuration);
+    showSettingsSaved(`Undo window set to ${formatDuration(nextDuration).toLowerCase()}`);
+  };
+
+  const updateTodoistDestination = (projectId: string, sectionId?: string) => {
+    onTodoistDestinationChange(projectId, sectionId);
+    showSettingsSaved("Todoist destination updated");
+  };
   if (!open) return null;
 
   return (
-    <div className="modal-backdrop" onMouseDown={() => onOpenChange(false)}>
+    <div className="modal-backdrop confirmation-backdrop" onMouseDown={() => onOpenChange(false)}>
       <section
         className="settings-modal"
         role="dialog"
@@ -38,9 +122,9 @@ export function SettingsDialog({
         aria-labelledby="settings-title"
         onMouseDown={(event) => event.stopPropagation()}
       >
-        <div className="modal-heading">
-          <div>
-            <Settings size={18} />
+        <div className="modal-heading settings-heading">
+          <div className="settings-heading-copy">
+            <Settings className="settings-heading-icon" size={22} strokeWidth={1.8} aria-hidden="true" />
             <span>
               <strong id="settings-title">Settings</strong>
               <small>Shape how unplan responds to your actions.</small>
@@ -51,24 +135,23 @@ export function SettingsDialog({
             onClick={() => onOpenChange(false)}
             aria-label="Close settings"
           >
-            <X size={16} />
+            <X size={18} />
           </button>
         </div>
 
         <div className="settings-content">
-          <section className="settings-section">
+          <section className="settings-section settings-primary-section">
             <div className="settings-section-heading">
               <span>New events</span>
               <strong>{calendars.find((calendar) => calendar.id === defaultCalendarId)?.name ?? "Unavailable"}</strong>
             </div>
             <p>
-              Events created by dragging empty calendar space will use this
-              calendar by default.
+              Used when you create an event by dragging empty calendar space.
             </p>
             <select
               className="settings-calendar-select"
               value={defaultCalendarId ?? ""}
-              onChange={(event) => onDefaultCalendarChange(event.target.value)}
+              onChange={(event) => updateDefaultCalendar(event.target.value)}
               aria-label="Default calendar for new events"
               disabled={calendars.length === 0}
             >
@@ -78,19 +161,18 @@ export function SettingsDialog({
             </select>
           </section>
 
-          <section className="settings-section">
+          <section className="settings-section settings-primary-section">
             <div className="settings-section-heading">
               <span>Appearance</span>
               <strong>{theme === "dark" ? "Dark" : "Light"}</strong>
             </div>
             <p>
-              Dark mode is the default. Your choice is remembered on this
-              device.
+              Your choice is remembered on this device.
             </p>
             <div className="theme-choices" role="group" aria-label="Appearance">
               <button
                 className={theme === "dark" ? "theme-choice-active" : ""}
-                onClick={() => setTheme("dark")}
+                onClick={() => updateTheme("dark")}
                 aria-pressed={theme === "dark"}
               >
                 <Moon size={13} />
@@ -99,7 +181,7 @@ export function SettingsDialog({
               </button>
               <button
                 className={theme === "light" ? "theme-choice-active" : ""}
-                onClick={() => setTheme("light")}
+                onClick={() => updateTheme("light")}
                 aria-pressed={theme === "light"}
               >
                 <Sun size={13} />
@@ -109,14 +191,13 @@ export function SettingsDialog({
             </div>
           </section>
 
-          <section className="settings-section">
+          <section className="settings-section settings-primary-section">
             <div className="settings-section-heading">
               <span>Undo window</span>
               <strong>{formatDuration(duration)}</strong>
             </div>
             <p>
-              Google changes wait until this window ends. Undo cancels the
-              request; submit sends it immediately.
+              Delay Google changes briefly so you have time to undo them.
             </p>
             <input
               className="duration-slider"
@@ -126,6 +207,8 @@ export function SettingsDialog({
               step="500"
               value={duration}
               onChange={(event) => setDuration(Number(event.target.value))}
+              onPointerUp={(event) => updateDuration(Number(event.currentTarget.value))}
+              onKeyUp={(event) => updateDuration(Number(event.currentTarget.value))}
               aria-label="Undo toast duration"
             />
             <div className="duration-labels">
@@ -137,7 +220,7 @@ export function SettingsDialog({
                 <button
                   key={choice}
                   className={duration === choice ? "duration-choice-active" : ""}
-                  onClick={() => setDuration(choice)}
+                  onClick={() => updateDuration(choice)}
                 >
                   {duration === choice && <Check size={11} />}
                   {choice / 1000}s
@@ -146,14 +229,78 @@ export function SettingsDialog({
             </div>
           </section>
 
-          <section className="settings-section settings-shortcuts">
+          <section className="settings-section settings-todoist-card">
             <div className="settings-section-heading">
-              <span>Action shortcuts</span>
-              <Command size={14} />
+              <div className="settings-integration-title">
+                <span className="settings-todoist-mark" aria-hidden="true">
+                  <Check size={16} strokeWidth={3} />
+                </span>
+                <span>
+                  <strong>Todoist</strong>
+                  <small>Tasks integration</small>
+                </span>
+              </div>
+              <button
+                className="settings-switch"
+                type="button"
+                role="switch"
+                aria-label="Enable Todoist"
+                aria-checked={todoistEnabled}
+                onClick={toggleTodoist}
+              >
+                <span />
+              </button>
             </div>
-            <div><span>Undo the latest pending action</span><kbd>⌘ Z</kbd></div>
-            <div><span>Submit the latest action now</span><kbd>⌘ ↵</kbd></div>
-            <div><span>Open Settings</span><kbd>⌘ ⇧ ,</kbd></div>
+            <p>Sync Todoist tasks with your calendar.</p>
+            {todoistEnabled && (
+              <div className="settings-secret-connection">
+                <div className="settings-secret-field">
+                  <input
+                    aria-label="Todoist API token"
+                    type={showTodoistToken ? "text" : "password"}
+                    value={todoistCandidate}
+                    onChange={(event) => setTodoistCandidate(event.target.value)}
+                    placeholder="Paste your Todoist API token"
+                    autoFocus={!todoistConnected}
+                  />
+                  <button type="button" onClick={() => setShowTodoistToken((current) => !current)} aria-label={showTodoistToken ? "Hide Todoist token" : "Show Todoist token"}>
+                    {showTodoistToken ? <EyeOff size={14} /> : <Eye size={14} />}
+                  </button>
+                </div>
+                <button className="settings-secret-save" type="button" disabled={!todoistCandidate.trim() || savingTodoist} onClick={() => void saveTodoist()}>
+                  {savingTodoist ? <LoaderCircle className="spin" size={13} /> : <Check size={13} />}
+                  {savingTodoist ? "Checking…" : todoistConnected ? "Update" : "Connect"}
+                </button>
+              </div>
+            )}
+            {todoistConnected && todoistProjects.length > 0 && (
+              <div className="settings-todoist-destination">
+                <div className="settings-subsection-heading">
+                  <span>Default destination</span>
+                  <strong>{todoistDestinationName}</strong>
+                </div>
+                <p>New tasks and calendar-to-task drags will be added here.</p>
+                <div>
+                  <label>
+                    <span>Project</span>
+                    <select aria-label="Default Todoist project" value={todoistProjectId} onChange={(event) => updateTodoistDestination(event.target.value)}>
+                      {todoistProjects.map((project) => (
+                        <option key={project.id} value={project.id}>{project.inbox ? "Inbox" : project.name}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    <span>Section</span>
+                    <select aria-label="Default Todoist section" value={todoistSectionId} onChange={(event) => updateTodoistDestination(todoistProjectId, event.target.value)} disabled={availableTodoistSections.length === 0}>
+                      <option value="">No section</option>
+                      {availableTodoistSections.map((section) => (
+                        <option key={section.id} value={section.id}>{section.name}</option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+              </div>
+            )}
           </section>
         </div>
       </section>

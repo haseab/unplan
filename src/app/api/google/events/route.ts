@@ -16,6 +16,7 @@ import { NextRequest } from "next/server";
 
 type GoogleEvent = {
   id: string;
+  created?: string;
   summary?: string;
   start: { dateTime?: string; date?: string; timeZone?: string };
   end: { dateTime?: string; date?: string; timeZone?: string };
@@ -167,6 +168,7 @@ const mapGoogleEvent = (
     title: event.summary || "Untitled event",
     start: event.start.dateTime ?? event.start.date!,
     end: event.end.dateTime ?? event.end.date!,
+    createdAt: event.created,
     allDay: Boolean(event.start.date),
     calendarColor,
     color: eventColor?.background ?? calendarColor,

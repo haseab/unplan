@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { Toaster } from "sonner";
 import { BrowserConsoleLogger } from "@/components/browser-console-logger";
+import { InlineScript } from "@/components/inline-script";
 import { DEFAULT_THEME, THEME_BOOTSTRAP_SCRIPT } from "@/lib/theme";
 import "./globals.css";
 
@@ -33,7 +34,7 @@ export default function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <head>
-        <script dangerouslySetInnerHTML={{ __html: THEME_BOOTSTRAP_SCRIPT }} />
+        <InlineScript html={THEME_BOOTSTRAP_SCRIPT} />
       </head>
       <body>
         {process.env.NODE_ENV === "development" && <BrowserConsoleLogger />}
