@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  eventTimeLabelKind,
+  eventContentLayout,
   eventVisualDensity,
 } from "./event-visual-density";
 
@@ -14,9 +14,22 @@ test("event content progressively adapts to its rendered height", () => {
   assert.equal(eventVisualDensity(58), "details");
 });
 
-test("event time labels leave two-line cards entirely to the title", () => {
-  assert.equal(eventTimeLabelKind("bar"), "none");
-  assert.equal(eventTimeLabelKind("title"), "start");
-  assert.equal(eventTimeLabelKind("time"), "none");
-  assert.equal(eventTimeLabelKind("details"), "range");
+test("event content uses remaining vertical lines for supplemental details", () => {
+  assert.deepEqual(eventContentLayout(7, 1, true), {
+    density: "bar",
+    showLocation: false,
+    timeLabelKind: "none",
+  });
+  assert.deepEqual(eventContentLayout(24, 1, true), {
+    density: "title",
+    showLocation: false,
+    timeLabelKind: "start",
+  });
+  assert.equal(eventContentLayout(39, 2, false).timeLabelKind, "none");
+  assert.equal(eventContentLayout(39, 1, false).timeLabelKind, "range");
+  assert.deepEqual(eventContentLayout(58, 2, true), {
+    density: "details",
+    showLocation: true,
+    timeLabelKind: "range",
+  });
 });

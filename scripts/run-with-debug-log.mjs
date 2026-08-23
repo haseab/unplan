@@ -1,6 +1,6 @@
 import { createWriteStream } from "node:fs";
 import { spawn } from "node:child_process";
-import { resolve } from "node:path";
+import { prepareDebugLog } from "./debug-log-path.mjs";
 
 const [command, ...args] = process.argv.slice(2);
 
@@ -9,7 +9,7 @@ if (!command) {
   process.exit(1);
 }
 
-const logPath = resolve(process.cwd(), "debug.log");
+const { logPath } = await prepareDebugLog();
 const log = createWriteStream(logPath, { flags: "a" });
 const commandFlag = command.replace(/[^a-z0-9_-]/gi, "-").toUpperCase();
 const heading = `\n[${new Date().toISOString()}] [PROCESS] [INFO] [COMMAND:${commandFlag}] $ ${[command, ...args].join(" ")}\n`;

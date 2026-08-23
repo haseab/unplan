@@ -1,4 +1,5 @@
 import { appendFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { NextRequest } from "next/server";
 
@@ -6,7 +7,8 @@ export const runtime = "nodejs";
 
 const allowedLevels = new Set(["log", "info", "warn", "error", "debug"]);
 const validFlag = /^[A-Z0-9][A-Z0-9:_-]{1,63}$/;
-const debugLogPath = join(process.cwd(), "debug.log");
+const debugLogPath =
+  process.env.UNPLAN_DEBUG_LOG_PATH ?? join(tmpdir(), "unplan-debug.log");
 
 export async function POST(request: NextRequest) {
   if (process.env.NODE_ENV !== "development") {

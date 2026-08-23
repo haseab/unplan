@@ -38,6 +38,7 @@ import {
   ConnectedAccountsMenu,
 } from "@/components/connected-accounts-menu";
 import { DayCountPicker } from "@/components/day-count-picker";
+import { CalendarEventContent } from "@/components/calendar-event-content";
 import {
   EventCreationSidebar,
   type EventCreationDraft,
@@ -94,10 +95,7 @@ import {
   type MarqueeHitRegion,
 } from "@/lib/marquee-selection";
 import { runMutationBatch } from "@/lib/event-mutation-batch";
-import {
-  eventTimeLabelKind,
-  eventVisualDensity,
-} from "@/lib/event-visual-density";
+import { eventVisualDensity } from "@/lib/event-visual-density";
 import {
   buildEventDeletionPlan,
   type RecurringDeleteScope,
@@ -127,7 +125,6 @@ import {
   eventGeometry,
   eventSegmentGeometries,
   eventTimesMatch,
-  formatEventStartTime,
   formatEventTime,
   getWeekDays,
   moveEvent,
@@ -169,6 +166,7 @@ type GoogleStatus = {
 };
 
 type DragSession = {
+  hasDragged: boolean;
   ids: string[];
   originals: CalendarEvent[];
   startX: number;
@@ -184,6 +182,12 @@ type ResizeSession = {
   edge: "start" | "end";
   minuteDelta: number;
   original: CalendarEvent;
+  startY: number;
+};
+
+type EventSelectionSession = {
+  eventId: string;
+  startX: number;
   startY: number;
 };
 
@@ -205,6 +209,7 @@ type ActiveEventCreation = EventCreationSession & {
 
 const hours = Array.from({ length: 24 }, (_, index) => index);
 const DEFAULT_CALENDAR_STORAGE_KEY = "unplan:default-event-calendar";
+const EVENT_DRAG_THRESHOLD = 5;
 const EVENT_CREATION_DRAG_THRESHOLD = 5;
 const CROSS_SERVICE_DRAG_THRESHOLD = 12;
 const EVENT_SEARCH_CACHE_TTL_MS = 5 * 60 * 1000;
@@ -333,6 +338,7 @@ export function CalendarApp() {
   const visibleRef = React.useRef(visibleCalendars);
   const dragRef = React.useRef<DragSession | null>(null);
   const todoDropActiveRef = React.useRef(false);
+  const eventSelectionRef = React.useRef<EventSelectionSession | null>(null);
   const resizeRef = React.useRef<ResizeSession | null>(null);
   const marqueeRef = React.useRef<Marquee | null>(null);
   const creationRef = React.useRef<ActiveEventCreation | null>(null);
@@ -915,6 +921,15 @@ export function CalendarApp() {
 
   React.useEffect(() => {
     const handlePointerMove = (pointer: PointerEvent) => {
+      if (eventSelectionRef.current) {
+        const selection = eventSelectionRef.current;
+        const distance = Math.hypot(
+          pointer.clientX - selection.startX,
+          pointer.clientY - selection.startY,
+        );
+        if (distance >= EVENT_DRAG_THRESHOLD) eventSelectionRef.current = null;
+      }
+
       if (resizeRef.current) {
         const resize = resizeRef.current;
         resize.minuteDelta = snapMinutes(
@@ -934,6 +949,14 @@ export function CalendarApp() {
 
       if (dragRef.current) {
         const drag = dragRef.current;
+        if (!drag.hasDragged) {
+          const distance = Math.hypot(
+            pointer.clientX - drag.startX,
+            pointer.clientY - drag.startY,
+          );
+          if (distance < EVENT_DRAG_THRESHOLD) return;
+          drag.hasDragged = true;
+        }
         const todoTarget = document.querySelector<HTMLElement>("[data-todo-drop-target='true']");
         const todoRect = todoTarget?.getBoundingClientRect();
         const todoistCandidates = partitionCalendarEventsForTodoist(
@@ -1035,6 +1058,16 @@ export function CalendarApp() {
     };
 
     const handlePointerUp = (pointer: PointerEvent) => {
+      if (eventSelectionRef.current) {
+        const { eventId } = eventSelectionRef.current;
+        eventSelectionRef.current = null;
+        setSelected((current) => {
+          const next = new Set(current);
+          if (next.has(eventId)) next.delete(eventId);
+          else next.add(eventId);
+          return next;
+        });
+      }
       if (creationRef.current) {
         const creation = creationRef.current;
         creationRef.current = null;
@@ -1107,7 +1140,11 @@ export function CalendarApp() {
         todoTarget?.removeAttribute("data-drag-over");
         todoTarget?.removeAttribute("data-drag-blocked");
         todoDropActiveRef.current = false;
-        if (droppedOnTodoist) {
+        if (!drag.hasDragged) {
+          setSelected((current) =>
+            current.has(drag.ids[0]) ? current : new Set([drag.ids[0]]),
+          );
+        } else if (droppedOnTodoist) {
           setEvents((current) => restoreEventSnapshots(current, drag.originals));
           setRightSidebarTab("todos");
           const todoistCandidates = partitionCalendarEventsForTodoist(
@@ -1222,16 +1259,14 @@ export function CalendarApp() {
     setCreationDraft(null);
     selectionAnchorRef.current = calendarEventKey(event.calendarId, event.id);
     if (pointer.shiftKey || pointer.metaKey || pointer.ctrlKey) {
-      setSelected((current) => {
-        const next = new Set(current);
-        if (next.has(event.id)) next.delete(event.id);
-        else next.add(event.id);
-        return next;
-      });
+      eventSelectionRef.current = {
+        eventId: event.id,
+        startX: pointer.clientX,
+        startY: pointer.clientY,
+      };
       return;
     }
     const ids = selected.has(event.id) ? [...selected] : [event.id];
-    if (!selected.has(event.id)) setSelected(new Set([event.id]));
     const originals = eventsRef.current.filter((item) => ids.includes(item.id));
     const originalDayIndexes = originals.flatMap((item) => {
       const segments = eventSegmentGeometries(
@@ -1246,6 +1281,7 @@ export function CalendarApp() {
     });
     const gridWidth = gridRef.current?.getBoundingClientRect().width ?? 700;
     dragRef.current = {
+      hasDragged: false,
       ids,
       originals,
       startX: pointer.clientX,
@@ -2370,11 +2406,8 @@ export function CalendarApp() {
               const width = layout.width * dayWidth;
               const renderedHeight = Math.max(geometry.height - 2, 0);
               const visualDensity = eventVisualDensity(renderedHeight);
-              const timeLabelKind = eventTimeLabelKind(visualDensity);
               const isCompact = renderedHeight < 24;
               const isCondensed = visualDensity === "time";
-              const showsTitle = visualDensity !== "bar";
-              const showsDetails = visualDensity === "details";
               return (
                   <button
                     key={key}
@@ -2401,19 +2434,11 @@ export function CalendarApp() {
                     data-past={isEventPast(event, now)}
                   >
                     {geometry.isStart && <span className="event-resize-handle event-resize-start" onPointerDown={(pointer) => beginEventResize(pointer, event, "start")} aria-label={`Adjust start of ${event.title}`} />}
-                    {showsTitle && (
-                      <span className="event-primary-line">
-                        <strong>{event.title}</strong>
-                        {timeLabelKind !== "none" && (
-                          <span className="event-time">
-                            {timeLabelKind === "range"
-                              ? formatEventTime(event)
-                              : formatEventStartTime(event)}
-                          </span>
-                        )}
-                      </span>
-                    )}
-                    {showsDetails && event.location && <small>{event.location}</small>}
+                    <CalendarEventContent
+                      density={visualDensity}
+                      event={event}
+                      renderedHeight={renderedHeight}
+                    />
                     {geometry.isEnd && <span className="event-resize-handle event-resize-end" onPointerDown={(pointer) => beginEventResize(pointer, event, "end")} aria-label={`Adjust end of ${event.title}`} />}
                   </button>
               );
