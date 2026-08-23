@@ -5,6 +5,7 @@ import {
   eventGeometry,
   eventSegmentGeometries,
   eventTimesMatch,
+  formatEventStartTime,
   resizeEvent,
 } from "./calendar-utils";
 
@@ -20,6 +21,11 @@ const event: CalendarEvent = {
   color: "#000000",
   provider: "demo",
 };
+
+test("compact event card time shows only the start time without meridiem", () => {
+  assert.equal(formatEventStartTime(event), "10:00");
+  assert.equal(formatEventStartTime({ ...event, allDay: true }), "All day");
+});
 
 test("dragging the start past the end flips the resized interval", () => {
   const resized = resizeEvent(event, "start", 90);

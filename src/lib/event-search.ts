@@ -29,6 +29,31 @@ export const sortPastEvents = (
       new Date(second.start).getTime() - new Date(first.start).getTime(),
   );
 
+export const sortEventSearchResults = (
+  events: CalendarEvent[],
+  now: Date,
+) => events.sort((first, second) => {
+  const firstStart = new Date(first.start).getTime();
+  const secondStart = new Date(second.start).getTime();
+  const firstIsPast = new Date(first.end).getTime() <= now.getTime();
+  const secondIsPast = new Date(second.end).getTime() <= now.getTime();
+  if (firstIsPast !== secondIsPast) return firstIsPast ? 1 : -1;
+  return firstIsPast ? secondStart - firstStart : firstStart - secondStart;
+});
+
+export const searchLoadedEvents = (
+  events: CalendarEvent[],
+  query: string,
+  now: Date,
+) => {
+  const normalizedQuery = normalizeSearchQuery(query);
+  if (!normalizedQuery) return [];
+  return sortEventSearchResults(
+    events.filter((event) => searchableEventText(event).includes(normalizedQuery)),
+    now,
+  );
+};
+
 export const searchLoadedPastEvents = (
   events: CalendarEvent[],
   query: string,
@@ -51,4 +76,15 @@ export const mergeEventSearchResults = (
     unique.set(`${event.calendarId}:${event.id}`, event);
   });
   return sortPastEvents([...unique.values()], now);
+};
+
+export const mergeCalendarSearchResults = (
+  resultGroups: CalendarEvent[][],
+  now: Date,
+) => {
+  const unique = new Map<string, CalendarEvent>();
+  resultGroups.flat().forEach((event) => {
+    unique.set(`${event.calendarId}:${event.id}`, event);
+  });
+  return sortEventSearchResults([...unique.values()], now);
 };

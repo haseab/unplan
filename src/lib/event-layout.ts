@@ -101,14 +101,6 @@ const layoutAsColumns = (
   });
 };
 
-const canUseDominantBase = (
-  dominant: TimedEventSegment,
-  otherSegments: TimedEventSegment[],
-) => otherSegments.every((segment) =>
-    segmentsOverlap(dominant, segment) &&
-    segment.startMinute >= dominant.startMinute,
-  );
-
 const layoutConflictGroup = (
   segments: TimedEventSegment[],
   layouts: Map<string, TimedEventLayout>,
@@ -132,7 +124,7 @@ const layoutConflictGroup = (
   const secondaries = largestFirst.slice(1);
   const hasUniqueDominant = duration(dominant) > duration(secondaries[0]);
 
-  if (!hasUniqueDominant || !canUseDominantBase(dominant, secondaries)) {
+  if (!hasUniqueDominant) {
     layoutAsColumns(segments, layouts, left, width, zIndex);
     return;
   }

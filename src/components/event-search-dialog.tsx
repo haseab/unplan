@@ -145,19 +145,17 @@ export function EventSearchDialog({
       onOpenChange(false);
       return;
     }
-    if (event.key === "ArrowDown" && results.length) {
+    if (
+      ["ArrowDown", "ArrowLeft", "ArrowRight", "ArrowUp"].includes(event.key)
+      && results.length
+    ) {
       event.preventDefault();
+      const delta = event.key === "ArrowDown" || event.key === "ArrowRight"
+        ? 1
+        : -1;
       setActiveIndex((current) => {
-        const nextIndex = Math.min(current + 1, results.length - 1);
-        activeResultKeyRef.current = resultKey(results[nextIndex]);
-        return nextIndex;
-      });
-      return;
-    }
-    if (event.key === "ArrowUp" && results.length) {
-      event.preventDefault();
-      setActiveIndex((current) => {
-        const nextIndex = Math.max(current - 1, 0);
+        const startIndex = current >= 0 ? current : delta > 0 ? -1 : 0;
+        const nextIndex = (startIndex + delta + results.length) % results.length;
         activeResultKeyRef.current = resultKey(results[nextIndex]);
         return nextIndex;
       });
@@ -185,13 +183,13 @@ export function EventSearchDialog({
   };
 
   const prompt = query.trim().length < MINIMUM_QUERY_LENGTH
-    ? "Type at least two characters to search your event history."
+    ? "Type at least two characters to search events."
     : status === "loading" && results.length === 0
       ? "Searching past events…"
       : status === "error"
         ? error
         : results.length === 0
-          ? `No past events found for “${query.trim()}”.`
+          ? `No events found for “${query.trim()}”.`
           : "";
 
   return (
@@ -208,7 +206,7 @@ export function EventSearchDialog({
         <div className="event-search-heading">
           <Search size={18} aria-hidden="true" />
           <label id="event-search-title" htmlFor="event-search-input">
-            Search past events
+            Search events
           </label>
           <button
             className="icon-button"
@@ -226,7 +224,7 @@ export function EventSearchDialog({
             type="search"
             value={query}
             onChange={(event) => updateQuery(event.target.value)}
-            placeholder="Search titles, locations, or guests…"
+            placeholder="Find titles, locations, or guests…"
             autoComplete="off"
             role="combobox"
             aria-autocomplete="list"
@@ -278,7 +276,7 @@ export function EventSearchDialog({
         </div>
 
         <div className="event-search-footer">
-          <span><kbd>↑</kbd><kbd>↓</kbd> Navigate</span>
+          <span><kbd>←</kbd><kbd>→</kbd> Cycle</span>
           <span><kbd>↵</kbd> Open</span>
           <span><kbd>Esc</kbd> Close</span>
         </div>

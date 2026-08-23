@@ -38,6 +38,11 @@ export const formatEventTime = (event: CalendarEvent) => {
   )}`;
 };
 
+export const formatEventStartTime = (event: CalendarEvent) => {
+  if (event.allDay) return "All day";
+  return format(parseISO(event.start), "h:mm");
+};
+
 export const eventGeometry = (
   event: CalendarEvent,
   weekStart: Date,

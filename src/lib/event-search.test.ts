@@ -2,8 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { CalendarEvent } from "./calendar-types";
 import {
+  mergeCalendarSearchResults,
   mergeEventSearchResults,
   providerEventSearchQuery,
+  searchLoadedEvents,
   searchLoadedPastEvents,
 } from "./event-search";
 
@@ -92,5 +94,26 @@ test("exact substring matching narrows monotonically as the query grows", () => 
     searchLoadedPastEvents([callMother, callMom], "call mom", now)
       .map(({ id }) => id),
     ["call-mom"],
+  );
+});
+
+test("calendar search includes loaded future events before recent history", () => {
+  assert.deepEqual(
+    searchLoadedEvents(
+      [olderPlanning, futurePlanning, planning],
+      "planning",
+      now,
+    ).map(({ id }) => id),
+    ["future-planning", "planning", "older-planning"],
+  );
+});
+
+test("calendar search merges visible and historical matches without duplicates", () => {
+  assert.deepEqual(
+    mergeCalendarSearchResults(
+      [[futurePlanning, planning], [planning, olderPlanning]],
+      now,
+    ).map(({ id }) => id),
+    ["future-planning", "planning", "older-planning"],
   );
 });

@@ -94,18 +94,27 @@ import {
   type MarqueeHitRegion,
 } from "@/lib/marquee-selection";
 import { runMutationBatch } from "@/lib/event-mutation-batch";
-import { eventVisualDensity } from "@/lib/event-visual-density";
+import {
+  eventTimeLabelKind,
+  eventVisualDensity,
+} from "@/lib/event-visual-density";
 import {
   buildEventDeletionPlan,
   type RecurringDeleteScope,
 } from "@/lib/recurring-delete";
 import { searchGooglePastEvents } from "@/lib/event-search-client";
 import {
-  mergeEventSearchResults,
+  mergeCalendarSearchResults,
   providerEventSearchQuery,
+  searchLoadedEvents,
   searchLoadedPastEvents,
 } from "@/lib/event-search";
 import { isEventUnaccepted } from "@/lib/event-participants";
+import {
+  findDirectionalEventKey,
+  type EventNavigationDirection,
+  type EventNavigationRect,
+} from "@/lib/event-keyboard-navigation";
 import {
   CALENDAR_TIME_SCALE_STORAGE_KEY,
   calendarGridLineDensity,
@@ -118,6 +127,7 @@ import {
   eventGeometry,
   eventSegmentGeometries,
   eventTimesMatch,
+  formatEventStartTime,
   formatEventTime,
   getWeekDays,
   moveEvent,
@@ -198,6 +208,8 @@ const DEFAULT_CALENDAR_STORAGE_KEY = "unplan:default-event-calendar";
 const EVENT_CREATION_DRAG_THRESHOLD = 5;
 const CROSS_SERVICE_DRAG_THRESHOLD = 12;
 const EVENT_SEARCH_CACHE_TTL_MS = 5 * 60 * 1000;
+const calendarEventKey = (calendarId: string, eventId: string) =>
+  `${calendarId}:${eventId}`;
 
 const navigationDirection = (
   target: Date,
@@ -325,6 +337,7 @@ export function CalendarApp() {
   const marqueeRef = React.useRef<Marquee | null>(null);
   const creationRef = React.useRef<ActiveEventCreation | null>(null);
   const clipboardRef = React.useRef<CalendarEvent[]>([]);
+  const selectionAnchorRef = React.useRef<string | null>(null);
   const eventSearchCacheRef = React.useRef<Map<string, EventSearchCacheEntry>>(
     new Map(),
   );
@@ -420,6 +433,7 @@ export function CalendarApp() {
   }, []);
 
   const clearEventSelection = React.useCallback(() => {
+    selectionAnchorRef.current = null;
     setSelected(new Set());
     const activeElement = document.activeElement;
     if (
@@ -702,7 +716,7 @@ export function CalendarApp() {
       onPartialResults: (results: CalendarEvent[]) => void,
     ) => {
       const searchedAt = new Date();
-      const loadedResults = searchLoadedPastEvents(
+      const loadedResults = searchLoadedEvents(
         eventsRef.current,
         query,
         searchedAt,
@@ -758,7 +772,7 @@ export function CalendarApp() {
         ? searchLoadedPastEvents(cacheEntry.events, query, searchedAt)
         : [];
       let exactResults: CalendarEvent[] = [];
-      const reportResults = () => onPartialResults(mergeEventSearchResults(
+      const reportResults = () => onPartialResults(mergeCalendarSearchResults(
         [loadedResults, exactResults, broadResults],
         searchedAt,
       ));
@@ -792,7 +806,7 @@ export function CalendarApp() {
       ) {
         throw exactOutcome.reason;
       }
-      return mergeEventSearchResults(
+      return mergeCalendarSearchResults(
         [loadedResults, exactResults, broadResults],
         searchedAt,
       );
@@ -816,6 +830,7 @@ export function CalendarApp() {
       ),
       event,
     ]);
+    selectionAnchorRef.current = calendarEventKey(event.calendarId, event.id);
     setSelected(new Set([event.id]));
     setWeekStart(targetDate);
   }, [setEventSearchOpen, weekStart]);
@@ -887,7 +902,6 @@ export function CalendarApp() {
           event.id === resize.original.id ? resize.original : event,
         ),
       );
-      setSelected(new Set());
       return true;
     }
 
@@ -1206,6 +1220,7 @@ export function CalendarApp() {
     pointer.stopPropagation();
     setRightSidebarTab("events");
     setCreationDraft(null);
+    selectionAnchorRef.current = calendarEventKey(event.calendarId, event.id);
     if (pointer.shiftKey || pointer.metaKey || pointer.ctrlKey) {
       setSelected((current) => {
         const next = new Set(current);
@@ -1252,6 +1267,7 @@ export function CalendarApp() {
     pointer.preventDefault();
     pointer.stopPropagation();
     setCreationDraft(null);
+    selectionAnchorRef.current = calendarEventKey(event.calendarId, event.id);
     if (!selected.has(event.id)) setSelected(new Set([event.id]));
     resizeRef.current = {
       edge,
@@ -1516,6 +1532,74 @@ export function CalendarApp() {
     toast(`Copied ${source.length === 1 ? source[0].title : `${source.length} events`}`);
   }, [selected]);
 
+  const renderedEventElements = React.useCallback(() => [
+    ...document.querySelectorAll<HTMLElement>(
+      ".calendar-event[data-event-key], .all-day-event[data-event-key]",
+    ),
+  ].filter((element) => element.getClientRects().length > 0), []);
+
+  const focusRenderedEvent = React.useCallback((eventKey: string) => {
+    const element = renderedEventElements().find(
+      (candidate) => candidate.dataset.eventKey === eventKey,
+    );
+    if (!element) return false;
+    element.focus({ preventScroll: true });
+    element.scrollIntoView({
+      behavior: "smooth",
+      block: "nearest",
+      inline: "nearest",
+    });
+    return true;
+  }, [renderedEventElements]);
+
+  const navigateBetweenEvents = React.useCallback((
+    direction: EventNavigationDirection,
+    origin: EventTarget | null,
+  ) => {
+    const elements = renderedEventElements();
+    const originElement = origin instanceof Element
+      ? origin.closest<HTMLElement>(".calendar-event, .all-day-event")
+      : null;
+    const anchorKey = originElement?.dataset.eventKey
+      ?? selectionAnchorRef.current;
+    const anchorElement = originElement ?? elements.find(
+      (element) => element.dataset.eventKey === anchorKey,
+    );
+    if (!anchorElement || !anchorKey) return false;
+
+    const asNavigationRect = (element: HTMLElement): EventNavigationRect => {
+      const rect = element.getBoundingClientRect();
+      return {
+        bottom: rect.bottom,
+        eventKey: element.dataset.eventKey ?? "",
+        left: rect.left,
+        right: rect.right,
+        top: rect.top,
+      };
+    };
+    const nextKey = findDirectionalEventKey(
+      asNavigationRect(anchorElement),
+      elements.map(asNavigationRect),
+      direction,
+    );
+    if (!nextKey) return false;
+    const nextElement = elements.find(
+      (element) => element.dataset.eventKey === nextKey,
+    );
+    if (!nextElement?.dataset.calendarEventId) return false;
+
+    selectionAnchorRef.current = nextKey;
+    setCreationDraft(null);
+    setSelected(new Set([nextElement.dataset.calendarEventId]));
+    nextElement.focus({ preventScroll: true });
+    nextElement.scrollIntoView({
+      behavior: "smooth",
+      block: "nearest",
+      inline: "nearest",
+    });
+    return true;
+  }, [renderedEventElements]);
+
   // Pending action toasts get first refusal on their shortcuts. If there is no
   // matching action, native editor/browser behavior remains untouched.
   React.useEffect(() => {
@@ -1588,25 +1672,71 @@ export function CalendarApp() {
 
   React.useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && (showEventSearch || showShortcuts || showSettings)) {
+        event.preventDefault();
+        setEventSearchOpen(false);
+        setShowShortcuts(false);
+        setShowSettings(false);
+        return;
+      }
       if (event.key === "Escape" && creationDraft) {
         event.preventDefault();
         setCreationDraft(null);
-        clearEventSelection();
         return;
+      }
+      if (
+        event.key === "Escape"
+        && selected.size
+        && event.target instanceof Element
+        && event.target.closest(".event-creation-sidebar")
+      ) {
+        const anchorKey = selectionAnchorRef.current;
+        if (anchorKey && focusRenderedEvent(anchorKey)) {
+          event.preventDefault();
+          event.stopPropagation();
+          return;
+        }
       }
       const modifier = event.metaKey || event.ctrlKey;
       if (
         modifier
         && !event.shiftKey
         && !event.altKey
-        && event.key.toLowerCase() === "k"
+        && ["f", "k"].includes(event.key.toLowerCase())
       ) {
         event.preventDefault();
         openEventSearch();
         return;
       }
       if (isEditableTarget(event.target)) return;
-      if (modifier && event.key.toLowerCase() === "d") {
+      if (
+        event.altKey
+        && !modifier
+        && (event.key === "ArrowLeft" || event.key === "ArrowRight")
+      ) {
+        event.preventDefault();
+        setWeekStart((current) => addDays(
+          current,
+          event.key === "ArrowLeft" ? -1 : 1,
+        ));
+      } else if (
+        modifier
+        && !event.altKey
+        && (event.key === "ArrowLeft" || event.key === "ArrowRight")
+      ) {
+        event.preventDefault();
+        setWeekStart((current) => addDays(
+          current,
+          event.key === "ArrowLeft" ? -dayCount : dayCount,
+        ));
+      } else if (
+        !modifier
+        && !event.altKey
+        && ["ArrowDown", "ArrowLeft", "ArrowRight", "ArrowUp"].includes(event.key)
+      ) {
+        const direction = event.key.slice(5).toLowerCase() as EventNavigationDirection;
+        if (navigateBetweenEvents(direction, event.target)) event.preventDefault();
+      } else if (modifier && event.key.toLowerCase() === "d") {
         event.preventDefault();
         void duplicateEvents(eventsRef.current.filter((item) => selected.has(item.id)));
       } else if (modifier && event.key.toLowerCase() === "c" && selected.size) {
@@ -1648,22 +1778,17 @@ export function CalendarApp() {
       } else if (event.key === "?") {
         setShowShortcuts(true);
       } else if (event.key === "Escape") {
-        // Deselect even when Escape is also canceling a stale drag, resize, or
-        // creation session. Cancellation must never consume deselection.
-        clearEventSelection();
         if (cancelActiveInteraction()) {
           event.preventDefault();
           event.stopPropagation();
           return;
         }
-        setEventSearchOpen(false);
-        setShowShortcuts(false);
-        setShowSettings(false);
+        clearEventSelection();
       }
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [cancelActiveInteraction, changeDayCount, clearEventSelection, copySelection, creationDraft, dayCount, deleteEvents, duplicateEvents, openEventSearch, selected, setEventSearchOpen]);
+  }, [cancelActiveInteraction, changeDayCount, clearEventSelection, copySelection, creationDraft, dayCount, deleteEvents, duplicateEvents, focusRenderedEvent, navigateBetweenEvents, openEventSearch, selected, setEventSearchOpen, showEventSearch, showSettings, showShortcuts]);
 
   const toggleCalendar = (calendarId: string) => {
     const calendar = calendars.find((candidate) => candidate.id === calendarId);
@@ -2053,7 +2178,7 @@ export function CalendarApp() {
           <button className="icon-button" onClick={() => setSidebarOpen(false)} aria-label="Close sidebar"><X size={15} /></button>
         </div>
 
-        <button className="search-button" onClick={openEventSearch}><Search size={14} /><span>Search</span><kbd>⌘ K</kbd></button>
+        <button className="search-button" onClick={openEventSearch}><Search size={14} /><span>Search</span><kbd>⌘ F</kbd></button>
 
         <section className="mini-month">
           <div className="mini-month-heading"><strong>{format(weekStart, "MMMM yyyy")}</strong><span><ChevronLeft size={13} /><ChevronRight size={13} /></span></div>
@@ -2159,7 +2284,7 @@ export function CalendarApp() {
                 );
                 if (dayIndex < 0 || dayIndex >= renderedDayCount) return null;
                 const palette = getEventPalette(event.color);
-                return <button key={`${event.calendarId}-${event.id}`} className={`all-day-event ${selected.has(event.id) ? "event-selected" : ""}`} data-attendance={isEventUnaccepted(event) ? "unaccepted" : undefined} data-calendar-event-id={event.id} data-calendar-id={event.calendarId} data-past={isEventPast(event, now)} style={{ left: `calc(${dayIndex} * (100% / ${renderedDayCount}) + 3px)`, width: `calc(100% / ${renderedDayCount} - 6px)`, "--event-accent": palette.accent, "--event-surface-dark": palette.darkSurface, "--event-surface-light": palette.lightSurface } as React.CSSProperties} onPointerDown={(pointer) => beginEventDrag(pointer, event)}>{event.title}</button>;
+                return <button key={`${event.calendarId}-${event.id}`} className={`all-day-event ${selected.has(event.id) ? "event-selected" : ""}`} data-attendance={isEventUnaccepted(event) ? "unaccepted" : undefined} data-calendar-event-id={event.id} data-calendar-id={event.calendarId} data-event-key={calendarEventKey(event.calendarId, event.id)} data-past={isEventPast(event, now)} style={{ left: `calc(${dayIndex} * (100% / ${renderedDayCount}) + 3px)`, width: `calc(100% / ${renderedDayCount} - 6px)`, "--event-accent": palette.accent, "--event-surface-dark": palette.darkSurface, "--event-surface-light": palette.lightSurface } as React.CSSProperties} onPointerDown={(pointer) => beginEventDrag(pointer, event)} aria-label={`${event.title}, all day`}>{event.title}</button>;
               })}
               </div>
             </div>
@@ -2245,11 +2370,10 @@ export function CalendarApp() {
               const width = layout.width * dayWidth;
               const renderedHeight = Math.max(geometry.height - 2, 0);
               const visualDensity = eventVisualDensity(renderedHeight);
+              const timeLabelKind = eventTimeLabelKind(visualDensity);
               const isCompact = renderedHeight < 24;
               const isCondensed = visualDensity === "time";
               const showsTitle = visualDensity !== "bar";
-              const showsTime = visualDensity === "time"
-                || visualDensity === "details";
               const showsDetails = visualDensity === "details";
               return (
                   <button
@@ -2258,6 +2382,7 @@ export function CalendarApp() {
                     data-attendance={isEventUnaccepted(event) ? "unaccepted" : undefined}
                     data-calendar-event-id={event.id}
                     data-calendar-id={event.calendarId}
+                    data-event-key={calendarEventKey(event.calendarId, event.id)}
                     data-marquee-event-id={event.id}
                     data-marquee-stack={layout.zIndex}
                     style={{
@@ -2276,8 +2401,18 @@ export function CalendarApp() {
                     data-past={isEventPast(event, now)}
                   >
                     {geometry.isStart && <span className="event-resize-handle event-resize-start" onPointerDown={(pointer) => beginEventResize(pointer, event, "start")} aria-label={`Adjust start of ${event.title}`} />}
-                    {showsTitle && <strong>{event.title}</strong>}
-                    {showsTime && <span className="event-time">{formatEventTime(event)}</span>}
+                    {showsTitle && (
+                      <span className="event-primary-line">
+                        <strong>{event.title}</strong>
+                        {timeLabelKind !== "none" && (
+                          <span className="event-time">
+                            {timeLabelKind === "range"
+                              ? formatEventTime(event)
+                              : formatEventStartTime(event)}
+                          </span>
+                        )}
+                      </span>
+                    )}
                     {showsDetails && event.location && <small>{event.location}</small>}
                     {geometry.isEnd && <span className="event-resize-handle event-resize-end" onPointerDown={(pointer) => beginEventResize(pointer, event, "end")} aria-label={`Adjust end of ${event.title}`} />}
                   </button>
@@ -2300,7 +2435,7 @@ export function CalendarApp() {
           </div>
         </div>
 
-        <div className="hint-bar"><Command size={13} /><span>Drag empty space to create · Shift-drag to select · ⌘ click for multiple</span></div>
+        <div className="hint-bar"><Command size={13} /><span>Arrow keys navigate events · ⌥ ←/→ one day · ⌘ ←/→ one period</span></div>
       </section>
 
       {showShortcuts && (
@@ -2309,8 +2444,11 @@ export function CalendarApp() {
             <div className="modal-heading"><div><Command size={18} /><span><strong>Keyboard shortcuts</strong><small>Move through your week without breaking focus.</small></span></div><button className="icon-button" onClick={() => setShowShortcuts(false)}><X size={16} /></button></div>
             <div className="shortcut-grid">
               <span>Go to today</span><kbd>T</kbd>
-              <span>Previous / next week</span><span><kbd>K</kbd> <kbd>J</kbd></span>
-              <span>Search past events</span><kbd>⌘ K</kbd>
+              <span>Previous / next period</span><span><kbd>K</kbd> <kbd>J</kbd></span>
+              <span>Navigate between events</span><span><kbd>↑</kbd> <kbd>↓</kbd> <kbd>←</kbd> <kbd>→</kbd></span>
+              <span>Previous / next day</span><span><kbd>⌥ ←</kbd> <kbd>⌥ →</kbd></span>
+              <span>Previous / next period</span><span><kbd>⌘ ←</kbd> <kbd>⌘ →</kbd></span>
+              <span>Search events</span><span><kbd>⌘ F</kbd> <kbd>⌘ K</kbd></span>
               <span>Duplicate selected events</span><kbd>⌘ D</kbd>
               <span>Copy / paste events</span><span><kbd>⌘ C</kbd> <kbd>⌘ V</kbd></span>
               <span>Delete selected occurrences only</span><kbd>⌘ ⌫</kbd>
@@ -2320,7 +2458,7 @@ export function CalendarApp() {
               <span>Submit pending action now</span><kbd>⌘ ↵</kbd>
               <span>Toggle multiple events</span><kbd>⌘ click</kbd>
               <span>Marquee selection</span><kbd>⇧ drag</kbd>
-              <span>Clear selection</span><kbd>Esc</kbd>
+              <span>Go back / clear selection</span><kbd>Esc</kbd>
               <span>Show this window</span><kbd>?</kbd>
             </div>
           </section>

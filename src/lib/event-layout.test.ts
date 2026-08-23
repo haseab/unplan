@@ -161,6 +161,36 @@ test("a later independent row gets the full inset width", () => {
   assert.equal(layouts.get("later")?.width, 0.95);
 });
 
+test("a late longest event does not force its transitive conflict group into global lanes", () => {
+  const layouts = layoutTimedEventSegments([
+    segment("early-base", 60, 600),
+    segment("early-child", 120, 150),
+    segment("late-long", 540, 1440),
+    segment("late-first", 555, 600),
+    segment("late-second", 555, 600),
+    segment("late-third", 555, 600),
+  ]);
+
+  assert.deepEqual(layouts.get("late-long"), {
+    left: 0,
+    overlapping: true,
+    width: 1,
+    zIndex: 0,
+  });
+  assert.deepEqual(layouts.get("early-base"), {
+    left: 0.5,
+    overlapping: true,
+    width: 0.5,
+    zIndex: 1,
+  });
+  assert.deepEqual(layouts.get("early-child"), {
+    left: 0.525,
+    overlapping: true,
+    width: 0.475,
+    zIndex: 2,
+  });
+});
+
 test("events on different days never share a conflict group", () => {
   const layouts = layoutTimedEventSegments([
     segment("monday", 60, 120, 0),
