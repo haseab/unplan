@@ -3173,7 +3173,7 @@ export function CalendarApp() {
                     )}
                     <button
                       aria-label={`${event.title}, all day`}
-                      className={`all-day-event ${selected.has(event.id) ? "event-selected" : ""} ${isDragSource ? "event-drag-source" : ""}`}
+                      className={`all-day-event ${selected.has(event.id) ? "event-selected" : ""} ${selected.has(event.id) && selected.size === 1 ? "event-selected-raised" : ""} ${isDragSource ? "event-drag-source" : ""}`}
                       data-attendance={isEventUnaccepted(event) ? "unaccepted" : undefined}
                       data-calendar-event-id={event.id}
                       data-calendar-id={event.calendarId}
@@ -3358,7 +3358,7 @@ export function CalendarApp() {
               return (
                   <button
                     key={key}
-                    className={`calendar-event event-density-${visualDensity} ${isCompact ? "event-compact" : ""} ${isCondensed ? "event-condensed" : ""} ${isSelected ? "event-selected" : ""} ${isDragSource ? "event-drag-source" : ""}`}
+                    className={`calendar-event event-density-${visualDensity} ${isCompact ? "event-compact" : ""} ${isCondensed ? "event-condensed" : ""} ${isSelected ? "event-selected" : ""} ${isSelected && selected.size === 1 ? "event-selected-raised" : ""} ${isDragSource ? "event-drag-source" : ""}`}
                     data-attendance={isEventUnaccepted(event) ? "unaccepted" : undefined}
                     data-calendar-event-id={event.id}
                     data-calendar-id={event.calendarId}
