@@ -1,4 +1,5 @@
 import { enforceRateLimit } from "@/lib/request-rate-limit";
+import { collectTodoistPages, type TodoistPage } from "@/lib/todoist";
 import { readTodoistProviderResponse, todoistProviderFetch } from "@/lib/todoist-server";
 import type { NextRequest } from "next/server";
 
@@ -9,11 +10,21 @@ export async function GET(request: NextRequest) {
     windowMs: 60_000,
   });
   if (rateLimited) return rateLimited;
-  const response = todoistProviderFetch(request, "/tasks?limit=200");
-  if (!response) return Response.json({ error: "Todoist API token is required" }, { status: 401 });
+  const projectId = request.nextUrl.searchParams.get("projectId")?.trim();
+  if (!projectId) {
+    return Response.json({ error: "A Todoist project ID is required" }, { status: 400 });
+  }
   try {
-    const data = await readTodoistProviderResponse(await response) as { results?: unknown[] } | unknown[];
-    return Response.json({ tasks: Array.isArray(data) ? data : data.results ?? [] });
+    const tasks = await collectTodoistPages<unknown>(async (cursor) => {
+      const params = new URLSearchParams({ limit: "200", project_id: projectId });
+      if (cursor) params.set("cursor", cursor);
+      const response = todoistProviderFetch(request, `/tasks?${params}`);
+      if (!response) {
+        throw Object.assign(new Error("Todoist API token is required"), { status: 401 });
+      }
+      return await readTodoistProviderResponse(await response) as TodoistPage<unknown>;
+    });
+    return Response.json({ tasks });
   } catch (caught) {
     const error = caught as Error & { status?: number };
     console.warn("[TODOIST:API] Task import failed", { status: error.status });
@@ -29,20 +40,106 @@ export async function POST(request: NextRequest) {
   });
   if (rateLimited) return rateLimited;
   const body = await request.json().catch(() => null) as {
-    action?: "close" | "create";
+    action?: "close" | "create" | "delete" | "move" | "reorder" | "update";
     content?: string;
     description?: string;
     dueDatetime?: string;
     projectId?: string;
     sectionId?: string;
     taskId?: string;
+    taskIds?: string[];
   } | null;
   if (!body) return Response.json({ error: "Invalid Todoist request" }, { status: 400 });
 
+  if (body.action === "reorder") {
+    const taskIds = body.taskIds?.filter(
+      (taskId): taskId is string => typeof taskId === "string" && Boolean(taskId.trim()),
+    );
+    if (
+      !taskIds?.length ||
+      taskIds.length > 500 ||
+      new Set(taskIds).size !== taskIds.length
+    ) {
+      return Response.json({ error: "A valid Todoist task order is required" }, { status: 400 });
+    }
+    const commandId = crypto.randomUUID();
+    const commands = [{
+      type: "item_reorder",
+      uuid: commandId,
+      args: {
+        items: taskIds.map((id, index) => ({ id, child_order: index + 1 })),
+      },
+    }];
+    const response = todoistProviderFetch(request, "/sync", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ commands: JSON.stringify(commands) }),
+    });
+    if (!response) return Response.json({ error: "Todoist API token is required" }, { status: 401 });
+    try {
+      const data = await readTodoistProviderResponse(await response) as {
+        sync_status?: Record<string, "ok" | { error?: string }>;
+      };
+      const commandStatus = data.sync_status?.[commandId];
+      if (commandStatus !== "ok") {
+        const message = typeof commandStatus === "object"
+          ? commandStatus.error
+          : undefined;
+        throw Object.assign(new Error(message ?? "Todoist could not save the task order"), {
+          status: 502,
+        });
+      }
+      return Response.json({ ok: true });
+    } catch (caught) {
+      const error = caught as Error & { status?: number };
+      console.warn("[TODOIST:API] Task reorder failed", { status: error.status });
+      return Response.json({ error: error.message }, { status: error.status ?? 502 });
+    }
+  }
+
+  if (body.action === "delete" && body.taskId) {
+    const response = todoistProviderFetch(
+      request,
+      `/tasks/${encodeURIComponent(body.taskId)}`,
+      { method: "DELETE" },
+    );
+    if (!response) return Response.json({ error: "Todoist API token is required" }, { status: 401 });
+    try {
+      await readTodoistProviderResponse(await response);
+      return Response.json({ ok: true });
+    } catch (caught) {
+      const error = caught as Error & { status?: number };
+      console.warn("[TODOIST:API] Task deletion failed", { status: error.status });
+      return Response.json({ error: error.message }, { status: error.status ?? 502 });
+    }
+  }
+
+  if (body.action === "move" && body.taskId && body.projectId) {
+    const response = todoistProviderFetch(
+      request,
+      `/tasks/${encodeURIComponent(body.taskId)}/move`,
+      {
+        method: "POST",
+        body: JSON.stringify({ project_id: body.projectId }),
+      },
+    );
+    if (!response) return Response.json({ error: "Todoist API token is required" }, { status: 401 });
+    try {
+      const task = await readTodoistProviderResponse(await response);
+      return Response.json({ task });
+    } catch (caught) {
+      const error = caught as Error & { status?: number };
+      console.warn("[TODOIST:API] Task move failed", { status: error.status });
+      return Response.json({ error: error.message }, { status: error.status ?? 502 });
+    }
+  }
+
   const path = body.action === "close" && body.taskId
     ? `/${encodeURIComponent(body.taskId)}/close`
-    : "";
-  const payload = body.action === "create" && body.content?.trim()
+    : body.action === "update" && body.taskId
+      ? `/${encodeURIComponent(body.taskId)}`
+      : "";
+  const payload = (body.action === "create" || body.action === "update") && body.content?.trim()
     ? {
         content: body.content.trim(),
         ...(body.description?.trim() ? { description: body.description.trim() } : {}),
@@ -51,11 +148,20 @@ export async function POST(request: NextRequest) {
         ...(body.sectionId ? { section_id: body.sectionId } : {}),
       }
     : null;
-  if (body.action !== "close" && !payload) {
+  if (body.action !== "close" && body.action !== "delete" && body.action !== "move" && !payload) {
     return Response.json({ error: "A Todoist task title is required" }, { status: 400 });
   }
   if (body.action === "close" && !body.taskId) {
     return Response.json({ error: "A Todoist task ID is required" }, { status: 400 });
+  }
+  if (body.action === "update" && !body.taskId) {
+    return Response.json({ error: "A Todoist task ID is required" }, { status: 400 });
+  }
+  if ((body.action === "delete" || body.action === "move") && !body.taskId) {
+    return Response.json({ error: "A Todoist task ID is required" }, { status: 400 });
+  }
+  if (body.action === "move" && !body.projectId) {
+    return Response.json({ error: "A Todoist destination project is required" }, { status: 400 });
   }
 
   const response = todoistProviderFetch(request, `/tasks${path}`, {
@@ -65,7 +171,7 @@ export async function POST(request: NextRequest) {
   if (!response) return Response.json({ error: "Todoist API token is required" }, { status: 401 });
   try {
     const data = await readTodoistProviderResponse(await response);
-    return Response.json(body.action === "create" ? { task: data } : { ok: true });
+    return Response.json(body.action === "close" ? { ok: true } : { task: data });
   } catch (caught) {
     const error = caught as Error & { status?: number };
     console.warn("[TODOIST:API] Task mutation failed", { action: body.action, status: error.status });

@@ -16,6 +16,7 @@ type ActionToastOptions = {
 };
 
 const pendingActions = new Map<ToastId, PendingAction>();
+const activeActions = new Set<ToastId>();
 
 const latestPendingAction = () => {
   let latest: PendingAction | null = null;
@@ -46,6 +47,7 @@ export function queueActionToast(
     state = "undone";
     clearTimer();
     pendingActions.delete(toastId);
+    activeActions.delete(toastId);
     options.onUndo();
     toast.dismiss(toastId);
     return true;
@@ -69,10 +71,12 @@ export function queueActionToast(
     void Promise.resolve(options.onSubmit(reportProgress))
       .then(() => {
         state = "complete";
+        activeActions.delete(toastId);
         toast.dismiss(toastId);
       })
       .catch((error: unknown) => {
         state = "failed";
+        activeActions.delete(toastId);
         toast.dismiss(toastId);
         if (options.onError) options.onError(error);
         else
@@ -93,6 +97,7 @@ export function queueActionToast(
     },
   });
   pendingActions.set(toastId, { submit, undo });
+  activeActions.add(toastId);
   timeoutId = setTimeout(submit, Math.max(0, options.duration));
 
   return { toastId, submit, undo };
@@ -104,3 +109,6 @@ export const triggerToastSubmit = () =>
   latestPendingAction()?.submit() ?? false;
 
 export const hasPendingActionToast = () => pendingActions.size > 0;
+
+/** True for both the undo window and the durable mutation that follows it. */
+export const hasActiveActionToast = () => activeActions.size > 0;

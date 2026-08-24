@@ -14,9 +14,9 @@ export const todoistProviderFetch = (
     ...init,
     cache: "no-store",
     headers: {
-      ...init?.headers,
       Authorization: `Bearer ${token}`,
       ...(init?.body ? { "Content-Type": "application/json" } : {}),
+      ...init?.headers,
     },
   });
 };

@@ -25,3 +25,14 @@ test("preserves provider search queries while including invitations", () => {
   assert.equal(query.get("showHiddenInvitations"), "true");
   assert.equal(query.has("timeMin"), false);
 });
+
+test("supports future-only queries without an upper bound", () => {
+  const query = buildGoogleEventsQuery({
+    searchQuery: "planning sync",
+    timeMax: null,
+    timeMin: "2026-08-24T00:00:00.000Z",
+  });
+
+  assert.equal(query.get("timeMin"), "2026-08-24T00:00:00.000Z");
+  assert.equal(query.has("timeMax"), false);
+});

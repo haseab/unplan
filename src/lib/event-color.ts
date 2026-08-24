@@ -9,6 +9,42 @@ export type EventPalette = {
   lightSurface: string;
 };
 
+export type EventColorOption = {
+  color: string;
+  colorId: string;
+  name: string;
+};
+
+// Google Calendar's event color IDs are stable provider values. The API's
+// /colors response uses these same defaults when mapping saved events.
+export const EVENT_COLOR_OPTIONS: EventColorOption[] = [
+  { colorId: "1", name: "Lavender", color: "#a4bdfc" },
+  { colorId: "2", name: "Sage", color: "#7ae7bf" },
+  { colorId: "3", name: "Grape", color: "#dbadff" },
+  { colorId: "4", name: "Flamingo", color: "#ff887c" },
+  { colorId: "5", name: "Banana", color: "#fbd75b" },
+  { colorId: "6", name: "Tangerine", color: "#ffb878" },
+  { colorId: "7", name: "Peacock", color: "#46d6db" },
+  { colorId: "8", name: "Graphite", color: "#e1e1e1" },
+  { colorId: "9", name: "Blueberry", color: "#5484ed" },
+  { colorId: "10", name: "Basil", color: "#51b749" },
+  { colorId: "11", name: "Tomato", color: "#dc2127" },
+];
+
+export const eventColorChange = (
+  colorId: string | undefined,
+  calendarColor: string,
+  calendarTextColor: string,
+) => {
+  const option = EVENT_COLOR_OPTIONS.find((candidate) => candidate.colorId === colorId);
+  const color = option?.color ?? calendarColor;
+  return {
+    color,
+    colorId: option?.colorId,
+    textColor: option ? getEventTextColor(color) : calendarTextColor,
+  };
+};
+
 const EVENT_PALETTES = {
   red: { accent: "#ff453a", darkSurface: "#7a3028", lightSurface: "#f1c4bf" },
   amber: { accent: "#ffb23f", darkSurface: "#69481f", lightSurface: "#efd7b8" },
@@ -35,6 +71,23 @@ export const getEventPalette = (color: string): EventPalette => {
   if (h < 250) return EVENT_PALETTES.blue;
   if (h < 305) return EVENT_PALETTES.purple;
   return EVENT_PALETTES.pink;
+};
+
+export const getCalendarAccent = (calendarColor: string) => {
+  const parsedCalendarColor = tinycolor(calendarColor);
+  return parsedCalendarColor.isValid()
+    ? calendarColor
+    : EVENT_PALETTES.neutral.accent;
+};
+
+export const getCalendarEventPalette = (
+  eventColor: string,
+  calendarColor: string,
+): EventPalette => {
+  return {
+    ...getEventPalette(eventColor),
+    accent: getCalendarAccent(calendarColor),
+  };
 };
 
 export const getEventTextColor = (backgroundColor: string) => {

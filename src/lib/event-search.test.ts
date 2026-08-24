@@ -3,10 +3,8 @@ import test from "node:test";
 import type { CalendarEvent } from "./calendar-types";
 import {
   mergeCalendarSearchResults,
-  mergeEventSearchResults,
   providerEventSearchQuery,
   searchLoadedEvents,
-  searchLoadedPastEvents,
 } from "./event-search";
 
 const event = (
@@ -45,22 +43,24 @@ const futurePlanning = event(
   "2026-08-23T18:00:00.000Z",
 );
 
-test("loaded event search returns matching past events newest first", () => {
+test("past event search excludes future events and sorts newest first", () => {
   assert.deepEqual(
-    searchLoadedPastEvents(
+    searchLoadedEvents(
       [olderPlanning, futurePlanning, planning],
       "planning",
       now,
+      "past",
     ).map(({ id }) => id),
     ["planning", "older-planning"],
   );
 });
 
-test("merged provider results are de-duplicated and exclude future events", () => {
+test("merged past results are de-duplicated and exclude future events", () => {
   assert.deepEqual(
-    mergeEventSearchResults(
+    mergeCalendarSearchResults(
       [[olderPlanning, planning], [planning, futurePlanning]],
       now,
+      "past",
     ).map(({ id }) => id),
     ["planning", "older-planning"],
   );
@@ -86,12 +86,12 @@ test("exact substring matching narrows monotonically as the query grows", () => 
   );
 
   assert.deepEqual(
-    searchLoadedPastEvents([callMother, callMom], "call mo", now)
+    searchLoadedEvents([callMother, callMom], "call mo", now, "past")
       .map(({ id }) => id),
     ["call-mom", "call-mother"],
   );
   assert.deepEqual(
-    searchLoadedPastEvents([callMother, callMom], "call mom", now)
+    searchLoadedEvents([callMother, callMom], "call mom", now, "past")
       .map(({ id }) => id),
     ["call-mom"],
   );
@@ -105,6 +105,18 @@ test("calendar search includes loaded future events before recent history", () =
       now,
     ).map(({ id }) => id),
     ["future-planning", "planning", "older-planning"],
+  );
+});
+
+test("future event search excludes completed events", () => {
+  assert.deepEqual(
+    searchLoadedEvents(
+      [olderPlanning, futurePlanning, planning],
+      "planning",
+      now,
+      "future",
+    ).map(({ id }) => id),
+    ["future-planning"],
   );
 });
 

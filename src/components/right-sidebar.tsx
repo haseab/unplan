@@ -1,6 +1,6 @@
 "use client";
 
-import { CalendarDays, ListTodo } from "lucide-react";
+import { CalendarDays, Layers3 } from "lucide-react";
 import * as React from "react";
 
 export type RightSidebarTab = "events" | "todos";
@@ -21,7 +21,7 @@ export function RightSidebar({
   todoCount,
 }: RightSidebarProps) {
   return (
-    <aside className="right-sidebar" data-todo-drop-target="true" aria-label="Tasks and event details">
+    <aside className="right-sidebar" data-todo-drop-target="true" aria-label="Event tasks and event details">
       <div className="right-sidebar-tabs" role="tablist" aria-label="Right sidebar">
         <button
           className={activeTab === "todos" ? "right-sidebar-tab-active" : ""}
@@ -30,7 +30,7 @@ export function RightSidebar({
           aria-selected={activeTab === "todos"}
           onClick={() => onTabChange("todos")}
         >
-          <ListTodo size={15} /> Tasks <span>{todoCount}</span>
+          <Layers3 size={15} /> Event Tasks <span>{todoCount}</span>
         </button>
         <button
           className={activeTab === "events" ? "right-sidebar-tab-active" : ""}

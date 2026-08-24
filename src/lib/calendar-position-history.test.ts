@@ -2,8 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   createCalendarPositionHistory,
+  parseStoredCalendarPosition,
   pushCalendarPosition,
   redoCalendarPosition,
+  serializeCalendarPosition,
   undoCalendarPosition,
   type CalendarPosition,
 } from "./calendar-position-history";
@@ -58,4 +60,22 @@ test("view-size changes remain individually undoable", () => {
   assert.equal(backToThree.position?.dayCount, 3);
   const forwardToFourteen = redoCalendarPosition(backToThree.history);
   assert.equal(forwardToFourteen.position?.dayCount, 14);
+});
+
+test("stored calendar positions round-trip without losing viewport precision", () => {
+  const expected = position("2026-08-22T07:00:00.000Z", 487.625, 9);
+  assert.deepEqual(
+    parseStoredCalendarPosition(serializeCalendarPosition(expected)),
+    expected,
+  );
+});
+
+test("invalid stored calendar positions are ignored", () => {
+  assert.equal(parseStoredCalendarPosition(null), null);
+  assert.equal(parseStoredCalendarPosition("not-json"), null);
+  assert.equal(parseStoredCalendarPosition(JSON.stringify({
+    dayCount: 0,
+    scrollTop: -20,
+    viewStart: "not-a-date",
+  })), null);
 });

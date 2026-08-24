@@ -81,7 +81,7 @@ const eventTimes = (body: GoogleCalendarEventPayload) => body.allDay
 
 const editableEventFields = (body: GoogleCalendarEventPayload) => ({
   ...(body.title !== undefined ? { summary: body.title || "Untitled event" } : {}),
-  ...(body.colorId ? { colorId: body.colorId } : {}),
+  ...(body.colorId !== undefined ? { colorId: body.colorId } : {}),
   ...(body.description !== undefined ? { description: body.description } : {}),
   ...(body.location !== undefined ? { location: body.location } : {}),
   ...(body.attendees !== undefined ? { attendees: body.attendees } : {}),
@@ -119,7 +119,7 @@ const loadGoogleEvents = async (
   accountId: string,
   providerCalendarId: string,
   timeMin: string | null,
-  timeMax: string,
+  timeMax: string | null,
   searchQuery?: string,
 ) => {
   const query = buildGoogleEventsQuery({
@@ -209,7 +209,7 @@ export async function GET(request: NextRequest) {
   const searchStrategy = request.nextUrl.searchParams.get("searchStrategy") === "exact"
     ? "exact"
     : "broad";
-  if (!sourceIds.length || !timeMax || (!timeMin && !searchQuery)) {
+  if (!sourceIds.length || (!timeMin && !timeMax && !searchQuery)) {
     return Response.json({ error: "Missing calendar range or search query" }, { status: 400 });
   }
   const sources = sourceIds.map(parseGoogleCalendarSourceId);

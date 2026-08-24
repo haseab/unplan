@@ -1,6 +1,6 @@
 export type GoogleEventsQueryOptions = {
   searchQuery?: string;
-  timeMax: string;
+  timeMax: string | null;
   timeMin: string | null;
 };
 
@@ -14,8 +14,8 @@ export const buildGoogleEventsQuery = ({
     orderBy: "startTime",
     showHiddenInvitations: "true",
     singleEvents: "true",
-    timeMax,
   });
+  if (timeMax) query.set("timeMax", timeMax);
   if (timeMin) query.set("timeMin", timeMin);
   if (searchQuery) query.set("q", searchQuery);
   return query;

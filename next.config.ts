@@ -8,6 +8,12 @@ const nextConfig: NextConfig = {
   turbopack: {
     root: process.cwd(),
   },
+  logging: {
+    browserToTerminal: false,
+    incomingRequests: {
+      ignore: [/\/api\/debug-log(?:\?|$)/],
+    },
+  },
 };
 
 export default nextConfig;

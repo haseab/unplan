@@ -3,9 +3,17 @@
 import * as React from "react";
 
 type ConsoleLevel = "log" | "info" | "warn" | "error" | "debug";
+type LogEntry = {
+  timestamp: string;
+  level: ConsoleLevel;
+  flag: string;
+  messages: string[];
+};
 
 const levels: ConsoleLevel[] = ["log", "info", "warn", "error", "debug"];
 const explicitFlagPattern = /^\[([A-Z0-9][A-Z0-9:_-]{1,63})\]$/;
+const flushDelayMs = 100;
+const maxEntriesPerBatch = 100;
 
 function serialize(value: unknown) {
   if (value instanceof Error) return value.stack ?? `${value.name}: ${value.message}`;
@@ -27,9 +35,31 @@ function serialize(value: unknown) {
 
 export function BrowserConsoleLogger() {
   React.useEffect(() => {
+    const pendingEntries: LogEntry[] = [];
+    let flushTimer: ReturnType<typeof setTimeout> | undefined;
     const originals = Object.fromEntries(
       levels.map((level) => [level, console[level].bind(console)]),
     ) as Record<ConsoleLevel, (...data: unknown[]) => void>;
+
+    const flush = () => {
+      if (flushTimer) clearTimeout(flushTimer);
+      flushTimer = undefined;
+      if (pendingEntries.length === 0) return;
+
+      while (pendingEntries.length > 0) {
+        const entries = pendingEntries.splice(0, maxEntriesPerBatch);
+        void fetch("/api/debug-log", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ entries }),
+          keepalive: true,
+        }).catch(() => undefined);
+      }
+    };
+
+    const scheduleFlush = () => {
+      flushTimer ??= setTimeout(flush, flushDelayMs);
+    };
 
     for (const level of levels) {
       console[level] = (...data: unknown[]) => {
@@ -38,20 +68,21 @@ export function BrowserConsoleLogger() {
           typeof data[0] === "string" ? data[0].match(explicitFlagPattern) : null;
         const flag = explicitFlag?.[1] ?? "GENERAL";
         const messages = explicitFlag ? data.slice(1) : data;
-        void fetch("/api/debug-log", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            level,
-            flag,
-            messages: messages.map(serialize),
-          }),
-          keepalive: true,
-        }).catch(() => undefined);
+        pendingEntries.push({
+          timestamp: new Date().toISOString(),
+          level,
+          flag,
+          messages: messages.map(serialize),
+        });
+        scheduleFlush();
       };
     }
 
+    window.addEventListener("pagehide", flush);
+
     return () => {
+      window.removeEventListener("pagehide", flush);
+      flush();
       for (const level of levels) console[level] = originals[level];
     };
   }, []);

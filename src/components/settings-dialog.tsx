@@ -251,7 +251,7 @@ export function SettingsDialog({
                 <span />
               </button>
             </div>
-            <p>Sync Todoist tasks with your calendar.</p>
+            <p>Store off-calendar event tasks in Todoist.</p>
             {todoistEnabled && (
               <div className="settings-secret-connection">
                 <div className="settings-secret-field">
@@ -279,7 +279,7 @@ export function SettingsDialog({
                   <span>Default destination</span>
                   <strong>{todoistDestinationName}</strong>
                 </div>
-                <p>New tasks and calendar-to-task drags will be added here.</p>
+                <p>New tasks start here, then roll into additional projects when it fills.</p>
                 <div>
                   <label>
                     <span>Project</span>

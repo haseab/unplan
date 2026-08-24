@@ -25,26 +25,23 @@ const child = spawn(command, args, {
 
 const mirror = (stream, destination, level) => {
   let pending = "";
+  const writeLine = (line) => {
+    const timestamped = `[${new Date().toISOString()}] [PROCESS] [${level}] [COMMAND:${commandFlag}] ${line}\n`;
+    destination.write(timestamped);
+    log.write(timestamped);
+  };
+
   stream.on("data", (chunk) => {
-    destination.write(chunk);
     pending += chunk.toString();
     const lines = pending.split(/\r?\n/);
     pending = lines.pop() ?? "";
     for (const line of lines) {
-      if (line.length > 0) {
-        log.write(
-          `[${new Date().toISOString()}] [PROCESS] [${level}] [COMMAND:${commandFlag}] ${line}\n`,
-        );
-      }
+      if (line.length > 0) writeLine(line);
     }
   });
 
   return () => {
-    if (pending.length > 0) {
-      log.write(
-        `[${new Date().toISOString()}] [PROCESS] [${level}] [COMMAND:${commandFlag}] ${pending}\n`,
-      );
-    }
+    if (pending.length > 0) writeLine(pending);
   };
 };
 

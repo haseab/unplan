@@ -80,7 +80,7 @@ const mutateGoogleEvent = async (
       start: event.start,
       end: event.end,
       allDay: event.allDay,
-      colorId: event.colorId,
+      colorId: method === "PATCH" ? event.colorId ?? null : event.colorId,
       description: event.description ?? "",
       location: event.location ?? "",
       timeZone: event.timeZone,

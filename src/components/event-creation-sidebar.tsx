@@ -5,7 +5,6 @@ import {
   Bell,
   CalendarDays,
   CalendarPlus,
-  Check,
   Clock3,
   ExternalLink,
   Link2,
@@ -18,9 +17,12 @@ import {
 } from "lucide-react";
 import * as React from "react";
 import { toast } from "sonner";
-import { addDays, addMinutes, differenceInMinutes, format, setHours, startOfDay } from "date-fns";
+import { addDays, differenceInMinutes, format, setHours, startOfDay } from "date-fns";
 import { EventParticipantsEditor } from "@/components/event-participants-editor";
+import { EventColorPicker } from "@/components/event-color-picker";
+import { CalendarPicker } from "@/components/calendar-picker";
 import { MultiEventSidebar } from "@/components/multi-event-sidebar";
+import { useDebouncedEventUpdate } from "@/hooks/use-debounced-event-update";
 import type { CalendarEvent, CalendarSource } from "@/lib/calendar-types";
 import { googleMeetCode } from "@/lib/google-conference-client";
 
@@ -43,6 +45,7 @@ type EventCreationSidebarProps = {
   onDeleteSelection: () => void | Promise<void>;
   onDuplicateSelection: () => void | Promise<void>;
   onRemoveSelection: (eventId: string) => void;
+  onPreviewEvent: (event: CalendarEvent) => void;
   onUpdateEvent: (event: CalendarEvent) => Promise<boolean>;
   selectedEvents: CalendarEvent[];
 };
@@ -87,17 +90,26 @@ function EventDetailsEditor({
   calendars,
   event,
   onCreateConference,
+  onPreview,
   onUpdate,
 }: {
   calendar: CalendarSource | null;
   calendars: CalendarSource[];
   event: CalendarEvent;
   onCreateConference: (event: CalendarEvent) => Promise<string>;
+  onPreview: (event: CalendarEvent) => void;
   onUpdate: (event: CalendarEvent) => Promise<boolean>;
 }) {
-  const [edited, setEdited] = React.useState(event);
-  const [dirty, setDirty] = React.useState(false);
-  const [saving, setSaving] = React.useState(false);
+  const {
+    draft: edited,
+    updateDraft,
+    updateLocalDraft,
+  } = useDebouncedEventUpdate({
+    delay: 500,
+    event,
+    onPreview,
+    onUpdate,
+  });
   const [conferenceState, setConferenceState] = React.useState<
     "creating" | "error" | "idle" | "success"
   >(event.conferenceLink && event.conferenceLink !== "pending" ? "success" : "idle");
@@ -108,6 +120,10 @@ function EventDetailsEditor({
   const end = new Date(edited.end);
   const zone = edited.timeZone || Intl.DateTimeFormat().resolvedOptions().timeZone;
   const attachmentUrl = edited.attachments?.[0]?.fileUrl ?? "";
+  const editedCalendar = calendars.find((item) => item.id === edited.calendarId) ?? calendar;
+  const editableCalendars = calendars.filter(
+    (item) => !calendar?.accountId || item.accountId === calendar.accountId,
+  );
 
   React.useLayoutEffect(() => {
     const title = titleRef.current;
@@ -133,50 +149,26 @@ function EventDetailsEditor({
   }, []);
 
   const change = (patch: Partial<CalendarEvent>) => {
-    setEdited((current) => ({ ...current, ...patch }));
-    setDirty(true);
-  };
-
-  const save = async (candidate = edited) => {
-    const title = candidate.title.trim() || "Untitled event";
-    const candidateStart = new Date(candidate.start);
-    const candidateEnd = new Date(candidate.end);
-    const normalized = {
-      ...candidate,
-      title,
-      end: candidateEnd > candidateStart
-        ? candidate.end
-        : addMinutes(candidateStart, candidate.allDay ? 24 * 60 : 30).toISOString(),
-    };
-    setEdited(normalized);
-    setSaving(true);
-    const saved = await onUpdate(normalized);
-    setSaving(false);
-    if (saved) setDirty(false);
+    updateDraft((current) => ({ ...current, ...patch }));
   };
 
   const changeCalendar = (nextCalendarId: string) => {
     const nextCalendar = calendars.find((item) => item.id === nextCalendarId);
     if (!nextCalendar) return;
-    const next = {
-      ...edited,
+    updateDraft((current) => ({
+      ...current,
       calendarId: nextCalendar.id,
       calendarColor: nextCalendar.backgroundColor,
-      color: edited.colorId ? edited.color : nextCalendar.backgroundColor,
-      textColor: edited.colorId ? edited.textColor : nextCalendar.foregroundColor,
-    };
-    setEdited(next);
-    setDirty(true);
-    void save(next);
+      color: current.colorId ? current.color : nextCalendar.backgroundColor,
+      textColor: current.colorId ? current.textColor : nextCalendar.foregroundColor,
+    }));
   };
 
   const toggleAllDay = (allDay: boolean) => {
     const day = startOfDay(start);
-    const next = allDay
-      ? { ...edited, allDay: true, start: day.toISOString(), end: addDays(day, 1).toISOString() }
-      : { ...edited, allDay: false, start: setHours(day, 9).toISOString(), end: setHours(day, 10).toISOString() };
-    setEdited(next);
-    setDirty(true);
+    updateDraft((current) => allDay
+      ? { ...current, allDay: true, start: day.toISOString(), end: addDays(day, 1).toISOString() }
+      : { ...current, allDay: false, start: setHours(day, 9).toISOString(), end: setHours(day, 10).toISOString() });
   };
 
   const createConference = async () => {
@@ -185,7 +177,7 @@ function EventDetailsEditor({
     setConferenceState("creating");
     try {
       const conferenceLink = await onCreateConference(edited);
-      setEdited((current) => ({ ...current, conferenceLink }));
+      updateLocalDraft((current) => ({ ...current, conferenceLink }));
       setConferenceState("success");
       const meetingCode = googleMeetCode(conferenceLink);
       toast.success("Google Meet created", {
@@ -213,13 +205,6 @@ function EventDetailsEditor({
           rows={1}
           value={edited.title}
           onChange={(input) => change({ title: input.target.value })}
-          onBlur={() => dirty && void save()}
-          onKeyDown={(keyboardEvent) => {
-            if ((keyboardEvent.metaKey || keyboardEvent.ctrlKey) && keyboardEvent.key === "Enter") {
-              keyboardEvent.preventDefault();
-              void save();
-            }
-          }}
         />
       </section>
 
@@ -289,10 +274,26 @@ function EventDetailsEditor({
       </section>
 
       <section className="event-details-section event-editor-preferences">
-        <label className="event-editor-calendar-select event-editor-select-field">
-          <span className="event-details-calendar-color" style={{ backgroundColor: calendar?.backgroundColor ?? edited.calendarColor }} />
-          <span><small>Calendar</small><select aria-label="Calendar" value={edited.calendarId} onChange={(input) => changeCalendar(input.target.value)}>{calendars.filter((item) => !calendar?.accountId || item.accountId === calendar.accountId).map((item) => <option key={item.id} value={item.id}>{item.name}{item.accountEmail ? ` — ${item.accountEmail}` : ""}</option>)}</select></span>
-        </label>
+        <EventColorPicker
+          calendarColor={editedCalendar?.backgroundColor ?? edited.calendarColor}
+          calendarTextColor={editedCalendar?.foregroundColor ?? "#ffffff"}
+          colorId={edited.colorId}
+          onChange={change}
+        />
+        <div className="event-editor-calendar-select event-editor-select-field">
+          <span
+            className="event-details-calendar-color"
+            style={{ backgroundColor: editedCalendar?.backgroundColor ?? edited.calendarColor }}
+          />
+          <div className="event-editor-calendar-picker">
+            <small>Calendar</small>
+            <CalendarPicker
+              calendars={editableCalendars}
+              onChange={changeCalendar}
+              value={edited.calendarId}
+            />
+          </div>
+        </div>
         <div className="event-editor-pair">
           <label className="event-editor-select-field"><small>Availability</small><select aria-label="Availability" value={edited.transparency ?? "opaque"} onChange={(input) => change({ transparency: input.target.value as CalendarEvent["transparency"] })}><option value="opaque">Busy</option><option value="transparent">Available</option></select></label>
           <label className="event-editor-select-field"><small>Visibility</small><select aria-label="Visibility" value={edited.visibility ?? "default"} onChange={(input) => change({ visibility: input.target.value as CalendarEvent["visibility"] })}><option value="default">Default visibility</option><option value="private">Private</option><option value="public">Public</option></select></label>
@@ -301,10 +302,6 @@ function EventDetailsEditor({
       </section>
 
       {edited.htmlLink && <a className="event-details-open event-editor-original" href={edited.htmlLink} target="_blank" rel="noreferrer">Open original event <ExternalLink size={13} /></a>}
-      <div className="event-editor-save">
-        <span className={dirty ? "event-editor-unsaved" : ""}>{!dirty && <Check size={13} />}{dirty ? "Unsaved changes" : "Saved"}</span>
-        {dirty && <button type="button" disabled={saving} onClick={() => void save()}>{saving ? "Saving…" : "Save changes"}</button>}
-      </div>
     </div>
   );
 }
@@ -322,6 +319,7 @@ export function EventCreationSidebar({
   onDeleteSelection,
   onDuplicateSelection,
   onRemoveSelection,
+  onPreviewEvent,
   onUpdateEvent,
   selectedEvents,
 }: EventCreationSidebarProps) {
@@ -333,7 +331,11 @@ export function EventCreationSidebar({
   const isShowingMultiSelection = selectedEvents.length > 1 && !draft;
 
   return (
-    <div className="event-sidebar-panel" aria-label={isShowingSelection ? "Event details" : "Create event"}>
+    <div
+      className="event-sidebar-panel"
+      aria-label={isShowingSelection ? "Event details" : "Create event"}
+      data-event-creation-surface="true"
+    >
       <div className="event-creation-heading">
         <div>{isShowingSelection ? <CalendarDays size={17} /> : <CalendarPlus size={17} />}<span><strong>{isShowingMultiSelection ? `${selectedEvents.length} events` : isShowingSelection ? "Event details" : "New event"}</strong><small>{isShowingMultiSelection ? "Bulk edit selection" : isShowingSelection ? selectedCalendar?.name ?? "Edit event" : "Add it to your calendar"}</small></span></div>
         {(draft || isShowingSelection) && <button className="icon-button" onClick={draft ? onCancel : onClearSelection} aria-label={draft ? "Cancel event creation" : "Close event details"}><X size={16} /></button>}
@@ -343,16 +345,19 @@ export function EventCreationSidebar({
         <form className="event-creation-form" onSubmit={(submitEvent) => { submitEvent.preventDefault(); if (title.trim()) onCreate(title.trim(), calendarId); }}>
           <label><span>Event name</span><input autoFocus value={title} onChange={(input) => setTitle(input.target.value)} placeholder="What are you planning?" /></label>
           <div className="event-creation-time"><Clock3 size={14} /><span><strong>{format(draft.start, "EEEE, MMMM d")}</strong><small>{format(draft.start, "h:mm a")}–{format(draft.end, "h:mm a")}</small></span></div>
-          <label><span>Calendar</span><select value={calendarId} onChange={(input) => setCalendarId(input.target.value)}>{calendars.map((calendar) => <option key={calendar.id} value={calendar.id}>{calendar.name}{calendar.accountEmail ? ` — ${calendar.accountEmail}` : ""}</option>)}</select></label>
+          <div className="event-creation-field">
+            <span>Calendar</span>
+            <CalendarPicker calendars={calendars} onChange={setCalendarId} value={calendarId} />
+          </div>
           <div className="event-creation-actions"><button type="button" onClick={onCancel}>Cancel</button><button className="event-create-button" type="submit" disabled={!title.trim()}>Create event</button></div>
         </form>
       ) : selectedEvent ? (
         <EventDetailsEditor
-          key={`${selectedEvent.calendarId}-${selectedEvent.id}-${selectedEvent.title}-${selectedEvent.start}-${selectedEvent.end}`}
           calendar={selectedCalendar}
           calendars={calendars}
           event={selectedEvent}
           onCreateConference={onCreateConference}
+          onPreview={onPreviewEvent}
           onUpdate={onUpdateEvent}
         />
       ) : selectedEvents.length > 1 ? (

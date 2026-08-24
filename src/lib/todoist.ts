@@ -36,6 +36,7 @@ export type TodoistTask = {
   id: string;
   content: string;
   description: string;
+  optimistic?: boolean;
   priority: number;
   projectId: string;
   due: {
@@ -44,6 +45,106 @@ export type TodoistTask = {
     recurring: boolean;
     string: string;
   } | null;
+};
+
+export type CreateTodoistTaskInput = {
+  content: string;
+  description?: string;
+  dueDatetime?: string;
+  projectId?: string;
+  sectionId?: string;
+};
+
+export type UpdateTodoistTaskInput = {
+  content: string;
+  description?: string;
+};
+
+export type TodoistTaskDropEdge = "after" | "before";
+
+export type TodoistTaskDropTarget = {
+  edge: TodoistTaskDropEdge;
+  taskId: string;
+};
+
+export const todoistTaskDropTargetAtPointer = (
+  slots: Array<{ center: number; taskId: string }>,
+  pointerPosition: number,
+): TodoistTaskDropTarget | null => {
+  const targetBefore = slots.find(({ center }) => pointerPosition < center);
+  const target = targetBefore ?? slots.at(-1);
+  return target
+    ? {
+        edge: targetBefore ? "before" : "after",
+        taskId: target.taskId,
+      }
+    : null;
+};
+
+export const insertTodoistTasksAtTarget = (
+  tasks: TodoistTask[],
+  insertedTasks: TodoistTask[],
+  target?: TodoistTaskDropTarget,
+) => {
+  const targetIndex = target
+    ? tasks.findIndex(({ id }) => id === target.taskId)
+    : -1;
+  const insertionIndex = targetIndex < 0
+    ? 0
+    : targetIndex + (target?.edge === "after" ? 1 : 0);
+  return [
+    ...tasks.slice(0, insertionIndex),
+    ...insertedTasks,
+    ...tasks.slice(insertionIndex),
+  ];
+};
+
+export const insertTodoistTaskAtIndex = (
+  tasks: TodoistTask[],
+  task: TodoistTask,
+  index: number,
+) => {
+  const withoutTask = tasks.filter(({ id }) => id !== task.id);
+  const insertionIndex = Math.max(0, Math.min(index, withoutTask.length));
+  return [
+    ...withoutTask.slice(0, insertionIndex),
+    task,
+    ...withoutTask.slice(insertionIndex),
+  ];
+};
+
+export const reorderTodoistTaskIds = (
+  taskIds: string[],
+  draggedTaskId: string,
+  targetTaskId: string,
+  edge: TodoistTaskDropEdge,
+) => {
+  if (draggedTaskId === targetTaskId) return taskIds;
+  const withoutDragged = taskIds.filter((taskId) => taskId !== draggedTaskId);
+  const targetIndex = withoutDragged.indexOf(targetTaskId);
+  if (targetIndex < 0 || withoutDragged.length === taskIds.length) return taskIds;
+  const insertionIndex = targetIndex + (edge === "after" ? 1 : 0);
+  return [
+    ...withoutDragged.slice(0, insertionIndex),
+    draggedTaskId,
+    ...withoutDragged.slice(insertionIndex),
+  ];
+};
+
+export const applyTodoistTaskOrder = (
+  tasks: TodoistTask[],
+  orderedTaskIds: string[],
+) => {
+  const tasksById = new Map(tasks.map((task) => [task.id, task]));
+  const orderedTasks = orderedTaskIds.flatMap((taskId) => {
+    const task = tasksById.get(taskId);
+    return task ? [task] : [];
+  });
+  const orderedIds = new Set(orderedTasks.map((task) => task.id));
+  let orderedIndex = 0;
+  return tasks.map((task) =>
+    orderedIds.has(task.id) ? orderedTasks[orderedIndex++] : task,
+  );
 };
 
 type TodoistTaskPayload = {
@@ -92,6 +193,40 @@ export const normalizeTodoistTask = (task: TodoistTaskPayload): TodoistTask => (
 
 type TodoistErrorPayload = { error?: string; message?: string };
 
+export type TodoistPage<Result> =
+  | Result[]
+  | {
+      next_cursor?: string | null;
+      results?: Result[];
+    };
+
+export const todoistPageResults = <Result>(page: TodoistPage<Result>) =>
+  Array.isArray(page) ? page : page.results ?? [];
+
+export const todoistNextCursor = <Result>(page: TodoistPage<Result>) =>
+  Array.isArray(page) ? null : page.next_cursor?.trim() || null;
+
+export const collectTodoistPages = async <Result>(
+  loadPage: (cursor: string | null) => Promise<TodoistPage<Result>>,
+) => {
+  const results: Result[] = [];
+  const seenCursors = new Set<string>();
+  let cursor: string | null = null;
+
+  do {
+    const page = await loadPage(cursor);
+    results.push(...todoistPageResults(page));
+    const nextCursor = todoistNextCursor(page);
+    if (nextCursor && seenCursors.has(nextCursor)) {
+      throw new Error("Todoist returned a repeated pagination cursor");
+    }
+    if (nextCursor) seenCursors.add(nextCursor);
+    cursor = nextCursor;
+  } while (cursor);
+
+  return results;
+};
+
 const todoistRequest = async <Result>(
   path: string,
   token: string,
@@ -113,8 +248,13 @@ const todoistRequest = async <Result>(
   return data as Result;
 };
 
-export const loadTodoistTasks = async (token: string) => {
-  const data = await todoistRequest<{ tasks: TodoistTaskPayload[] }>("/api/todoist/tasks", token);
+export const loadTodoistTasks = async (token: string, projectId: string) => {
+  if (!projectId) return [];
+  const params = new URLSearchParams({ projectId });
+  const data = await todoistRequest<{ tasks: TodoistTaskPayload[] }>(
+    `/api/todoist/tasks?${params}`,
+    token,
+  );
   return data.tasks.map(normalizeTodoistTask);
 };
 
@@ -138,15 +278,26 @@ export const loadTodoistDestinations = async (token: string) => {
   };
 };
 
+export const createTodoistProject = async (token: string, name: string) => {
+  const data = await todoistRequest<{ project: TodoistProjectPayload }>(
+    "/api/todoist/destinations",
+    token,
+    {
+      method: "POST",
+      body: JSON.stringify({ name }),
+    },
+  );
+  return {
+    id: String(data.project.id),
+    inbox: data.project.inbox_project ?? false,
+    name: data.project.name,
+    parentId: data.project.parent_id ? String(data.project.parent_id) : null,
+  } satisfies TodoistProject;
+};
+
 export const createTodoistTask = async (
   token: string,
-  input: {
-    content: string;
-    description?: string;
-    dueDatetime?: string;
-    projectId?: string;
-    sectionId?: string;
-  },
+  input: CreateTodoistTaskInput,
 ) => {
   const data = await todoistRequest<{ task: TodoistTaskPayload }>("/api/todoist/tasks", token, {
     method: "POST",
@@ -160,4 +311,45 @@ export const closeTodoistTask = async (token: string, taskId: string) => {
     method: "POST",
     body: JSON.stringify({ action: "close", taskId }),
   });
+};
+
+export const deleteTodoistTask = async (token: string, taskId: string) => {
+  await todoistRequest<{ ok: true }>("/api/todoist/tasks", token, {
+    method: "POST",
+    body: JSON.stringify({ action: "delete", taskId }),
+  });
+};
+
+export const moveTodoistTask = async (
+  token: string,
+  taskId: string,
+  projectId: string,
+) => {
+  const data = await todoistRequest<{ task: TodoistTaskPayload }>("/api/todoist/tasks", token, {
+    method: "POST",
+    body: JSON.stringify({ action: "move", taskId, projectId }),
+  });
+  return normalizeTodoistTask(data.task);
+};
+
+export const saveTodoistTaskOrder = async (
+  token: string,
+  taskIds: string[],
+) => {
+  await todoistRequest<{ ok: true }>("/api/todoist/tasks", token, {
+    method: "POST",
+    body: JSON.stringify({ action: "reorder", taskIds }),
+  });
+};
+
+export const updateTodoistTask = async (
+  token: string,
+  taskId: string,
+  input: UpdateTodoistTaskInput,
+) => {
+  const data = await todoistRequest<{ task: TodoistTaskPayload }>("/api/todoist/tasks", token, {
+    method: "POST",
+    body: JSON.stringify({ action: "update", taskId, ...input }),
+  });
+  return normalizeTodoistTask(data.task);
 };

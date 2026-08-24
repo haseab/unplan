@@ -54,7 +54,9 @@ export const browserGoogleStatus = () => {
     email: account.email,
     id: account.id,
     provider: "google",
-    status: account.expiresAt > Date.now() + 30_000 ? "active" : "expired",
+    status: account.expiresAt > Date.now() + 30_000 || account.refreshToken
+      ? "active"
+      : "expired",
   }));
   return {
     accounts,
@@ -74,7 +76,9 @@ const messageFromError = (error: CalendarsResponse["error"], fallback: string) =
 export const loadBrowserGoogleCalendars = async (
   accounts: BrowserGoogleAccount[] = readGoogleAccounts(),
 ) => {
-  const active = accounts.filter((account) => account.expiresAt > Date.now() + 30_000);
+  const active = accounts.filter((account) =>
+    account.expiresAt > Date.now() + 30_000 || Boolean(account.refreshToken),
+  );
   const results = await Promise.allSettled(active.map(async (account) => {
     const params = new URLSearchParams({ accountId: account.id });
     const response = await googleAuthorizedFetch(

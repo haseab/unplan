@@ -15,6 +15,7 @@ export type BrowserGoogleAccount = {
   email: string;
   expiresAt: number;
   id: string;
+  refreshToken?: string;
 };
 
 export type GoogleConnectedAccount = {
@@ -24,15 +25,22 @@ export type GoogleConnectedAccount = {
   status: "active" | "expired" | "revoked";
 };
 
+type GoogleCodeResponse = {
+  code?: string;
+  error?: string;
+  error_description?: string;
+};
+
 type GoogleTokenResponse = {
   access_token?: string;
   error?: string;
   error_description?: string;
   expires_in?: number;
+  refresh_token?: string;
 };
 
-type GoogleTokenClient = {
-  requestAccessToken: (overrides?: { prompt?: string }) => void;
+type GoogleCodeClient = {
+  requestCode: () => void;
 };
 
 declare global {
@@ -40,12 +48,14 @@ declare global {
     google?: {
       accounts: {
         oauth2: {
-          initTokenClient: (config: {
-            callback: (response: GoogleTokenResponse) => void;
+          initCodeClient: (config: {
+            callback: (response: GoogleCodeResponse) => void;
             client_id: string;
             error_callback?: (error: { message?: string; type?: string }) => void;
+            select_account?: boolean;
             scope: string;
-          }) => GoogleTokenClient;
+            ux_mode?: "popup" | "redirect";
+          }) => GoogleCodeClient;
         };
       };
     };
@@ -85,13 +95,78 @@ export const googleAccessToken = (accountId: string) => {
     : null;
 };
 
-export const googleAuthorizedFetch = (
+const tokenRefreshes = new Map<string, Promise<string>>();
+
+const tokenError = (data: GoogleTokenResponse, fallback: string) =>
+  data.error_description || data.error || fallback;
+
+const exchangeGoogleToken = async (body: {
+  code?: string;
+  grantType: "authorization_code" | "refresh_token";
+  redirectUri?: string;
+  refreshToken?: string;
+}) => {
+  const response = await fetch("/api/google/oauth/token", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Requested-With": "XmlHttpRequest",
+    },
+    body: JSON.stringify(body),
+  });
+  const data = await response.json().catch(() => ({})) as GoogleTokenResponse;
+  if (!response.ok || !data.access_token) {
+    throw new Error(tokenError(data, "Google authorization could not be refreshed"));
+  }
+  return data;
+};
+
+export const refreshGoogleAccount = async (accountId: string) => {
+  const existingRefresh = tokenRefreshes.get(accountId);
+  if (existingRefresh) return existingRefresh;
+
+  const refresh = (async () => {
+    const account = readGoogleAccounts().find((candidate) => candidate.id === accountId);
+    if (!account?.refreshToken) {
+      throw new Error("Google authorization expired. Reconnect your account once to enable automatic refresh.");
+    }
+    const response = await exchangeGoogleToken({
+      grantType: "refresh_token",
+      refreshToken: account.refreshToken,
+    });
+    const refreshed: BrowserGoogleAccount = {
+      ...account,
+      accessToken: response.access_token!,
+      expiresAt: Date.now() + (response.expires_in ?? 3_600) * 1000,
+      refreshToken: response.refresh_token || account.refreshToken,
+    };
+    writeGoogleAccounts(readGoogleAccounts().map((candidate) =>
+      candidate.id === accountId ? refreshed : candidate,
+    ));
+    return refreshed.accessToken;
+  })();
+
+  tokenRefreshes.set(accountId, refresh);
+  try {
+    return await refresh;
+  } catch (error) {
+    writeGoogleAccounts(readGoogleAccounts().map((account) =>
+      account.id === accountId
+        ? { ...account, expiresAt: 0, refreshToken: undefined }
+        : account,
+    ));
+    throw error;
+  } finally {
+    if (tokenRefreshes.get(accountId) === refresh) tokenRefreshes.delete(accountId);
+  }
+};
+
+export const googleAuthorizedFetch = async (
   accountId: string,
   input: RequestInfo | URL,
   init: RequestInit = {},
 ) => {
-  const token = googleAccessToken(accountId);
-  if (!token) throw new Error("Google authorization expired. Reconnect your account.");
+  const token = googleAccessToken(accountId) ?? await refreshGoogleAccount(accountId);
   const headers = new Headers(init.headers);
   headers.set("Authorization", `Bearer ${token}`);
   return fetch(input, { ...init, headers });
@@ -175,22 +250,35 @@ export const connectGoogleAccount = async () => {
   await loadGoogleIdentity();
 
   return new Promise<BrowserGoogleAccount>((resolve, reject) => {
-    const client = window.google!.accounts.oauth2.initTokenClient({
+    const client = window.google!.accounts.oauth2.initCodeClient({
       client_id: clientId,
       scope: GOOGLE_SCOPE,
       error_callback: (error) => reject(new Error(error.message || error.type || "Google connection failed")),
+      select_account: true,
+      ux_mode: "popup",
       callback: (response) => {
-        if (!response.access_token) {
+        if (!response.code) {
           reject(new Error(response.error_description || response.error || "Google connection failed"));
           return;
         }
-        void loadGoogleProfile(response.access_token).then((profile) => {
+        void exchangeGoogleToken({
+          code: response.code,
+          grantType: "authorization_code",
+          redirectUri: window.location.origin,
+        }).then(async (tokens) => {
+          const profile = await loadGoogleProfile(tokens.access_token!);
+          const accounts = readGoogleAccounts();
+          const existing = accounts.find((candidate) => candidate.id === profile.id);
+          const refreshToken = tokens.refresh_token || existing?.refreshToken;
+          if (!refreshToken) {
+            throw new Error("Google did not issue a refresh token. Remove Unplan from your Google account permissions, then reconnect.");
+          }
           const account: BrowserGoogleAccount = {
             ...profile,
-            accessToken: response.access_token!,
-            expiresAt: Date.now() + (response.expires_in ?? 3_600) * 1000,
+            accessToken: tokens.access_token!,
+            expiresAt: Date.now() + (tokens.expires_in ?? 3_600) * 1000,
+            refreshToken,
           };
-          const accounts = readGoogleAccounts();
           const existingIndex = accounts.findIndex((candidate) => candidate.id === account.id);
           if (existingIndex >= 0) accounts[existingIndex] = account;
           else accounts.push(account);
@@ -199,6 +287,6 @@ export const connectGoogleAccount = async () => {
         }, reject);
       },
     });
-    client.requestAccessToken({ prompt: "select_account" });
+    client.requestCode();
   });
 };

@@ -4,6 +4,7 @@ import { format, parseISO } from "date-fns";
 import { CornerDownLeft, LoaderCircle, MapPin, Search, X } from "lucide-react";
 import * as React from "react";
 import type { CalendarEvent, CalendarSource } from "@/lib/calendar-types";
+import type { EventSearchTimeRange } from "@/lib/event-search";
 
 type SearchStatus = "idle" | "loading" | "ready" | "error";
 
@@ -14,6 +15,7 @@ type EventSearchDialogProps = {
   open: boolean;
   searchEvents: (
     query: string,
+    timeRange: EventSearchTimeRange,
     signal: AbortSignal,
     onPartialResults: (results: CalendarEvent[]) => void,
   ) => Promise<CalendarEvent[]>;
@@ -22,6 +24,11 @@ type EventSearchDialogProps = {
 const SEARCH_DEBOUNCE_MS = 180;
 const MINIMUM_QUERY_LENGTH = 2;
 const resultKey = (event: CalendarEvent) => `${event.calendarId}:${event.id}`;
+const TIME_RANGES: Array<{ label: string; value: EventSearchTimeRange }> = [
+  { label: "All", value: "all" },
+  { label: "Future", value: "future" },
+  { label: "Past", value: "past" },
+];
 
 const eventDateLabel = (event: CalendarEvent) => {
   const start = parseISO(event.start);
@@ -42,6 +49,7 @@ export function EventSearchDialog({
   const [query, setQuery] = React.useState("");
   const [results, setResults] = React.useState<CalendarEvent[]>([]);
   const [status, setStatus] = React.useState<SearchStatus>("idle");
+  const [timeRange, setTimeRange] = React.useState<EventSearchTimeRange>("all");
   const dialogRef = React.useRef<HTMLElement>(null);
   const inputRef = React.useRef<HTMLInputElement>(null);
   const activeResultKeyRef = React.useRef<string | null>(null);
@@ -88,6 +96,7 @@ export function EventSearchDialog({
       };
       void searchEvents(
         normalizedQuery,
+        timeRange,
         controller.signal,
         (partialResults) => applyResults(partialResults, false),
       )
@@ -101,7 +110,7 @@ export function EventSearchDialog({
           setError(
             searchError instanceof Error
               ? searchError.message
-              : "Past events could not be searched",
+              : "Events could not be searched",
           );
           setStatus("error");
         });
@@ -111,7 +120,7 @@ export function EventSearchDialog({
       controller.abort();
       window.clearTimeout(timer);
     };
-  }, [open, query, searchEvents]);
+  }, [open, query, searchEvents, timeRange]);
 
   React.useEffect(() => {
     if (activeIndex < 0) return;
@@ -185,7 +194,7 @@ export function EventSearchDialog({
   const prompt = query.trim().length < MINIMUM_QUERY_LENGTH
     ? "Type at least two characters to search events."
     : status === "loading" && results.length === 0
-      ? "Searching past events…"
+      ? `Searching ${timeRange} events…`
       : status === "error"
         ? error
         : results.length === 0
@@ -235,6 +244,29 @@ export function EventSearchDialog({
             }
           />
           {status === "loading" && <LoaderCircle className="spin" size={15} />}
+        </div>
+
+        <div className="event-search-time-filter" role="group" aria-label="Event time range">
+          {TIME_RANGES.map(({ label, value }) => (
+            <button
+              key={value}
+              type="button"
+              aria-pressed={timeRange === value}
+              onClick={() => {
+                if (timeRange === value) return;
+                setTimeRange(value);
+                activeResultKeyRef.current = null;
+                setActiveIndex(-1);
+                setError("");
+                setResults([]);
+                setStatus(
+                  query.trim().length < MINIMUM_QUERY_LENGTH ? "idle" : "loading",
+                );
+              }}
+            >
+              {label}
+            </button>
+          ))}
         </div>
 
         <div className="event-search-results" id={listboxId} role="listbox">

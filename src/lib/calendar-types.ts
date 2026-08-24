@@ -66,7 +66,7 @@ export type GoogleCalendarEventPayload = {
   start: string;
   end: string;
   allDay?: boolean;
-  colorId?: string;
+  colorId?: string | null;
   description?: string;
   location?: string;
   timeZone?: string;

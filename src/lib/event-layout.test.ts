@@ -60,6 +60,22 @@ test("equal stacked events divide the available width evenly", () => {
   assert.equal(layouts.get("right")?.width, 1 / 3);
 });
 
+test("four or more simultaneous events cascade with readable card widths", () => {
+  const layouts = layoutTimedEventSegments([
+    segment("first", 60, 120, 0, 1),
+    segment("second", 60, 120, 0, 2),
+    segment("third", 60, 120, 0, 3),
+    segment("fourth", 60, 120, 0, 4),
+    segment("fifth", 60, 120, 0, 5),
+  ]);
+
+  assert.equal(layouts.get("first")?.left, 0);
+  assert.equal(layouts.get("first")?.width, 0.58);
+  assert.ok(Math.abs((layouts.get("third")?.left ?? 0) - 0.21) < 1e-9);
+  assert.ok(Math.abs((layouts.get("fifth")?.left ?? 0) - 0.42) < 1e-9);
+  assert.equal(layouts.get("fifth")?.width, 0.58);
+});
+
 test("newer equal-duration events are placed farther right regardless of ID", () => {
   const layouts = layoutTimedEventSegments([
     segment("z-old", 60, 120, 0, 100),

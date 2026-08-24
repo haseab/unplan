@@ -114,6 +114,15 @@ export const eventSegmentGeometries = (
   return segments;
 };
 
+export const eventSegmentKey = (
+  event: Pick<CalendarEvent, "calendarId" | "id">,
+  renderStart: Date,
+  dayIndex: number,
+) => `${event.calendarId}-${event.id}-${format(
+  addDays(startOfDay(renderStart), dayIndex),
+  "yyyy-MM-dd",
+)}`;
+
 export const moveEvent = (
   event: CalendarEvent,
   dayDelta: number,

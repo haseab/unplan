@@ -30,22 +30,25 @@ Open [http://localhost:3000](http://localhost:3000).
 3. Configure the OAuth consent screen.
 4. Create an OAuth 2.0 Client ID with the **Web application** type.
 5. Add `http://localhost:3000` as an authorized JavaScript origin.
-6. Copy the client ID into `.env.local` as `NEXT_PUBLIC_GOOGLE_CLIENT_ID`.
+6. Copy the client ID and client secret into `.env.local`.
 
 For production on `unplan.io`, add `https://unplan.io` to the same OAuth Web
 application's authorized JavaScript origins and configure:
 
 ```env
 NEXT_PUBLIC_GOOGLE_CLIENT_ID=your-client-id
+GOOGLE_CLIENT_SECRET=your-client-secret
 ```
 
-Unplan uses Google Identity Services' browser token model. Short-lived access
-tokens and their expiry times are stored in this browser's local storage and
-sent only to same-origin API proxy routes. Unplan has no user database, does
-not request or store refresh tokens, and does not use a Google client secret.
-When a token expires, reconnect that Google account. Calendar data remains in
-Google Calendar; the app refreshes it when the window regains focus and every
-five minutes while visible.
+Unplan uses Google Identity Services' authorization-code model. Access tokens,
+refresh tokens, and expiry times are stored in this browser's local storage and
+sent only to same-origin API routes. Unplan has no user database. The matching
+Google client secret remains server-side and is used only to exchange and
+refresh tokens. Access tokens refresh automatically before Google API calls.
+
+Refresh tokens in local storage are convenient for a local-first app but are
+vulnerable to browser extensions and cross-site scripting. Do not use this
+storage design for a multi-user hosted deployment.
 
 OAuth clients in Google testing mode remain limited to accounts listed as test
 users. A public integration requires publishing the consent screen and may
@@ -54,7 +57,7 @@ require Google verification for Calendar scopes.
 Use the **+** beside Calendars or **Add another account** to connect additional
 Google accounts. Each account has its own browser token, so one expired account
 does not prevent the others from loading. Disconnecting removes that account's
-token from the browser.
+access and refresh tokens from the browser.
 
 ## Interaction model
 

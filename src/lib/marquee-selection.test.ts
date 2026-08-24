@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  addMarqueeSelection,
   visibleEventIdsIntersectingRectangle,
   type MarqueeHitRegion,
 } from "./marquee-selection";
@@ -75,4 +76,29 @@ test("handles an occluded area covered by multiple higher events", () => {
   });
 
   assert.deepEqual([...matches].sort(), ["bottom-half", "top-half"]);
+});
+
+test("multiple marquee selections accumulate their event IDs", () => {
+  const firstMarquee = addMarqueeSelection(
+    new Set<string>(),
+    new Set(["first", "second"]),
+  );
+  const secondMarquee = addMarqueeSelection(
+    firstMarquee,
+    new Set(["third", "fourth"]),
+  );
+
+  assert.deepEqual(
+    [...secondMarquee].sort(),
+    ["first", "fourth", "second", "third"],
+  );
+});
+
+test("recomputing an active marquee preserves only its base and current hits", () => {
+  const base = new Set(["already-selected"]);
+  const expanded = addMarqueeSelection(base, new Set(["temporary", "kept"]));
+  const contracted = addMarqueeSelection(base, new Set(["kept"]));
+
+  assert.deepEqual([...expanded].sort(), ["already-selected", "kept", "temporary"]);
+  assert.deepEqual([...contracted].sort(), ["already-selected", "kept"]);
 });

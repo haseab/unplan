@@ -10,6 +10,11 @@ export type MarqueeHitRegion = SelectionRectangle & {
   stackIndex: number;
 };
 
+export const addMarqueeSelection = (
+  baseSelection: ReadonlySet<string>,
+  marqueeSelection: ReadonlySet<string>,
+) => new Set([...baseSelection, ...marqueeSelection]);
+
 const intersection = (
   first: SelectionRectangle,
   second: SelectionRectangle,

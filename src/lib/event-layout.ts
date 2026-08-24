@@ -14,7 +14,9 @@ export type TimedEventLayout = {
 };
 
 const CASCADE_INSET = 0.05;
+const DENSE_CASCADE_WIDTH = 0.58;
 const LABEL_SAFE_MINUTES = 45;
+const MAX_COLUMN_COUNT = 3;
 
 const duration = (segment: TimedEventSegment) =>
   segment.endMinute - segment.startMinute;
@@ -90,12 +92,17 @@ const layoutAsColumns = (
   zIndex = 0,
 ) => {
   const { assignments, laneCount } = assignLanesLargestFirst(segments);
+  const usesDenseCascade = laneCount > MAX_COLUMN_COUNT;
+  const laneStep = usesDenseCascade
+    ? (1 - DENSE_CASCADE_WIDTH) / (laneCount - 1)
+    : 1 / laneCount;
+  const laneWidth = usesDenseCascade ? DENSE_CASCADE_WIDTH : 1 / laneCount;
   segments.forEach((segment) => {
     const lane = assignments.get(segment.key) ?? 0;
     layouts.set(segment.key, {
-      left: left + (lane / laneCount) * width,
+      left: left + lane * laneStep * width,
       overlapping: laneCount > 1 || left > 0,
-      width: width / laneCount,
+      width: laneWidth * width,
       zIndex: zIndex + lane,
     });
   });
@@ -158,11 +165,11 @@ const layoutConflictGroup = (
 /**
  * Produces Cron-style overlap geometry within each day. A uniquely longest
  * event stays full-width underneath shorter events, which cascade from a 5%
- * inset. Equal-duration conflicts use equal-width columns, ordered oldest to
- * newest from left to right. Only the shorter row that collides with the
- * longest event's label moves to the right half. The same rule is applied
- * recursively, so every locally longest event keeps its full width behind its
- * shorter children.
+ * inset. Equal-duration conflicts use equal-width columns until four or more
+ * lanes are required, then switch to overlapping wide cards so labels remain
+ * legible. Only the shorter row that collides with the longest event's label
+ * moves to the right half. The same rule is applied recursively, so every
+ * locally longest event keeps its full width behind its shorter children.
  */
 export const layoutTimedEventSegments = (segments: TimedEventSegment[]) => {
   const layouts = new Map<string, TimedEventLayout>();

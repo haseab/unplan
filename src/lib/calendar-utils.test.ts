@@ -4,6 +4,7 @@ import type { CalendarEvent } from "./calendar-types";
 import {
   eventGeometry,
   eventSegmentGeometries,
+  eventSegmentKey,
   eventTimesMatch,
   formatEventStartTime,
   resizeEvent,
@@ -100,5 +101,12 @@ test("event geometry follows the selected calendar time scale", () => {
       top: segment.top,
     })),
     [{ endMinute: 660, height: 120, top: 1200 }],
+  );
+});
+
+test("event segment identity stays stable when the rendered range shifts", () => {
+  assert.equal(
+    eventSegmentKey(event, new Date(2026, 7, 17), 5),
+    eventSegmentKey(event, new Date(2026, 7, 18), 4),
   );
 });
