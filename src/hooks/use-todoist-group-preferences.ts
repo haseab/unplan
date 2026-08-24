@@ -2,9 +2,11 @@
 
 import * as React from "react";
 
-const TODOIST_GROUP_ORDER_STORAGE_KEY = "unplan:todoist-group-order:v1";
-const TODOIST_COLLAPSED_GROUPS_STORAGE_KEY = "unplan:todoist-collapsed-groups:v1";
-const TODOIST_GROUP_PARENTS_STORAGE_KEY = "unplan:todoist-group-parents:v1";
+import {
+  TODOIST_COLLAPSED_GROUPS_STORAGE_KEY,
+  TODOIST_GROUP_ORDER_STORAGE_KEY,
+  TODOIST_GROUP_PARENTS_STORAGE_KEY,
+} from "@/lib/todoist-folder-backup";
 
 const readStoredNames = (key: string) => {
   if (typeof window === "undefined") return [];

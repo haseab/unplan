@@ -187,6 +187,7 @@ import {
   todoistTaskDropTargetAtPointer,
   type TodoistTask,
 } from "@/lib/todoist";
+import { TODOIST_CUSTOM_GROUPS_STORAGE_KEY } from "@/lib/todoist-folder-backup";
 import {
   calendarEventDurationMinutes,
   calendarEventDetailsFromTodoistContent,
@@ -281,7 +282,6 @@ type TodoistCalendarDropPoint = {
 const hours = Array.from({ length: 24 }, (_, index) => index);
 const DEFAULT_CALENDAR_STORAGE_KEY = "unplan:default-event-calendar";
 const EVENT_DRAG_THRESHOLD = 5;
-const TODOIST_CUSTOM_GROUPS_STORAGE_KEY = "unplan:todoist-custom-groups:v1";
 const EVENT_CREATION_DRAG_THRESHOLD = 5;
 const EVENT_CLICK_DRAG_THRESHOLD = 5;
 const CROSS_SERVICE_DRAG_THRESHOLD = 12;

@@ -1,6 +1,18 @@
 "use client";
 
-import { Check, Eye, EyeOff, LoaderCircle, Moon, Settings, Sun, X } from "lucide-react";
+import {
+  Check,
+  Download,
+  Eye,
+  EyeOff,
+  FolderTree,
+  LoaderCircle,
+  Moon,
+  Settings,
+  Sun,
+  Upload,
+  X,
+} from "lucide-react";
 import * as React from "react";
 import { toast } from "sonner";
 import { useTheme } from "@/hooks/use-theme";
@@ -8,6 +20,11 @@ import { useToastSettings } from "@/hooks/use-toast-settings";
 import type { CalendarSource } from "@/lib/calendar-types";
 import type { Theme } from "@/lib/theme";
 import type { TodoistProject, TodoistSection } from "@/lib/todoist";
+import {
+  createTodoistFolderHierarchyBackup,
+  restoreTodoistFolderHierarchyBackup,
+  todoistFolderHierarchyCount,
+} from "@/lib/todoist-folder-backup";
 
 type SettingsDialogProps = {
   calendars: CalendarSource[];
@@ -56,6 +73,7 @@ export function SettingsDialog({
   const [todoistEnabled, setTodoistEnabled] = React.useState(todoistConnected);
   const [showTodoistToken, setShowTodoistToken] = React.useState(false);
   const [savingTodoist, setSavingTodoist] = React.useState(false);
+  const hierarchyImportRef = React.useRef<HTMLInputElement>(null);
   const availableTodoistSections = todoistSections.filter(
     (section) => section.projectId === todoistProjectId,
   );
@@ -110,6 +128,46 @@ export function SettingsDialog({
   const updateTodoistDestination = (projectId: string, sectionId?: string) => {
     onTodoistDestinationChange(projectId, sectionId);
     showSettingsSaved("Todoist destination updated");
+  };
+
+  const exportFolderHierarchy = () => {
+    const backup = createTodoistFolderHierarchyBackup(window.localStorage);
+    const blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `unplan-folder-hierarchy-${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.append(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 0);
+    const count = todoistFolderHierarchyCount(backup);
+    toast.success(count
+      ? `Exported ${count} ${count === 1 ? "folder" : "folders"}`
+      : "Exported folder hierarchy");
+  };
+
+  const importFolderHierarchy = async (file: File) => {
+    if (file.size > 1_000_000) {
+      toast.error("That hierarchy backup is too large");
+      return;
+    }
+    try {
+      const backup = restoreTodoistFolderHierarchyBackup(
+        await file.text(),
+        window.localStorage,
+      );
+      const count = todoistFolderHierarchyCount(backup);
+      toast.success(
+        count
+          ? `Imported ${count} ${count === 1 ? "folder" : "folders"}`
+          : "Imported folder hierarchy",
+        { description: "Refreshing the sidebar…" },
+      );
+      window.setTimeout(() => window.location.reload(), 450);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Folder hierarchy could not be imported");
+    }
   };
   if (!open) return null;
 
@@ -301,6 +359,43 @@ export function SettingsDialog({
                 </div>
               </div>
             )}
+          </section>
+
+          <section className="settings-section settings-primary-section settings-hierarchy-section">
+            <div className="settings-section-heading">
+              <div className="settings-hierarchy-title">
+                <span><FolderTree size={17} aria-hidden="true" /></span>
+                <strong>Folder hierarchy</strong>
+              </div>
+              <strong>Local backup</strong>
+            </div>
+            <p>
+              Move your custom folders, nesting, order, and collapsed state to another browser or computer.
+            </p>
+            <div className="settings-hierarchy-actions">
+              <button type="button" onClick={exportFolderHierarchy}>
+                <Download size={14} />
+                Export backup
+              </button>
+              <button type="button" onClick={() => hierarchyImportRef.current?.click()}>
+                <Upload size={14} />
+                Import backup
+              </button>
+              <input
+                ref={hierarchyImportRef}
+                type="file"
+                hidden
+                accept="application/json,.json"
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  event.currentTarget.value = "";
+                  if (file) void importFolderHierarchy(file);
+                }}
+              />
+            </div>
+            <small className="settings-hierarchy-note">
+              Backups contain folder names and layout only—never your Todoist token or task contents.
+            </small>
           </section>
         </div>
       </section>
