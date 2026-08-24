@@ -69,11 +69,13 @@ export function SettingsDialog({
 }: SettingsDialogProps) {
   const { theme, setTheme } = useTheme();
   const { duration, setDuration } = useToastSettings();
-  const [todoistCandidate, setTodoistCandidate] = React.useState(todoistToken);
-  const [todoistEnabled, setTodoistEnabled] = React.useState(todoistConnected);
+  const [todoistCandidateOverride, setTodoistCandidate] = React.useState<string | null>(null);
+  const [todoistEnabledOverride, setTodoistEnabled] = React.useState<boolean | null>(null);
   const [showTodoistToken, setShowTodoistToken] = React.useState(false);
   const [savingTodoist, setSavingTodoist] = React.useState(false);
   const hierarchyImportRef = React.useRef<HTMLInputElement>(null);
+  const todoistCandidate = todoistCandidateOverride ?? todoistToken;
+  const todoistEnabled = todoistEnabledOverride ?? todoistConnected;
   const availableTodoistSections = todoistSections.filter(
     (section) => section.projectId === todoistProjectId,
   );
