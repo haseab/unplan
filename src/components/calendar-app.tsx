@@ -342,12 +342,7 @@ const restoreDeletedEvents = (
 };
 
 function ProductMark() {
-  return (
-    <span className="product-mark" aria-hidden="true">
-      <span />
-      <span />
-    </span>
-  );
+  return <span className="product-mark" aria-hidden="true" />;
 }
 
 export function CalendarApp() {

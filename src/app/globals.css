@@ -26,8 +26,6 @@
   --kbd-bg: rgba(255, 255, 255, 0.06);
   --modal-backdrop: rgba(0, 0, 0, 0.5);
   --shadow-color: rgba(0, 0, 0, 0.34);
-  --mark-bg: #f0eee8;
-  --mark-ink: #24231f;
   --setup-bg: rgba(72, 91, 170, 0.12);
   --setup-border: rgba(111, 134, 237, 0.2);
   --setup-ink: #aebaff;
@@ -63,8 +61,6 @@
   --kbd-bg: rgba(255, 255, 255, 0.7);
   --modal-backdrop: rgba(34, 32, 28, 0.18);
   --shadow-color: rgba(45, 43, 38, 0.16);
-  --mark-bg: #262522;
-  --mark-ink: #ffffff;
   --setup-bg: #f5f7ff;
   --setup-border: #dfe4fb;
   --setup-ink: #6873a1;
@@ -179,28 +175,12 @@ kbd {
 }
 
 .product-mark {
-  position: relative;
-  display: inline-grid;
+  display: inline-block;
   width: 24px;
   height: 24px;
-  place-items: center;
-  overflow: hidden;
-  border-radius: 7px;
-  background: var(--mark-bg);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.16), inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+  flex: 0 0 24px;
+  background: url("/unplan-mark.png") center / contain no-repeat;
 }
-
-.product-mark span {
-  position: absolute;
-  width: 11px;
-  height: 2px;
-  border-radius: 999px;
-  background: var(--mark-ink);
-  transform: rotate(-38deg);
-}
-
-.product-mark span:first-child { transform: translateY(-3px) rotate(-38deg); }
-.product-mark span:last-child { transform: translateY(3px) rotate(-38deg); opacity: 0.72; }
 
 .icon-button,
 .nav-pair button,
