@@ -19,7 +19,14 @@ import { useListMarqueeSelection } from "@/hooks/use-list-marquee-selection";
 import { useTodoistGroupPreferences } from "@/hooks/use-todoist-group-preferences";
 import type { CalendarSource } from "@/lib/calendar-types";
 import { getEventPalette } from "@/lib/event-color";
-import { adjacentListItemId, updateListSelection } from "@/lib/list-selection";
+import { updateListSelection } from "@/lib/list-selection";
+import {
+  moveTask,
+  sidebarFolderNavigationId,
+  sidebarNavigationItems,
+  sidebarTaskNavigationId,
+  taskMoveIndex,
+} from "@/lib/task-sidebar-order";
 import {
   reorderTodoistTaskIds,
   todoistTaskDropTargetAtPointer,
@@ -307,6 +314,7 @@ export function TodoistSidebar({
   const skipNextTaskLayoutAnimationRef = React.useRef(false);
   const taskPositionsRef = React.useRef<Map<string, number>>(new Map());
   const selectionAnchorRef = React.useRef<string | null>(null);
+  const pendingKeyboardRevealTaskIdRef = React.useRef<string | null>(null);
   const {
     collapsedGroups,
     expandGroup,
@@ -464,6 +472,17 @@ export function TodoistSidebar({
     () => orderedVisibleTasks.map(({ id }) => id),
     [orderedVisibleTasks],
   );
+  const sidebarNavigation = React.useMemo(
+    () => sidebarNavigationItems(
+      taskGroups.map(([group, items]) => ({
+        group,
+        taskIds: items.map(({ task }) => task.id),
+      })),
+      groupParents,
+      collapsedGroups,
+    ),
+    [collapsedGroups, groupParents, taskGroups],
+  );
   const { beginMarquee, marqueeStyle } = useListMarqueeSelection({
     containerRef: groupsRef,
     itemAttribute: "data-marquee-task-id",
@@ -474,30 +493,75 @@ export function TodoistSidebar({
     selectionAnchorRef.current = taskId;
     setSelectedTaskIds(new Set([taskId]));
   }, []);
-  const navigateTask = React.useCallback((
-    taskId: string,
+  const focusTask = React.useCallback((taskId: string) => {
+    activateTask(taskId);
+    window.requestAnimationFrame(() => {
+      const target = groupsRef.current?.querySelector<HTMLElement>(
+        `[data-sidebar-navigation-id="${CSS.escape(sidebarTaskNavigationId(taskId))}"]`,
+      );
+      target?.focus({ preventScroll: true });
+      target?.scrollIntoView({ behavior: "auto", block: "nearest" });
+    });
+  }, [activateTask]);
+  const navigateSidebarItem = React.useCallback((
+    navigationId: string,
     direction: "next" | "previous",
     extendSelection: boolean,
   ) => {
-    const targetId = adjacentListItemId(orderedVisibleTaskIds, taskId, direction);
-    if (!targetId) return;
-    const result = updateListSelection({
-      anchorId: selectionAnchorRef.current ?? taskId,
-      intent: extendSelection ? "range" : "replace",
-      itemId: targetId,
-      orderedIds: orderedVisibleTaskIds,
-      selection: selectedTaskIds,
-    });
-    selectionAnchorRef.current = result.anchorId;
-    setSelectedTaskIds(result.selection);
+    const currentIndex = sidebarNavigation.findIndex(({ id }) => id === navigationId);
+    const targetIndex = currentIndex + (direction === "next" ? 1 : -1);
+    const targetItem = sidebarNavigation[targetIndex];
+    if (!targetItem) return;
+    if (targetItem.kind === "task") {
+      const targetTaskId = targetItem.id.slice("task:".length);
+      const currentTaskId = navigationId.startsWith("task:")
+        ? navigationId.slice("task:".length)
+        : targetTaskId;
+      const result = updateListSelection({
+        anchorId: selectionAnchorRef.current ?? currentTaskId,
+        intent: extendSelection ? "range" : "replace",
+        itemId: targetTaskId,
+        orderedIds: orderedVisibleTaskIds,
+        selection: selectedTaskIds,
+      });
+      selectionAnchorRef.current = result.anchorId;
+      setSelectedTaskIds(result.selection);
+    }
     window.requestAnimationFrame(() => {
       const target = groupsRef.current?.querySelector<HTMLElement>(
-        `[data-marquee-task-id="${CSS.escape(targetId)}"]`,
+        `[data-sidebar-navigation-id="${CSS.escape(targetItem.id)}"]`,
       );
       target?.focus({ preventScroll: true });
-      target?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      target?.scrollIntoView({ behavior: "auto", block: "nearest" });
     });
-  }, [orderedVisibleTaskIds, selectedTaskIds]);
+  }, [orderedVisibleTaskIds, selectedTaskIds, sidebarNavigation]);
+
+  const moveTaskByKeyboard = React.useCallback((
+    task: TodoistTask,
+    direction: -1 | 1,
+  ) => {
+    const groupTasks = taskGroups.find(([, items]) =>
+      items.some(({ task: candidate }) => candidate.id === task.id)
+    )?.[1].map(({ task: candidate }) => candidate) ?? [];
+    const currentIndex = groupTasks.findIndex(({ id }) => id === task.id);
+    const nextIndex = taskMoveIndex(
+      currentIndex,
+      groupTasks.length,
+      direction,
+    );
+    if (nextIndex === currentIndex) return;
+
+    const reorderedGroupTasks = moveTask(groupTasks, currentIndex, nextIndex);
+    const groupTaskIds = new Set(groupTasks.map(({ id }) => id));
+    let groupIndex = 0;
+    const orderedTaskIds = taskGroups
+      .flatMap(([, items]) => items.map(({ task: candidate }) => candidate.id))
+      .map((taskId) => groupTaskIds.has(taskId)
+        ? reorderedGroupTasks[groupIndex++]!.id
+        : taskId);
+    pendingKeyboardRevealTaskIdRef.current = task.id;
+    void onReorderTasks(orderedTaskIds).catch(() => undefined);
+  }, [onReorderTasks, taskGroups]);
 
   const deleteSelectedTasks = React.useCallback(() => {
     const selectedTasks = orderedVisibleTasks.filter(({ id }) => selectedTaskIds.has(id));
@@ -598,6 +662,7 @@ export function TodoistSidebar({
       if (element.dataset.dragged === "true") return;
       const taskId = element.dataset.taskShellId;
       if (!taskId) return;
+      element.getAnimations().forEach((animation) => animation.cancel());
       const top = element.getBoundingClientRect().top;
       nextPositions.set(taskId, top);
       const previousTop = taskPositionsRef.current.get(taskId);
@@ -605,7 +670,6 @@ export function TodoistSidebar({
       const offset = previousTop - top;
       if (Math.abs(offset) < 0.5) return;
       animations.push({ fromTop: previousTop, offset, taskId, toTop: top });
-      element.getAnimations().forEach((animation) => animation.cancel());
       element.animate(
         [
           { transform: `translateY(${offset}px)` },
@@ -628,6 +692,45 @@ export function TodoistSidebar({
       });
     }
     taskPositionsRef.current = nextPositions;
+    const revealTaskId = pendingKeyboardRevealTaskIdRef.current;
+    if (revealTaskId) {
+      const element = container.querySelector<HTMLElement>(
+        `[data-marquee-task-id="${CSS.escape(revealTaskId)}"]`,
+      );
+      if (element) {
+        const shell = element.closest<HTMLElement>("[data-task-shell-id]");
+        if (!shell) return;
+        pendingKeyboardRevealTaskIdRef.current = null;
+        element.focus({ preventScroll: true });
+        const taskScrollContainer = element.closest<HTMLElement>(
+          ".todo-event-group-blocks",
+        );
+        taskScrollContainer?.scrollIntoView({
+          behavior: "auto",
+          block: "nearest",
+          inline: "nearest",
+        });
+        if (taskScrollContainer) {
+          const taskContentTop = shell.offsetTop;
+          const taskContentBottom = taskContentTop + shell.offsetHeight;
+          const currentScrollTop = taskScrollContainer.scrollTop;
+          const viewportBottom = currentScrollTop + taskScrollContainer.clientHeight;
+          const requestedScrollTop = taskContentTop < currentScrollTop
+            ? taskContentTop
+            : taskContentBottom > viewportBottom
+              ? taskContentBottom - taskScrollContainer.clientHeight
+              : currentScrollTop;
+          const targetScrollTop = Math.max(
+            0,
+            Math.min(
+              taskScrollContainer.scrollHeight - taskScrollContainer.clientHeight,
+              requestedScrollTop,
+            ),
+          );
+          taskScrollContainer.scrollTop = targetScrollTop;
+        }
+      }
+    }
   }, [dragOverGroup, draggedTaskId, dropTarget, taskGroups]);
 
   React.useLayoutEffect(() => {
@@ -1348,7 +1451,24 @@ export function TodoistSidebar({
                   <button
                     aria-expanded={!collapsed}
                     className="todo-event-group-toggle"
+                    data-sidebar-navigation-id={sidebarFolderNavigationId(group)}
+                    data-sidebar-navigation-kind="folder"
                     onClick={() => toggleGroup(group)}
+                    onKeyDown={(event) => {
+                      if (
+                        event.metaKey
+                        || event.ctrlKey
+                        || event.altKey
+                        || (event.key !== "ArrowDown" && event.key !== "ArrowUp")
+                      ) return;
+                      event.preventDefault();
+                      event.stopPropagation();
+                      navigateSidebarItem(
+                        sidebarFolderNavigationId(group),
+                        event.key === "ArrowDown" ? "next" : "previous",
+                        false,
+                      );
+                    }}
                     type="button"
                   >
                     <ChevronRight aria-hidden="true" size={13} />
@@ -1586,8 +1706,19 @@ export function TodoistSidebar({
                           });
                         }}
                         onNavigate={(direction, extendSelection) => {
-                          navigateTask(task.id, direction, extendSelection);
+                          navigateSidebarItem(
+                            sidebarTaskNavigationId(task.id),
+                            direction,
+                            extendSelection,
+                          );
                         }}
+                        onNavigateToGroupEdge={(edge) => {
+                          const targetTask = edge === "start"
+                            ? items[0]?.task
+                            : items.at(-1)?.task;
+                          if (targetTask) focusTask(targetTask.id);
+                        }}
+                        onMove={(direction) => moveTaskByKeyboard(task, direction)}
                         onRename={(title) => onRenameTask(task, title)}
                         onResize={(minutes) => onResizeTask(task, minutes)}
                         onSelect={(event) => {

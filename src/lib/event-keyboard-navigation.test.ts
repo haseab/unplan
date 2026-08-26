@@ -1,10 +1,24 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  findEventNavigationBacktrackKey,
+  findEventClosestToMiddleDayNoon,
   findDirectionalEventKey,
   resolveEventNavigationAnchorKey,
+  type EventNavigationTransition,
   type EventNavigationRect,
 } from "./event-keyboard-navigation";
+
+test("calendar focus fallback chooses the event nearest the middle day at noon", () => {
+  assert.equal(
+    findEventClosestToMiddleDayNoon([
+      { dayIndex: 6, endMinute: 720, eventKey: "day-before", startMinute: 660 },
+      { dayIndex: 7, endMinute: 780, eventKey: "middle-afternoon", startMinute: 750 },
+      { dayIndex: 7, endMinute: 735, eventKey: "middle-noon", startMinute: 705 },
+    ], 15),
+    "middle-noon",
+  );
+});
 
 const rect = (
   eventKey: string,
@@ -52,7 +66,7 @@ test("arrow navigation uses center-to-center distance", () => {
   );
 });
 
-test("horizontal navigation does not skip the adjacent day", () => {
+test("horizontal navigation skips empty days", () => {
   const anchor = rect("anchor", 1, 100, 100);
 
   assert.equal(
@@ -61,59 +75,75 @@ test("horizontal navigation does not skip the adjacent day", () => {
       [rect("later-match", 3, 320, 100)],
       "right",
     ),
+    "later-match",
+  );
+});
+
+test("horizontal navigation visits same-day events only when their times match", () => {
+  const anchor = rect("anchor", 1, 100, 100);
+  const candidates = [
+    rect("same-time", 1, 180, 100),
+    rect("different-time", 1, 0, 80),
+    rect("next-day", 2, 220, 100),
+  ];
+
+  assert.equal(findDirectionalEventKey(anchor, candidates, "right"), "same-time");
+  assert.equal(
+    findDirectionalEventKey(anchor, [rect("different-time", 1, 0, 80)], "left"),
     null,
   );
 });
 
-test("horizontal navigation visits overlapping matching events in the current day", () => {
-  const anchor = rect("anchor", 1, 100, 100);
+test("horizontal navigation uses Euclidean distance across future days", () => {
+  const anchor = rect("semester-reflection", 0, 25, 245, 230, 160);
   const candidates = [
-    rect("same-day", 1, 180, 100),
-    rect("next-day", 2, 220, 100),
-  ];
-
-  assert.equal(findDirectionalEventKey(anchor, candidates, "right"), "same-day");
-});
-
-test("horizontal navigation requires identical start and end times", () => {
-  const anchor = rect("anchor", 1, 100, 100);
-  const candidates = [
-    rect("different-time", 2, 210, 90),
-    rect("matching-time", 2, 220, 100),
+    rect("weekly-ops-sync", 2, 529, 222, 218, 56),
+    rect("reach-out-to-edson", 2, 529, 342, 218, 56),
+    rect("safi", 1, 280, 821, 218, 357),
   ];
 
   assert.equal(
     findDirectionalEventKey(anchor, candidates, "right"),
-    "matching-time",
+    "reach-out-to-edson",
   );
 });
 
-test("right falls down to the first later event in the adjacent day", () => {
-  const anchor = rect("anchor", 1, 100, 100);
+test("horizontal distance is measured between event rectangles", () => {
+  const anchor = rect("update-financial-plan-actual", 1, 100, 836, 318, 25);
   const candidates = [
-    rect("later", 2, 210, 240),
-    rect("first-later", 2, 210, 180),
-    rect("before", 2, 210, 80),
+    rect("finc-emails-slack", 2, 447, 242, 318, 25),
+    rect("semester-reflection", 3, 795, 783, 318, 131),
   ];
 
   assert.equal(
     findDirectionalEventKey(anchor, candidates, "right"),
-    "first-later",
+    "semester-reflection",
   );
 });
 
-test("left falls up to the last earlier event in the adjacent day", () => {
-  const anchor = rect("anchor", 1, 100, 200);
+test("horizontal navigation chooses the closest rectangle regardless of event size", () => {
+  const anchor = rect("have-dante-talk", 1, 60, 283, 230, 67);
   const candidates = [
-    rect("earlier", 0, 0, 80),
-    rect("last-earlier", 0, 0, 160),
-    rect("after", 0, 0, 240),
+    rect("founders-open-campus", 2, 315, 710, 218, 205),
+    rect("update-financial-plan", 2, 315, 259, 218, 28),
   ];
 
   assert.equal(
-    findDirectionalEventKey(anchor, candidates, "left"),
-    "last-earlier",
+    findDirectionalEventKey(anchor, candidates, "right"),
+    "update-financial-plan",
   );
+});
+
+test("opposite arrows backtrack the exact navigation path", () => {
+  const history: EventNavigationTransition[] = [
+    { direction: "right", fromEventKey: "a", toEventKey: "b" },
+    { direction: "right", fromEventKey: "b", toEventKey: "c" },
+  ];
+
+  assert.equal(findEventNavigationBacktrackKey(history, "c", "left"), "b");
+  history.pop();
+  assert.equal(findEventNavigationBacktrackKey(history, "b", "left"), "a");
+  assert.equal(findEventNavigationBacktrackKey(history, "b", "right"), null);
 });
 
 test("vertical navigation stays within the current day", () => {

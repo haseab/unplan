@@ -3,6 +3,7 @@
 import * as React from "react";
 import {
   applyTodoistTaskOrder,
+  changedTodoistProjectOrders,
   closeTodoistTask,
   createTodoistProject,
   createTodoistTask,
@@ -33,6 +34,7 @@ import {
   TODOIST_BUCKET_PROJECT_IDS_STORAGE_KEY,
   todoistManagedBucketProjects,
 } from "@/lib/todoist-buckets";
+import { LatestMutationQueue } from "@/lib/mutation-queue";
 
 export type TodoistBucketSelectionRequest = {
   error: string | null;
@@ -42,6 +44,25 @@ export type TodoistBucketSelectionRequest = {
 type PendingBucketSelection = {
   reject: (error: Error) => void;
   resolve: (projectId: string) => void;
+};
+
+type TodoistOrderSave = {
+  projectIds: Set<string>;
+  tasks: TodoistTask[];
+};
+
+const todoistOrderErrorStatus = (error: unknown) =>
+  typeof error === "object" && error !== null && "status" in error
+    ? Number(error.status)
+    : 0;
+
+const todoistOrderRetryDelay = (error: unknown, attempt: number) => {
+  const retryAfterMs = typeof error === "object" && error !== null && "retryAfterMs" in error
+    ? Number(error.retryAfterMs)
+    : 0;
+  return Number.isFinite(retryAfterMs) && retryAfterMs > 0
+    ? retryAfterMs
+    : Math.min(750 * 2 ** (attempt - 1), 6_000);
 };
 
 export function useTodoist() {
@@ -67,6 +88,27 @@ export function useTodoist() {
   const projectsKnownAtCapacityRef = React.useRef(new Set<string>());
   const bucketAllocationQueueRef = React.useRef<Promise<void>>(Promise.resolve());
   const bucketResolutionFailureRef = React.useRef<Error | null>(null);
+  const saveTaskOrderRef = React.useRef<(save: TodoistOrderSave) => Promise<void>>(
+    async () => undefined,
+  );
+  const taskOrderQueueRef = React.useRef<LatestMutationQueue<TodoistOrderSave> | null>(null);
+  if (!taskOrderQueueRef.current) {
+    taskOrderQueueRef.current = new LatestMutationQueue<TodoistOrderSave>({
+      debounceMs: 350,
+      maxAttempts: 3,
+      mergePending: (pending, next) => ({
+        projectIds: new Set([...pending.projectIds, ...next.projectIds]),
+        tasks: next.tasks,
+      }),
+      retryDelayMs: todoistOrderRetryDelay,
+      run: (save) => saveTaskOrderRef.current(save),
+      shouldRetry: (error) => [429, 502, 503, 504].includes(todoistOrderErrorStatus(error)),
+    });
+  }
+
+  React.useEffect(() => () => {
+    taskOrderQueueRef.current?.dispose();
+  }, []);
 
   React.useEffect(() => {
     tasksRef.current = tasks;
@@ -573,10 +615,13 @@ export function useTodoist() {
     return task;
   }, [token]);
 
-  const saveTaskOrderByProject = React.useCallback(async (orderedTasks: TodoistTask[]) => {
+  const saveTaskOrderByProject = React.useCallback(async ({
+    projectIds,
+    tasks: orderedTasks,
+  }: TodoistOrderSave) => {
     const taskIdsByProject = new Map<string, string[]>();
     orderedTasks.forEach((task) => {
-      if (task.optimistic) return;
+      if (task.optimistic || !projectIds.has(task.projectId)) return;
       const projectTaskIds = taskIdsByProject.get(task.projectId) ?? [];
       projectTaskIds.push(task.id);
       taskIdsByProject.set(task.projectId, projectTaskIds);
@@ -585,6 +630,7 @@ export function useTodoist() {
       [...taskIdsByProject.values()].map((taskIds) => saveTodoistTaskOrder(token, taskIds)),
     );
   }, [token]);
+  saveTaskOrderRef.current = saveTaskOrderByProject;
 
   const reorderTasks = React.useCallback(async (orderedTaskIds: string[]) => {
     if (!token) throw new Error("Connect Todoist in Settings first");
@@ -599,7 +645,13 @@ export function useTodoist() {
     setTasks(reorderedTasks);
     setError(null);
     try {
-      await saveTaskOrderByProject(reorderedTasks);
+      const changedOrders = changedTodoistProjectOrders(previousTasks, reorderedTasks);
+      if (changedOrders.length) {
+        await taskOrderQueueRef.current!.enqueue({
+          projectIds: new Set(changedOrders.map(({ projectId }) => projectId)),
+          tasks: reorderedTasks,
+        });
+      }
       console.debug("[BUG:SIDEBAR-REORDER]", "store:persisted-order", {
         reorderedTaskIds: reorderedTasks.map(({ id }) => id),
       });
@@ -615,16 +667,19 @@ export function useTodoist() {
       const message = caught instanceof Error
         ? caught.message
         : "Todoist could not save the task order";
-      console.error("[BUG:SIDEBAR-REORDER]", "store:persist-failed", caught);
+      console.warn("[BUG:SIDEBAR-REORDER]", "store:persist-failed", caught);
       setError(message);
       throw caught;
     }
-  }, [saveTaskOrderByProject, token]);
+  }, [token]);
 
   const persistTaskOrder = React.useCallback(async () => {
     if (!token) throw new Error("Connect Todoist in Settings first");
-    await saveTaskOrderByProject(tasksRef.current);
-  }, [saveTaskOrderByProject, token]);
+    await taskOrderQueueRef.current!.enqueue({
+      projectIds: new Set(tasksRef.current.map(({ projectId }) => projectId)),
+      tasks: tasksRef.current,
+    });
+  }, [token]);
 
   const deleteTask = React.useCallback(async (taskId: string) => {
     if (!token) throw new Error("Connect Todoist in Settings first");

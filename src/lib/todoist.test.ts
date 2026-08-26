@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   applyTodoistTaskOrder,
+  changedTodoistProjectOrders,
   insertTodoistTaskAtIndex,
   insertTodoistTasksAtTarget,
   collectTodoistPages,
@@ -111,6 +112,25 @@ test("applies a visible task order without moving hidden tasks out of their slot
     ).map(({ id }) => id),
     ["c", "hidden", "a", "b"],
   );
+});
+
+test("returns only Todoist projects whose relative task order changed", () => {
+  const previous = [
+    task("a"),
+    task("b"),
+    { ...task("c"), projectId: "work" },
+    { ...task("d"), projectId: "work" },
+  ];
+  const next = [
+    task("b"),
+    task("a"),
+    { ...task("c"), projectId: "work" },
+    { ...task("d"), projectId: "work" },
+  ];
+
+  assert.deepEqual(changedTodoistProjectOrders(previous, next), [
+    { projectId: "inbox", taskIds: ["b", "a"] },
+  ]);
 });
 
 test("collects every page returned by Todoist", async () => {

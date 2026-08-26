@@ -15,6 +15,12 @@ const explicitFlagPattern = /^\[([A-Z0-9][A-Z0-9:_-]{1,63})\]$/;
 const flushDelayMs = 100;
 const maxEntriesPerBatch = 100;
 
+function isFrameworkRefreshMessage(data: unknown[]) {
+  return typeof data[0] === "string"
+    && (data[0] === "[Fast Refresh] rebuilding"
+      || data[0].startsWith("[Fast Refresh] done in "));
+}
+
 function serialize(value: unknown) {
   if (value instanceof Error) return value.stack ?? `${value.name}: ${value.message}`;
   if (typeof value === "string") return value;
@@ -64,6 +70,9 @@ export function BrowserConsoleLogger() {
     for (const level of levels) {
       console[level] = (...data: unknown[]) => {
         originals[level](...data);
+        // Forwarding Next's refresh notices writes to the debug log, which can
+        // itself wake the dev watcher and create a refresh/log feedback loop.
+        if (isFrameworkRefreshMessage(data)) return;
         const explicitFlag =
           typeof data[0] === "string" ? data[0].match(explicitFlagPattern) : null;
         const flag = explicitFlag?.[1] ?? "GENERAL";

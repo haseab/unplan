@@ -33,6 +33,7 @@ export const resolveTodoistDestination = (
 };
 
 export type TodoistTask = {
+  childOrder?: number;
   id: string;
   content: string;
   description: string;
@@ -147,7 +148,33 @@ export const applyTodoistTaskOrder = (
   );
 };
 
+const persistedTaskIdsByProject = (tasks: TodoistTask[]) => {
+  const result = new Map<string, string[]>();
+  tasks.forEach((task) => {
+    if (task.optimistic) return;
+    const taskIds = result.get(task.projectId) ?? [];
+    taskIds.push(task.id);
+    result.set(task.projectId, taskIds);
+  });
+  return result;
+};
+
+export const changedTodoistProjectOrders = (
+  previousTasks: TodoistTask[],
+  nextTasks: TodoistTask[],
+) => {
+  const previousByProject = persistedTaskIdsByProject(previousTasks);
+  const nextByProject = persistedTaskIdsByProject(nextTasks);
+  return [...nextByProject].flatMap(([projectId, taskIds]) => {
+    const previousTaskIds = previousByProject.get(projectId) ?? [];
+    const unchanged = taskIds.length === previousTaskIds.length
+      && taskIds.every((taskId, index) => taskId === previousTaskIds[index]);
+    return unchanged ? [] : [{ projectId, taskIds }];
+  });
+};
+
 type TodoistTaskPayload = {
+  child_order?: number | null;
   id: string;
   content: string;
   description?: string | null;
@@ -176,6 +203,7 @@ type TodoistSectionPayload = {
 };
 
 export const normalizeTodoistTask = (task: TodoistTaskPayload): TodoistTask => ({
+  childOrder: task.child_order ?? undefined,
   id: String(task.id),
   content: task.content,
   description: task.description ?? "",
@@ -243,7 +271,16 @@ const todoistRequest = async <Result>(
   const text = await response.text();
   const data = text ? JSON.parse(text) as Result & TodoistErrorPayload : null;
   if (!response.ok) {
-    throw new Error(data?.error ?? data?.message ?? "Todoist rejected the request");
+    const retryAfterSeconds = Number(response.headers.get("retry-after"));
+    throw Object.assign(
+      new Error(data?.error ?? data?.message ?? "Todoist rejected the request"),
+      {
+        status: response.status,
+        ...(Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0
+          ? { retryAfterMs: retryAfterSeconds * 1_000 }
+          : {}),
+      },
+    );
   }
   return data as Result;
 };
@@ -255,7 +292,12 @@ export const loadTodoistTasks = async (token: string, projectId: string) => {
     `/api/todoist/tasks?${params}`,
     token,
   );
-  return data.tasks.map(normalizeTodoistTask);
+  return data.tasks
+    .map(normalizeTodoistTask)
+    .sort((first, second) =>
+      (first.childOrder ?? Number.MAX_SAFE_INTEGER)
+      - (second.childOrder ?? Number.MAX_SAFE_INTEGER)
+    );
 };
 
 export const loadTodoistDestinations = async (token: string) => {

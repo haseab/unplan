@@ -32,7 +32,9 @@ type TodoistEventCardProps = {
   onDuplicate: () => Promise<void>;
   onDragEnd: (event: React.DragEvent<HTMLButtonElement>) => void;
   onDragStart: (event: React.DragEvent<HTMLButtonElement>) => void;
+  onMove: (direction: -1 | 1) => void;
   onNavigate: (direction: "next" | "previous", extendSelection: boolean) => void;
+  onNavigateToGroupEdge: (edge: "end" | "start") => void;
   onRename: (title: string) => Promise<void>;
   onResize: (durationMinutes: number) => Promise<void>;
   onSelect: (event: React.MouseEvent<HTMLButtonElement>) => void;
@@ -55,7 +57,9 @@ export function TodoistEventCard({
   onDuplicate,
   onDragEnd,
   onDragStart,
+  onMove,
   onNavigate,
+  onNavigateToGroupEdge,
   onRename,
   onResize,
   onSelect,
@@ -72,6 +76,7 @@ export function TodoistEventCard({
   const [saving, setSaving] = React.useState(false);
   const [resizePreview, setResizePreview] = React.useState<number | null>(null);
   const resizeRef = React.useRef<{ startDuration: number; startY: number } | null>(null);
+  const eventButtonRef = React.useRef<HTMLButtonElement>(null);
   const renameCommitRef = React.useRef(false);
   const renameCancelRef = React.useRef(false);
 
@@ -92,7 +97,20 @@ export function TodoistEventCard({
     setEditing(true);
   };
 
-  const commitRename = async () => {
+  const restoreEventButtonFocus = () => {
+    window.requestAnimationFrame(() => {
+      eventButtonRef.current?.focus({ preventScroll: true });
+      console.debug("[BUG:EVENT-TITLE-FOCUS] [TASK:FOCUS] restored task-card focus", {
+        activeTaskId: (document.activeElement as HTMLElement | null)
+          ?.closest<HTMLElement>("[data-task-shell-id]")
+          ?.dataset.taskShellId ?? null,
+        activeTag: document.activeElement?.tagName ?? null,
+        taskId: task.id,
+      });
+    });
+  };
+
+  const commitRename = async (restoreFocus = false) => {
     if (renameCommitRef.current) return;
     if (renameCancelRef.current) {
       renameCancelRef.current = false;
@@ -102,6 +120,7 @@ export function TodoistEventCard({
     if (!normalized || normalized === title) {
       setEditing(false);
       setRenameValue(title);
+      if (restoreFocus) restoreEventButtonFocus();
       return;
     }
     renameCommitRef.current = true;
@@ -109,6 +128,7 @@ export function TodoistEventCard({
     try {
       await onRename(normalized);
       setEditing(false);
+      if (restoreFocus) restoreEventButtonFocus();
     } catch {
       // The parent owns error presentation and rolls the optimistic edit back.
     } finally {
@@ -155,20 +175,69 @@ export function TodoistEventCard({
       style={{ height: eventHeight }}
     >
       <button
+        ref={eventButtonRef}
         aria-label={`${title}, ${formatDuration(displayedDuration)}`}
         aria-busy={busy || undefined}
         aria-pressed={selected}
         className={`calendar-event todo-event-block event-density-${density} ${renderedHeight < 24 ? "event-compact" : ""} ${density === "time" ? "event-condensed" : ""} ${selected ? "event-selected" : ""}`}
         data-marquee-task-id={task.id}
+        data-sidebar-navigation-id={`task:${task.id}`}
+        data-sidebar-navigation-kind="task"
         draggable={!busy && !editing && resizePreview === null}
         onClick={onSelect}
         onDoubleClick={beginRename}
         onDragEnd={onDragEnd}
         onDragStart={onDragStart}
         onKeyDown={(event) => {
-          const direction = event.key === "ArrowDown" || event.key === "ArrowRight"
+          const modifier = event.metaKey || event.ctrlKey;
+          if (modifier && !event.altKey && event.key.toLowerCase() === "d") {
+            event.preventDefault();
+            event.stopPropagation();
+            onActivate();
+            setSaving(true);
+            void onDuplicate().catch(() => undefined).finally(() => setSaving(false));
+            return;
+          }
+          if (
+            modifier
+            && !event.altKey
+            && (event.key === "ArrowDown" || event.key === "ArrowUp")
+          ) {
+            event.preventDefault();
+            event.stopPropagation();
+            onNavigateToGroupEdge(event.key === "ArrowUp" ? "start" : "end");
+            return;
+          }
+          if (event.key === "Enter" && !modifier && !event.altKey) {
+            event.preventDefault();
+            event.stopPropagation();
+            beginRename();
+            return;
+          }
+          const moveDirection = event.key === "ArrowDown"
+            ? 1
+            : event.key === "ArrowUp"
+              ? -1
+              : null;
+          if (moveDirection && event.altKey && !modifier) {
+            event.preventDefault();
+            event.stopPropagation();
+            onActivate();
+            onMove(moveDirection);
+            return;
+          }
+          if (
+            !modifier
+            && !event.altKey
+            && (event.key === "ArrowLeft" || event.key === "ArrowRight")
+          ) {
+            event.preventDefault();
+            event.stopPropagation();
+            return;
+          }
+          const direction = !modifier && !event.altKey && event.key === "ArrowDown"
             ? "next"
-            : event.key === "ArrowUp" || event.key === "ArrowLeft"
+            : !modifier && !event.altKey && event.key === "ArrowUp"
               ? "previous"
               : null;
           if (!direction) return;
@@ -196,7 +265,11 @@ export function TodoistEventCard({
           className="todo-event-inline-editor"
           onSubmit={(event) => {
             event.preventDefault();
-            void commitRename();
+            console.debug("[BUG:EVENT-TITLE-FOCUS] [TASK:ENTER] submitting task title", {
+              taskId: task.id,
+              title: renameValue,
+            });
+            void commitRename(true);
           }}
           style={{ ...style, height: eventHeight }}
         >

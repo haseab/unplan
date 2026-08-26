@@ -66,13 +66,16 @@ export function useDebouncedEventUpdate({
     } catch {
       saved = false;
     } finally {
-      if (version !== versionRef.current) return;
-      dirtyRef.current = false;
-      if (saved) return;
-      const original = eventRef.current;
-      draftRef.current = original;
-      setDraft(original);
+      if (version === versionRef.current) {
+        dirtyRef.current = false;
+        if (!saved) {
+          const original = eventRef.current;
+          draftRef.current = original;
+          setDraft(original);
+        }
+      }
     }
+    return saved;
   }, []);
 
   const updateDraft = React.useCallback((updater: EventDraftUpdater) => {
@@ -99,6 +102,16 @@ export function useDebouncedEventUpdate({
     setDraft(candidate);
   }, []);
 
+  const flushUpdate = React.useCallback(async () => {
+    if (timerRef.current !== null) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+    const pending = pendingRef.current;
+    pendingRef.current = null;
+    return pending ? persist(pending.candidate, pending.version) : true;
+  }, [persist]);
+
   React.useEffect(() => () => {
     if (timerRef.current !== null) clearTimeout(timerRef.current);
     const pending = pendingRef.current;
@@ -106,5 +119,5 @@ export function useDebouncedEventUpdate({
     if (pending) void onUpdateRef.current(normalizeEventDraft(pending.candidate));
   }, []);
 
-  return { draft, updateDraft, updateLocalDraft };
+  return { draft, flushUpdate, updateDraft, updateLocalDraft };
 }

@@ -111,3 +111,92 @@ export class MutationQueue {
     }
   };
 }
+
+export type LatestMutationQueueOptions<T> = {
+  debounceMs: number;
+  maxAttempts: number;
+  mergePending?: (pending: T, next: T) => T;
+  retryDelayMs: (error: unknown, attempt: number) => number;
+  run: (value: T) => Promise<void>;
+  shouldRetry: (error: unknown) => boolean;
+};
+
+type LatestMutationWaiter = {
+  reject: (error: unknown) => void;
+  resolve: () => void;
+};
+
+/**
+ * Serializes writes and collapses queued values so only the newest state is
+ * sent after the active write. Every caller still settles with the write that
+ * includes or supersedes its requested state.
+ */
+export class LatestMutationQueue<T> {
+  private active = false;
+  private pending: { value: T; waiters: LatestMutationWaiter[] } | null = null;
+  private timer: ReturnType<typeof setTimeout> | null = null;
+
+  constructor(private readonly options: LatestMutationQueueOptions<T>) {}
+
+  enqueue(value: T) {
+    return new Promise<void>((resolve, reject) => {
+      if (this.pending) {
+        this.pending.value = this.options.mergePending
+          ? this.options.mergePending(this.pending.value, value)
+          : value;
+        this.pending.waiters.push({ reject, resolve });
+      } else {
+        this.pending = { value, waiters: [{ reject, resolve }] };
+      }
+      this.schedule();
+    });
+  }
+
+  dispose(error: Error = new Error("Mutation queue was disposed")) {
+    if (this.timer) clearTimeout(this.timer);
+    this.timer = null;
+    this.pending?.waiters.forEach(({ reject }) => reject(error));
+    this.pending = null;
+  }
+
+  private schedule() {
+    if (this.active || this.timer || !this.pending) return;
+    this.timer = setTimeout(() => {
+      this.timer = null;
+      void this.flush();
+    }, this.options.debounceMs);
+  }
+
+  private async runWithRetry(value: T) {
+    let attempt = 1;
+    while (true) {
+      try {
+        await this.options.run(value);
+        return;
+      } catch (error) {
+        if (attempt >= this.options.maxAttempts || !this.options.shouldRetry(error)) {
+          throw error;
+        }
+        const delay = this.options.retryDelayMs(error, attempt);
+        await defaultSleep(delay);
+        attempt += 1;
+      }
+    }
+  }
+
+  private async flush() {
+    if (this.active || !this.pending) return;
+    const mutation = this.pending;
+    this.pending = null;
+    this.active = true;
+    try {
+      await this.runWithRetry(mutation.value);
+      mutation.waiters.forEach(({ resolve }) => resolve());
+    } catch (error) {
+      mutation.waiters.forEach(({ reject }) => reject(error));
+    } finally {
+      this.active = false;
+      this.schedule();
+    }
+  }
+}

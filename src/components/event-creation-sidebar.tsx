@@ -37,6 +37,7 @@ export type EventCreationDraft = {
 };
 
 type EventCreationSidebarProps = {
+  autoFocusSelectedEventTitle: boolean;
   calendarSources: CalendarSource[];
   calendars: CalendarSource[];
   draft: EventCreationDraft | null;
@@ -48,7 +49,9 @@ type EventCreationSidebarProps = {
   onCreateConference: (event: CalendarEvent) => Promise<string>;
   onDeleteSelection: () => void | Promise<void>;
   onDuplicateSelection: () => void | Promise<void>;
+  onFocusEvent: (event: CalendarEvent) => void;
   onRemoveSelection: (eventId: string) => void;
+  onSelectedEventTitleAutoFocused: () => void;
   onRespondToEvent: (
     event: CalendarEvent,
     responseStatus: CalendarEventRsvpStatus,
@@ -94,18 +97,24 @@ function GoogleMeetMark() {
 }
 
 function EventDetailsEditor({
+  autoFocusTitle,
   calendar,
   calendars,
   event,
   onCreateConference,
+  onFocusEvent,
+  onTitleAutoFocused,
   onPreview,
   onRespond,
   onUpdate,
 }: {
+  autoFocusTitle: boolean;
   calendar: CalendarSource | null;
   calendars: CalendarSource[];
   event: CalendarEvent;
   onCreateConference: (event: CalendarEvent) => Promise<string>;
+  onFocusEvent: (event: CalendarEvent) => void;
+  onTitleAutoFocused: () => void;
   onPreview: (event: CalendarEvent) => void;
   onRespond: (
     event: CalendarEvent,
@@ -115,6 +124,7 @@ function EventDetailsEditor({
 }) {
   const {
     draft: edited,
+    flushUpdate,
     updateDraft,
     updateLocalDraft,
   } = useDebouncedEventUpdate({
@@ -128,7 +138,6 @@ function EventDetailsEditor({
   >(event.conferenceLink && event.conferenceLink !== "pending" ? "success" : "idle");
   const [conferenceError, setConferenceError] = React.useState<string | null>(null);
   const titleRef = React.useRef<HTMLTextAreaElement>(null);
-  const panelRef = React.useRef<HTMLDivElement>(null);
   const start = new Date(edited.start);
   const end = new Date(edited.end);
   const zone = edited.timeZone || Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -145,21 +154,15 @@ function EventDetailsEditor({
     title.style.height = `${title.scrollHeight}px`;
   }, [edited.title]);
 
-  React.useEffect(() => {
-    const focusTitleOnTab = (keyboardEvent: KeyboardEvent) => {
-      if (keyboardEvent.key !== "Tab" || keyboardEvent.shiftKey) return;
-      const active = document.activeElement;
-      if (active && panelRef.current?.contains(active)) return;
-      keyboardEvent.preventDefault();
-      const title = titleRef.current;
-      if (!title) return;
-      title.focus();
-      const caretPosition = title.value.length;
-      title.setSelectionRange(caretPosition, caretPosition);
-    };
-    window.addEventListener("keydown", focusTitleOnTab, true);
-    return () => window.removeEventListener("keydown", focusTitleOnTab, true);
-  }, []);
+  React.useLayoutEffect(() => {
+    if (!autoFocusTitle) return;
+    const title = titleRef.current;
+    if (!title) return;
+    const caretPosition = title.value.length;
+    title.focus({ preventScroll: true });
+    title.setSelectionRange(caretPosition, caretPosition);
+    onTitleAutoFocused();
+  }, [autoFocusTitle, onTitleAutoFocused]);
 
   const change = (patch: Partial<CalendarEvent>) => {
     updateDraft((current) => ({ ...current, ...patch }));
@@ -209,15 +212,34 @@ function EventDetailsEditor({
   };
 
   return (
-    <div className="event-details event-editor" ref={panelRef}>
+    <div className="event-details event-editor">
       <section className="event-details-hero event-editor-hero">
         <span className="event-details-color" style={{ backgroundColor: edited.color }} aria-hidden="true" />
         <textarea
           ref={titleRef}
           aria-label="Event title"
+          data-sidebar-primary-focus
           rows={1}
           value={edited.title}
           onChange={(input) => change({ title: input.target.value })}
+          onKeyDown={(keyboardEvent) => {
+            if (keyboardEvent.key !== "Enter" || keyboardEvent.nativeEvent.isComposing) return;
+            keyboardEvent.preventDefault();
+            console.debug("[BUG:EVENT-TITLE-FOCUS] [TITLE:ENTER] submitting title", {
+              activeElement: document.activeElement?.tagName ?? null,
+              calendarId: edited.calendarId,
+              eventId: edited.id,
+              title: edited.title,
+            });
+            void flushUpdate().then((saved) => {
+              console.debug("[BUG:EVENT-TITLE-FOCUS] [TITLE:SAVE] title flush completed", {
+                calendarId: edited.calendarId,
+                eventId: edited.id,
+                saved,
+              });
+              if (saved) onFocusEvent(edited);
+            });
+          }}
         />
       </section>
 
@@ -323,6 +345,7 @@ function EventDetailsEditor({
 }
 
 export function EventCreationSidebar({
+  autoFocusSelectedEventTitle,
   calendarSources,
   calendars,
   draft,
@@ -334,7 +357,9 @@ export function EventCreationSidebar({
   onCreateConference,
   onDeleteSelection,
   onDuplicateSelection,
+  onFocusEvent,
   onRemoveSelection,
+  onSelectedEventTitleAutoFocused,
   onPreviewEvent,
   onRespondToEvent,
   onUpdateEvent,
@@ -370,10 +395,13 @@ export function EventCreationSidebar({
         </form>
       ) : selectedEvent ? (
         <EventDetailsEditor
+          autoFocusTitle={autoFocusSelectedEventTitle}
           calendar={selectedCalendar}
           calendars={calendars}
           event={selectedEvent}
           onCreateConference={onCreateConference}
+          onFocusEvent={onFocusEvent}
+          onTitleAutoFocused={onSelectedEventTitleAutoFocused}
           onPreview={onPreviewEvent}
           onRespond={onRespondToEvent}
           onUpdate={onUpdateEvent}

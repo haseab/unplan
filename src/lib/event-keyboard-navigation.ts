@@ -1,5 +1,11 @@
 export type EventNavigationDirection = "down" | "left" | "right" | "up";
 
+export type EventNavigationTransition = {
+  direction: EventNavigationDirection;
+  fromEventKey: string;
+  toEventKey: string;
+};
+
 export type EventNavigationRect = {
   bottom: number;
   dayIndex: number;
@@ -11,7 +17,25 @@ export type EventNavigationRect = {
   top: number;
 };
 
+export type EventNavigationTimePoint = Pick<
+  EventNavigationRect,
+  "dayIndex" | "endMinute" | "eventKey" | "startMinute"
+>;
+
 const center = (start: number, end: number) => start + (end - start) / 2;
+
+export const findEventClosestToMiddleDayNoon = (
+  events: EventNavigationTimePoint[],
+  renderedDayCount: number,
+) => {
+  const target = ((renderedDayCount - 1) / 2) * 24 * 60 + 12 * 60;
+  return events.reduce<{ eventKey: string; score: number } | null>((best, event) => {
+    const eventTime = event.dayIndex * 24 * 60
+      + center(event.startMinute, event.endMinute);
+    const score = Math.abs(eventTime - target);
+    return !best || score < best.score ? { eventKey: event.eventKey, score } : best;
+  }, null)?.eventKey ?? null;
+};
 
 const centerDistance = (
   anchor: EventNavigationRect,
@@ -21,14 +45,41 @@ const centerDistance = (
   center(candidate.top, candidate.bottom) - center(anchor.top, anchor.bottom),
 );
 
+const rectangleDistance = (
+  anchor: EventNavigationRect,
+  candidate: EventNavigationRect,
+) => {
+  const horizontalGap = Math.max(
+    anchor.left - candidate.right,
+    candidate.left - anchor.right,
+    0,
+  );
+  const verticalGap = Math.max(
+    anchor.top - candidate.bottom,
+    candidate.top - anchor.bottom,
+    0,
+  );
+  return Math.hypot(horizontalGap, verticalGap);
+};
+
 const nearestEventKey = (
   anchor: EventNavigationRect,
   candidates: EventNavigationRect[],
-) => candidates.reduce<{ eventKey: string; score: number } | null>(
+) => candidates.reduce<{
+  centerScore: number;
+  eventKey: string;
+  rectangleScore: number;
+} | null>(
   (best, candidate) => {
-    const score = centerDistance(anchor, candidate);
-    return !best || score < best.score
-      ? { eventKey: candidate.eventKey, score }
+    const rectangleScore = rectangleDistance(anchor, candidate);
+    const centerScore = centerDistance(anchor, candidate);
+    return !best
+      || rectangleScore < best.rectangleScore
+      || (
+        rectangleScore === best.rectangleScore
+        && centerScore < best.centerScore
+      )
+      ? { centerScore, eventKey: candidate.eventKey, rectangleScore }
       : best;
   },
   null,
@@ -44,6 +95,54 @@ export const resolveEventNavigationAnchorKey = (
   return null;
 };
 
+const oppositeDirection: Record<
+  EventNavigationDirection,
+  EventNavigationDirection
+> = {
+  down: "up",
+  left: "right",
+  right: "left",
+  up: "down",
+};
+
+export const findEventNavigationBacktrackKey = (
+  history: EventNavigationTransition[],
+  anchorKey: string,
+  direction: EventNavigationDirection,
+) => {
+  const previous = history.at(-1);
+  if (
+    !previous
+    || previous.toEventKey !== anchorKey
+    || oppositeDirection[previous.direction] !== direction
+  ) {
+    return null;
+  }
+  return previous.fromEventKey;
+};
+
+export const isHorizontalEventNavigationCandidate = (
+  anchor: EventNavigationRect,
+  candidate: EventNavigationRect,
+  direction: "left" | "right",
+) => {
+  const movesRight = direction === "right";
+  if (candidate.dayIndex !== anchor.dayIndex) {
+    return movesRight
+      ? candidate.dayIndex > anchor.dayIndex
+      : candidate.dayIndex < anchor.dayIndex;
+  }
+  if (
+    candidate.startMinute !== anchor.startMinute
+    || candidate.endMinute !== anchor.endMinute
+  ) {
+    return false;
+  }
+  const anchorX = center(anchor.left, anchor.right);
+  const candidateX = center(candidate.left, candidate.right);
+  return movesRight ? candidateX > anchorX + 1 : candidateX < anchorX - 1;
+};
+
 export const findDirectionalEventKey = (
   anchor: EventNavigationRect,
   candidates: EventNavigationRect[],
@@ -56,45 +155,10 @@ export const findDirectionalEventKey = (
   );
 
   if (direction === "left" || direction === "right") {
-    const movesRight = direction === "right";
-    const matchingTime = (candidate: EventNavigationRect) =>
-      candidate.startMinute === anchor.startMinute
-      && candidate.endMinute === anchor.endMinute;
-    const sameDayMatches = available.filter((candidate) => {
-      if (candidate.dayIndex !== anchor.dayIndex || !matchingTime(candidate)) {
-        return false;
-      }
-      const candidateX = center(candidate.left, candidate.right);
-      return movesRight ? candidateX > anchorX + 1 : candidateX < anchorX - 1;
-    });
-    const sameDayKey = nearestEventKey(anchor, sameDayMatches);
-    if (sameDayKey) return sameDayKey;
-
-    const adjacentDay = anchor.dayIndex + (movesRight ? 1 : -1);
-    const adjacentEvents = available.filter(
-      (candidate) => candidate.dayIndex === adjacentDay,
+    const directionalEvents = available.filter((candidate) =>
+      isHorizontalEventNavigationCandidate(anchor, candidate, direction)
     );
-    const adjacentMatch = nearestEventKey(
-      anchor,
-      adjacentEvents.filter(matchingTime),
-    );
-    if (adjacentMatch) return adjacentMatch;
-
-    const fallbackEvents = adjacentEvents.filter((candidate) =>
-      movesRight
-        ? candidate.startMinute > anchor.startMinute
-        : candidate.startMinute < anchor.startMinute
-    );
-    if (!fallbackEvents.length) return null;
-    const fallbackStart = movesRight
-      ? Math.min(...fallbackEvents.map((candidate) => candidate.startMinute))
-      : Math.max(...fallbackEvents.map((candidate) => candidate.startMinute));
-    return nearestEventKey(
-      anchor,
-      fallbackEvents.filter(
-        (candidate) => candidate.startMinute === fallbackStart,
-      ),
-    );
+    return nearestEventKey(anchor, directionalEvents);
   }
 
   let best: { eventKey: string; score: number } | null = null;

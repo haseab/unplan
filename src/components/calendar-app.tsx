@@ -69,6 +69,7 @@ import {
 } from "@/hooks/use-infinite-calendar-scroll";
 import { useRecurringDeleteConfirmation } from "@/hooks/use-recurring-delete-confirmation";
 import { useCalendarTimeScale } from "@/hooks/use-calendar-time-scale";
+import { useCalendarSidebarFocus } from "@/hooks/use-calendar-sidebar-focus";
 import { useToastSettings } from "@/hooks/use-toast-settings";
 import { useTodoist } from "@/hooks/use-todoist";
 import { useTodoistTaskExtraction } from "@/hooks/use-todoist-task-extraction";
@@ -140,10 +141,14 @@ import {
   updateSelfParticipantResponse,
 } from "@/lib/event-participants";
 import {
+  findEventClosestToMiddleDayNoon,
+  findEventNavigationBacktrackKey,
   findDirectionalEventKey,
+  isHorizontalEventNavigationCandidate,
   resolveEventNavigationAnchorKey,
   type EventNavigationDirection,
   type EventNavigationRect,
+  type EventNavigationTransition,
 } from "@/lib/event-keyboard-navigation";
 import {
   CALENDAR_TIME_SCALE_STORAGE_KEY,
@@ -356,6 +361,17 @@ function ProductMark() {
 }
 
 export function CalendarApp() {
+  const [activeSelectionSurface, setActiveSelectionSurface] = React.useState<
+    "calendar" | "sidebar"
+  >("calendar");
+  const activateSelectionSurfaceFromTarget = React.useCallback((target: EventTarget | null) => {
+    if (!(target instanceof Element)) return;
+    if (target.closest(".calendar-workspace")) {
+      setActiveSelectionSurface("calendar");
+    } else if (target.closest(".right-sidebar")) {
+      setActiveSelectionSurface("sidebar");
+    }
+  }, []);
   const [weekStart, setWeekStart] = React.useState(() =>
     startOfCalendarWeek(new Date()),
   );
@@ -382,6 +398,10 @@ export function CalendarApp() {
     id: string;
   } | null>(null);
   const [rightSidebarTab, setRightSidebarTab] = React.useState<RightSidebarTab>("todos");
+  const [autoFocusSelectedEventTitle, setAutoFocusSelectedEventTitle] = React.useState(false);
+  const consumeSelectedEventTitleAutoFocus = React.useCallback(() => {
+    setAutoFocusSelectedEventTitle(false);
+  }, []);
   const [todoistCustomGroups, setTodoistCustomGroups] = React.useState<string[]>(() => {
     if (typeof window === "undefined") return [];
     try {
@@ -493,6 +513,8 @@ export function CalendarApp() {
   const creationRef = React.useRef<ActiveEventCreation | null>(null);
   const clipboardRef = React.useRef<CalendarEvent[]>([]);
   const selectionAnchorRef = React.useRef<string | null>(null);
+  const eventNavigationHistoryRef = React.useRef<EventNavigationTransition[]>([]);
+  const pendingSidebarFocusRef = React.useRef(false);
   const eventSearchCacheRef = React.useRef<Map<string, EventSearchCacheEntry>>(
     new Map(),
   );
@@ -563,6 +585,7 @@ export function CalendarApp() {
     calendarCanvasStyle,
     getVisibleViewStart,
     handleHorizontalScroll,
+    navigateDays,
     renderStart,
     renderedDayCount,
     renderedDays,
@@ -1822,6 +1845,7 @@ export function CalendarApp() {
       startX: pointer.clientX,
       startY: pointer.clientY,
     };
+    eventNavigationHistoryRef.current.length = 0;
     dismissCreationDraft();
     selectionAnchorRef.current = calendarEventKey(event.calendarId, event.id);
     if (pointer.shiftKey || pointer.metaKey || pointer.ctrlKey) {
@@ -2209,19 +2233,106 @@ export function CalendarApp() {
     ),
   ].filter((element) => element.getClientRects().length > 0), []);
 
-  const focusRenderedEvent = React.useCallback((eventKey: string) => {
+  const focusRenderedEvent = React.useCallback((
+    eventKey: string,
+    scrollIntoView = true,
+  ) => {
     const element = renderedEventElements().find(
       (candidate) => candidate.dataset.eventKey === eventKey,
     );
     if (!element) return false;
     element.focus({ preventScroll: true });
-    element.scrollIntoView({
-      behavior: "smooth",
-      block: "nearest",
-      inline: "nearest",
-    });
+    if (scrollIntoView) {
+      element.scrollIntoView({
+        behavior: "smooth",
+        block: "nearest",
+        inline: "nearest",
+      });
+    }
     return true;
   }, [renderedEventElements]);
+
+  React.useEffect(() => {
+    const traceEventFocusLoss = (focusEvent: FocusEvent) => {
+      const eventElement = focusEvent.target instanceof Element
+        ? focusEvent.target.closest<HTMLElement>(".calendar-event, .all-day-event")
+        : null;
+      if (!eventElement) return;
+      window.queueMicrotask(() => {
+        const activeElement = document.activeElement as HTMLElement | null;
+        console.debug("[BUG:EVENT-TITLE-FOCUS] [FOCUS:OUT] calendar event lost focus", {
+          activeClass: activeElement?.className ?? null,
+          activeEventKey: activeElement?.dataset.eventKey ?? null,
+          activeTag: activeElement?.tagName ?? null,
+          fromEventKey: eventElement.dataset.eventKey ?? null,
+          relatedTarget: focusEvent.relatedTarget instanceof HTMLElement
+            ? {
+                className: focusEvent.relatedTarget.className,
+                eventKey: focusEvent.relatedTarget.dataset.eventKey ?? null,
+                tagName: focusEvent.relatedTarget.tagName,
+              }
+            : null,
+        });
+      });
+    };
+    document.addEventListener("focusout", traceEventFocusLoss, true);
+    return () => document.removeEventListener("focusout", traceEventFocusLoss, true);
+  }, []);
+
+  const focusCalendarTarget = React.useCallback((rememberedEventKey: string | null) => {
+    const elements = renderedEventElements();
+    const preferredKeys = [selectionAnchorRef.current, rememberedEventKey].filter(
+      (eventKey, index, keys): eventKey is string =>
+        Boolean(eventKey) && keys.indexOf(eventKey) === index,
+    );
+    const fallbackKey = findEventClosestToMiddleDayNoon(
+      elements.flatMap((element) => {
+        const dayIndex = Number(element.dataset.eventDayIndex);
+        const endMinute = Number(element.dataset.eventEndMinute);
+        const eventKey = element.dataset.eventKey;
+        const startMinute = Number(element.dataset.eventStartMinute);
+        return eventKey
+          && Number.isFinite(dayIndex)
+          && Number.isFinite(endMinute)
+          && Number.isFinite(startMinute)
+          ? [{ dayIndex, endMinute, eventKey, startMinute }]
+          : [];
+      }),
+      renderedDayCount,
+    );
+    const targetKey = preferredKeys.find((eventKey) =>
+      elements.some((element) => element.dataset.eventKey === eventKey)
+    ) ?? fallbackKey;
+    if (targetKey) {
+      const target = elements.find((element) => element.dataset.eventKey === targetKey);
+      if (target?.dataset.calendarEventId && focusRenderedEvent(targetKey, false)) {
+        selectionAnchorRef.current = targetKey;
+        setSelected(new Set([target.dataset.calendarEventId]));
+        return true;
+      }
+    }
+    const calendar = document.querySelector<HTMLElement>(".calendar-workspace");
+    if (!calendar) return false;
+    const scrollContainer = scrollRef.current;
+    if (scrollContainer) {
+      scrollContainer.scrollTop = Math.max(
+        0,
+        12 * 60 * pixelsPerMinute - scrollContainer.clientHeight / 2,
+      );
+    }
+    calendar.focus({ preventScroll: true });
+    return true;
+  }, [focusRenderedEvent, pixelsPerMinute, renderedDayCount, renderedEventElements]);
+  const {
+    focusCalendar: focusCalendarSurface,
+    focusSidebar: focusSidebarSurface,
+  } = useCalendarSidebarFocus(focusCalendarTarget);
+
+  React.useLayoutEffect(() => {
+    if (rightSidebarTab !== "todos" || !pendingSidebarFocusRef.current) return;
+    pendingSidebarFocusRef.current = false;
+    focusSidebarSurface();
+  }, [focusSidebarSurface, rightSidebarTab]);
 
   const navigateBetweenEvents = React.useCallback((
     direction: EventNavigationDirection,
@@ -2256,16 +2367,55 @@ export function CalendarApp() {
         top: rect.top,
       };
     };
-    const nextKey = findDirectionalEventKey(
-      asNavigationRect(anchorElement),
-      elements.map(asNavigationRect),
+    const anchorRect = asNavigationRect(anchorElement);
+    const history = eventNavigationHistoryRef.current;
+    const backtrackKey = findEventNavigationBacktrackKey(
+      history,
+      anchorKey,
       direction,
     );
+    let nextKey = backtrackKey;
+    let nextElement = nextKey
+      ? elements.find((element) => element.dataset.eventKey === nextKey)
+      : undefined;
+    if (
+      nextElement
+      && backtrackKey
+      && (direction === "left" || direction === "right")
+    ) {
+      if (!isHorizontalEventNavigationCandidate(
+        anchorRect,
+        asNavigationRect(nextElement),
+        direction,
+      )) {
+        history.length = 0;
+        nextKey = null;
+        nextElement = undefined;
+      }
+    }
+    if (!nextElement) {
+      if (history.at(-1)?.toEventKey !== anchorKey) history.length = 0;
+      nextKey = findDirectionalEventKey(
+        anchorRect,
+        elements.map(asNavigationRect),
+        direction,
+      );
+      nextElement = nextKey
+        ? elements.find((element) => element.dataset.eventKey === nextKey)
+        : undefined;
+    }
     if (!nextKey) return false;
-    const nextElement = elements.find(
-      (element) => element.dataset.eventKey === nextKey,
-    );
     if (!nextElement?.dataset.calendarEventId) return false;
+
+    if (backtrackKey === nextKey) {
+      history.pop();
+    } else {
+      history.push({
+        direction,
+        fromEventKey: anchorKey,
+        toEventKey: nextKey,
+      });
+    }
 
     selectionAnchorRef.current = nextKey;
     dismissCreationDraft();
@@ -2289,6 +2439,7 @@ export function CalendarApp() {
         !event.shiftKey &&
         !event.altKey &&
         event.key === "Enter" &&
+        !isEditableTarget(event.target) &&
         triggerToastSubmit()
       ) {
         event.preventDefault();
@@ -2366,15 +2517,14 @@ export function CalendarApp() {
       if (
         event.key === "Escape"
         && selected.size
-        && event.target instanceof Element
-        && event.target.closest(".event-creation-sidebar")
+        && rightSidebarTab === "events"
+        && !document.querySelector(".modal-backdrop")
       ) {
-        const anchorKey = selectionAnchorRef.current;
-        if (anchorKey && focusRenderedEvent(anchorKey)) {
-          event.preventDefault();
-          event.stopPropagation();
-          return;
-        }
+        event.preventDefault();
+        event.stopPropagation();
+        setRightSidebarTab("todos");
+        focusCalendarSurface();
+        return;
       }
       const modifier = event.metaKey || event.ctrlKey;
       if (
@@ -2387,6 +2537,65 @@ export function CalendarApp() {
         openEventSearch();
         return;
       }
+      if (
+        modifier
+        && !event.shiftKey
+        && !event.altKey
+        && (event.key === "ArrowLeft" || event.key === "ArrowRight")
+        && !document.querySelector(".modal-backdrop")
+      ) {
+        event.preventDefault();
+        if (event.key === "ArrowLeft") {
+          focusCalendarSurface();
+        } else if (rightSidebarTab === "todos") {
+          focusSidebarSurface();
+        } else {
+          pendingSidebarFocusRef.current = true;
+          setRightSidebarTab("todos");
+        }
+        return;
+      }
+      if (
+        event.key === "Enter"
+        && !modifier
+        && !event.altKey
+        && !event.shiftKey
+        && selected.size
+        && rightSidebarTab === "todos"
+        && !document.querySelector(".modal-backdrop")
+        && event.target instanceof Element
+        && event.target.closest(".calendar-workspace [data-event-key]")
+      ) {
+        event.preventDefault();
+        event.stopPropagation();
+        setAutoFocusSelectedEventTitle(true);
+        setRightSidebarTab("events");
+        return;
+      }
+      if (
+        event.key === "Tab"
+        && !modifier
+        && !event.altKey
+        && selected.size
+        && !document.querySelector(".modal-backdrop")
+        && event.target instanceof Element
+      ) {
+        if (!event.shiftKey && event.target.closest(".calendar-workspace")) {
+          event.preventDefault();
+          event.stopPropagation();
+          focusSidebarSurface();
+          return;
+        }
+        if (event.shiftKey && event.target.closest(".right-sidebar")) {
+          event.preventDefault();
+          event.stopPropagation();
+          if (rightSidebarTab === "events") {
+            setRightSidebarTab("todos");
+          }
+          focusCalendarSurface();
+          return;
+        }
+      }
       if (isEditableTarget(event.target)) return;
       if (
         event.altKey
@@ -2394,27 +2603,26 @@ export function CalendarApp() {
         && (event.key === "ArrowLeft" || event.key === "ArrowRight")
       ) {
         event.preventDefault();
-        setWeekStart((current) => addDays(
-          current,
-          event.key === "ArrowLeft" ? -1 : 1,
-        ));
-      } else if (
-        modifier
-        && !event.altKey
-        && (event.key === "ArrowLeft" || event.key === "ArrowRight")
-      ) {
-        event.preventDefault();
-        setWeekStart((current) => addDays(
-          current,
-          event.key === "ArrowLeft" ? -dayCount : dayCount,
-        ));
+        navigateDays(event.key === "ArrowLeft" ? -1 : 1);
       } else if (
         !modifier
         && !event.altKey
         && ["ArrowDown", "ArrowLeft", "ArrowRight", "ArrowUp"].includes(event.key)
       ) {
         const direction = event.key.slice(5).toLowerCase() as EventNavigationDirection;
-        if (navigateBetweenEvents(direction, event.target)) event.preventDefault();
+        const origin = event.target instanceof HTMLElement ? event.target : null;
+        const navigated = navigateBetweenEvents(direction, event.target);
+        console.debug("[BUG:EVENT-TITLE-FOCUS] [KEYBOARD:ARROW] handled arrow key", {
+          activeEventKey: (document.activeElement as HTMLElement | null)?.dataset.eventKey ?? null,
+          activeTag: document.activeElement?.tagName ?? null,
+          direction,
+          navigated,
+          originClass: origin?.className ?? null,
+          originEventKey: origin?.dataset.eventKey ?? null,
+          originTag: origin?.tagName ?? null,
+          selectedCount: selected.size,
+        });
+        if (navigated) event.preventDefault();
       } else if (modifier && event.key.toLowerCase() === "d") {
         event.preventDefault();
         void duplicateEvents(eventsRef.current.filter((item) => selected.has(item.id)));
@@ -2463,9 +2671,9 @@ export function CalendarApp() {
       } else if (!modifier && event.key.toLowerCase() === "t") {
         setWeekStart(startOfCalendarWeek(new Date()));
       } else if (!modifier && event.key.toLowerCase() === "j") {
-        setWeekStart((current) => addDays(current, dayCount));
+        navigateDays(dayCount);
       } else if (!modifier && event.key.toLowerCase() === "k") {
-        setWeekStart((current) => addDays(current, -dayCount));
+        navigateDays(-dayCount);
       } else if (event.key === "?") {
         setShowShortcuts(true);
       } else if (event.key === "Escape") {
@@ -2479,7 +2687,7 @@ export function CalendarApp() {
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [cancelActiveInteraction, changeDayCount, clearEventSelection, copySelection, creationDraft, dayCount, deleteEvents, dismissCreationDraft, duplicateEvents, focusRenderedEvent, google.connected, loadGoogleEvents, navigateBetweenEvents, openEventSearch, selected, setEventSearchOpen, showEventSearch, showSettings, showShortcuts, syncing]);
+  }, [cancelActiveInteraction, changeDayCount, clearEventSelection, copySelection, creationDraft, dayCount, deleteEvents, dismissCreationDraft, duplicateEvents, focusCalendarSurface, focusRenderedEvent, focusSidebarSurface, google.connected, loadGoogleEvents, navigateBetweenEvents, navigateDays, openEventSearch, rightSidebarTab, selected, setEventSearchOpen, showEventSearch, showSettings, showShortcuts, syncing]);
 
   const toggleCalendar = (calendarId: string) => {
     const calendar = calendars.find((candidate) => candidate.id === calendarId);
@@ -3125,7 +3333,12 @@ export function CalendarApp() {
     ) ?? [],
   );
   return (
-    <main className="calendar-shell">
+    <main
+      className="calendar-shell"
+      data-active-selection-surface={activeSelectionSurface}
+      onFocusCapture={(event) => activateSelectionSurfaceFromTarget(event.target)}
+      onPointerDownCapture={(event) => activateSelectionSurfaceFromTarget(event.target)}
+    >
       <aside className={`sidebar ${sidebarOpen ? "sidebar-open" : "sidebar-closed"}`}>
         <div className="brand-row">
           <div className="brand-lockup"><ProductMark /><span>unplan</span></div>
@@ -3183,12 +3396,12 @@ export function CalendarApp() {
         </div>
       </aside>
 
-      <section className="calendar-workspace">
+      <section className="calendar-workspace" tabIndex={-1}>
         <header className="topbar">
           <div className="topbar-left">
             {!sidebarOpen && <button className="icon-button" onClick={() => setSidebarOpen(true)} aria-label="Open sidebar"><Menu size={17} /></button>}
             <button className="today-button" onClick={() => setWeekStart(startOfCalendarWeek(new Date()))}>Today</button>
-            <div className="nav-pair"><button onClick={() => setWeekStart((current) => addDays(current, -dayCount))}><ChevronLeft size={17} /></button><button onClick={() => setWeekStart((current) => addDays(current, dayCount))}><ChevronRight size={17} /></button></div>
+            <div className="nav-pair"><button aria-label="Previous days" onClick={() => navigateDays(-dayCount)}><ChevronLeft size={17} /></button><button aria-label="Next days" onClick={() => navigateDays(dayCount)}><ChevronRight size={17} /></button></div>
             <h1>{weekLabel(weekStart, dayCount)}</h1>
           </div>
 
@@ -3559,7 +3772,7 @@ export function CalendarApp() {
               <span>Previous / next period</span><span><kbd>K</kbd> <kbd>J</kbd></span>
               <span>Navigate between events</span><span><kbd>↑</kbd> <kbd>↓</kbd> <kbd>←</kbd> <kbd>→</kbd></span>
               <span>Previous / next day</span><span><kbd>⌥ ←</kbd> <kbd>⌥ →</kbd></span>
-              <span>Previous / next period</span><span><kbd>⌘ ←</kbd> <kbd>⌘ →</kbd></span>
+              <span>Focus calendar / sidebar</span><span><kbd>⌘ ←</kbd> <kbd>⌘ →</kbd></span>
               <span>Search events</span><span><kbd>⌘ F</kbd> <kbd>⌘ K</kbd></span>
               <span>Duplicate selected events</span><kbd>⌘ D</kbd>
               <span>Copy / paste events</span><span><kbd>⌘ C</kbd> <kbd>⌘ V</kbd></span>
@@ -3729,7 +3942,10 @@ export function CalendarApp() {
         activeTab={rightSidebarTab}
         eventCount={selectedEvents.length}
         todoCount={visibleTodoistTasks.length}
-        onTabChange={setRightSidebarTab}
+        onTabChange={(tab) => {
+          setAutoFocusSelectedEventTitle(tab === "events");
+          setRightSidebarTab(tab);
+        }}
       >
         {rightSidebarTab === "todos" ? (
           <TodoistSidebar
@@ -3843,6 +4059,7 @@ export function CalendarApp() {
           />
         ) : (
           <EventCreationSidebar
+            autoFocusSelectedEventTitle={autoFocusSelectedEventTitle}
             key={creationDraft
               ? `${creationDraft.start.toISOString()}-${creationDraft.end.toISOString()}`
               : selectedEvents.length === 1
@@ -3859,11 +4076,42 @@ export function CalendarApp() {
             onCreateConference={createEventConference}
             onDeleteSelection={() => deleteEvents(selectedEvents)}
             onDuplicateSelection={() => duplicateEvents(selectedEvents)}
+            onFocusEvent={(event) => {
+              const eventKey = calendarEventKey(event.calendarId, event.id);
+              console.debug("[BUG:EVENT-TITLE-FOCUS] [FOCUS:REQUEST] scheduling event focus", {
+                activeTag: document.activeElement?.tagName ?? null,
+                eventKey,
+              });
+              window.requestAnimationFrame(() => {
+                const focused = focusRenderedEvent(eventKey, false);
+                const activeElement = document.activeElement as HTMLElement | null;
+                console.debug("[BUG:EVENT-TITLE-FOCUS] [FOCUS:RESULT] attempted event focus", {
+                  activeClass: activeElement?.className ?? null,
+                  activeEventKey: activeElement?.dataset.eventKey ?? null,
+                  activeTag: activeElement?.tagName ?? null,
+                  eventKey,
+                  focused,
+                });
+                window.setTimeout(() => {
+                  const settledActiveElement = document.activeElement as HTMLElement | null;
+                  console.debug("[BUG:EVENT-TITLE-FOCUS] [FOCUS:SETTLED] checked focus after render", {
+                    activeClass: settledActiveElement?.className ?? null,
+                    activeEventKey: settledActiveElement?.dataset.eventKey ?? null,
+                    activeTag: settledActiveElement?.tagName ?? null,
+                    eventKey,
+                    eventStillConnected: renderedEventElements().some(
+                      (element) => element.dataset.eventKey === eventKey,
+                    ),
+                  });
+                }, 500);
+              });
+            }}
             onRemoveSelection={(eventId) => setSelected((current) => {
               const next = new Set(current);
               next.delete(eventId);
               return next;
             })}
+            onSelectedEventTitleAutoFocused={consumeSelectedEventTitleAutoFocus}
             onPreviewEvent={setEventDetailsPreview}
             onRespondToEvent={respondToEventInvitation}
             onUpdateEvent={updateEventDetails}

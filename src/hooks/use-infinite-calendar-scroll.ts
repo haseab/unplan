@@ -327,6 +327,27 @@ export function useInfiniteCalendarScroll({
     );
   }, [scrollRef]);
 
+  const navigateDays = React.useCallback((dayShift: number) => {
+    const scroller = scrollRef.current;
+    if (!scroller || !dayShift) return;
+
+    const pageWidth = getPageWidth(scroller);
+    if (!pageWidth) return;
+
+    scroller.scrollTo({
+      behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches
+        ? "auto"
+        : "smooth",
+      left: Math.min(
+        Math.max(
+          scroller.scrollLeft + dayShift * (pageWidth / dayCount),
+          0,
+        ),
+        scroller.scrollWidth - scroller.clientWidth,
+      ),
+    });
+  }, [dayCount, scrollRef]);
+
   const animateDateNavigation = React.useCallback((
     direction: DateNavigationDirection,
     target: HTMLElement,
@@ -428,6 +449,7 @@ export function useInfiniteCalendarScroll({
     calendarCanvasStyle,
     getVisibleViewStart,
     handleHorizontalScroll,
+    navigateDays,
     renderStart,
     renderedDayCount,
     renderedDays,

@@ -31,5 +31,11 @@ export const readTodoistProviderResponse = async (response: Response) => {
   } catch {
     if (text && text.length < 240) message = text;
   }
-  throw Object.assign(new Error(message), { status: response.status });
+  const retryAfterSeconds = Number(response.headers.get("retry-after"));
+  throw Object.assign(new Error(message), {
+    status: response.status,
+    ...(Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0
+      ? { retryAfterMs: retryAfterSeconds * 1_000 }
+      : {}),
+  });
 };

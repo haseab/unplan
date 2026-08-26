@@ -91,9 +91,17 @@ export async function POST(request: NextRequest) {
       }
       return Response.json({ ok: true });
     } catch (caught) {
-      const error = caught as Error & { status?: number };
+      const error = caught as Error & { retryAfterMs?: number; status?: number };
       console.warn("[TODOIST:API] Task reorder failed", { status: error.status });
-      return Response.json({ error: error.message }, { status: error.status ?? 502 });
+      return Response.json(
+        { error: error.message },
+        {
+          status: error.status ?? 502,
+          ...(error.retryAfterMs
+            ? { headers: { "Retry-After": String(Math.ceil(error.retryAfterMs / 1_000)) } }
+            : {}),
+        },
+      );
     }
   }
 
