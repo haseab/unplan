@@ -23,7 +23,11 @@ import { EventColorPicker } from "@/components/event-color-picker";
 import { CalendarPicker } from "@/components/calendar-picker";
 import { MultiEventSidebar } from "@/components/multi-event-sidebar";
 import { useDebouncedEventUpdate } from "@/hooks/use-debounced-event-update";
-import type { CalendarEvent, CalendarSource } from "@/lib/calendar-types";
+import type {
+  CalendarEvent,
+  CalendarEventRsvpStatus,
+  CalendarSource,
+} from "@/lib/calendar-types";
 import { googleMeetCode } from "@/lib/google-conference-client";
 
 export type EventCreationDraft = {
@@ -45,6 +49,10 @@ type EventCreationSidebarProps = {
   onDeleteSelection: () => void | Promise<void>;
   onDuplicateSelection: () => void | Promise<void>;
   onRemoveSelection: (eventId: string) => void;
+  onRespondToEvent: (
+    event: CalendarEvent,
+    responseStatus: CalendarEventRsvpStatus,
+  ) => Promise<boolean>;
   onPreviewEvent: (event: CalendarEvent) => void;
   onUpdateEvent: (event: CalendarEvent) => Promise<boolean>;
   selectedEvents: CalendarEvent[];
@@ -91,6 +99,7 @@ function EventDetailsEditor({
   event,
   onCreateConference,
   onPreview,
+  onRespond,
   onUpdate,
 }: {
   calendar: CalendarSource | null;
@@ -98,6 +107,10 @@ function EventDetailsEditor({
   event: CalendarEvent;
   onCreateConference: (event: CalendarEvent) => Promise<string>;
   onPreview: (event: CalendarEvent) => void;
+  onRespond: (
+    event: CalendarEvent,
+    responseStatus: CalendarEventRsvpStatus,
+  ) => Promise<boolean>;
   onUpdate: (event: CalendarEvent) => Promise<boolean>;
 }) {
   const {
@@ -251,6 +264,9 @@ function EventDetailsEditor({
         <EventParticipantsEditor
           attendees={edited.attendees ?? []}
           onChange={(attendees) => change({ attendees })}
+          onRespond={edited.provider === "google"
+            ? (_, responseStatus) => onRespond(edited, responseStatus)
+            : undefined}
         />
         <div className="event-editor-conference" data-state={conferenceState}>
           {conferenceState === "creating" ? <LoaderCircle className="spin" size={15} /> : edited.conferenceLink && edited.conferenceLink !== "pending" ? <GoogleMeetMark /> : <Video size={15} />}
@@ -320,6 +336,7 @@ export function EventCreationSidebar({
   onDuplicateSelection,
   onRemoveSelection,
   onPreviewEvent,
+  onRespondToEvent,
   onUpdateEvent,
   selectedEvents,
 }: EventCreationSidebarProps) {
@@ -358,6 +375,7 @@ export function EventCreationSidebar({
           event={selectedEvent}
           onCreateConference={onCreateConference}
           onPreview={onPreviewEvent}
+          onRespond={onRespondToEvent}
           onUpdate={onUpdateEvent}
         />
       ) : selectedEvents.length > 1 ? (

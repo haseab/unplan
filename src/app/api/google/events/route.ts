@@ -2,6 +2,7 @@ import type {
   CalendarEvent,
   CalendarEventAttendee,
   GoogleCalendarEventPayload,
+  GoogleCalendarEventResponsePayload,
   GoogleSendUpdates,
 } from "@/lib/calendar-types";
 import { getEventTextColor } from "@/lib/event-color";
@@ -103,6 +104,8 @@ const editableEventFields = (body: GoogleCalendarEventPayload) => ({
 
 const sendUpdatesQuery = (sendUpdates: GoogleSendUpdates | undefined) =>
   new URLSearchParams({ sendUpdates: sendUpdates === "all" ? "all" : "none" }).toString();
+
+const googleEventRsvpStatuses = new Set(["accepted", "declined", "tentative"]);
 
 const loadGoogleEventColors = async (request: NextRequest): Promise<Record<string, GoogleColor>> => {
   try {
@@ -278,7 +281,38 @@ export async function PATCH(request: NextRequest) {
     windowMs: 60_000,
   });
   if (rateLimited) return rateLimited;
-  const body = (await request.json()) as GoogleCalendarEventPayload;
+  const body = (await request.json()) as
+    | GoogleCalendarEventPayload
+    | GoogleCalendarEventResponsePayload;
+  if ("responseStatus" in body) {
+    if (
+      !body.calendarSourceId
+      || !body.eventId
+      || !body.attendeeEmail
+      || !googleEventRsvpStatuses.has(body.responseStatus)
+    ) {
+      return Response.json({ error: "Invalid event response" }, { status: 400 });
+    }
+    const source = parseGoogleCalendarSourceId(body.calendarSourceId);
+    if (!source) {
+      return Response.json({ error: "Calendar source not found" }, { status: 404 });
+    }
+    const response = await googleFetch(
+      request,
+      `/calendars/${encodeURIComponent(source.providerCalendarId)}/events/${encodeURIComponent(body.eventId)}?sendUpdates=none`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({
+          attendees: [{
+            email: body.attendeeEmail,
+            responseStatus: body.responseStatus,
+          }],
+          attendeesOmitted: true,
+        }),
+      },
+    );
+    return Response.json(await response.json(), { status: response.status });
+  }
   if (!body.calendarSourceId || !body.eventId || !body.start || !body.end) {
     return Response.json({ error: "Invalid event update" }, { status: 400 });
   }

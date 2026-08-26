@@ -56,6 +56,15 @@ export type CalendarEventAttendee = {
   self?: boolean;
 };
 
+export type CalendarEventAttendeeResponseStatus = NonNullable<
+  CalendarEventAttendee["responseStatus"]
+>;
+
+export type CalendarEventRsvpStatus = Exclude<
+  CalendarEventAttendeeResponseStatus,
+  "needsAction"
+>;
+
 export type GoogleSendUpdates = "all" | "none";
 
 export type GoogleCalendarEventPayload = {
@@ -81,4 +90,11 @@ export type GoogleCalendarEventPayload = {
   createConference?: boolean;
   attendees?: Array<{ email: string }>;
   sendUpdates?: GoogleSendUpdates;
+};
+
+export type GoogleCalendarEventResponsePayload = {
+  attendeeEmail: string;
+  calendarSourceId: string;
+  eventId: string;
+  responseStatus: CalendarEventRsvpStatus;
 };

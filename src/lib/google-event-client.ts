@@ -1,4 +1,9 @@
-import type { CalendarEvent, GoogleSendUpdates } from "@/lib/calendar-types";
+import type {
+  CalendarEvent,
+  CalendarEventRsvpStatus,
+  GoogleCalendarEventResponsePayload,
+  GoogleSendUpdates,
+} from "@/lib/calendar-types";
 import { MutationQueue } from "@/lib/mutation-queue";
 import { readJsonResponse } from "@/lib/http-client";
 import type { RecurringDeleteScope } from "@/lib/recurring-delete";
@@ -111,6 +116,32 @@ export const updateGoogleEvent = (
   mutationQueue.enqueue(mutationKey(event), () =>
     mutateGoogleEvent("PATCH", event, sendUpdates, sourceCalendarSourceId),
   );
+
+export const respondToGoogleEvent = (
+  event: CalendarEvent,
+  responseStatus: CalendarEventRsvpStatus,
+) => mutationQueue.enqueue(mutationKey(event), async () => {
+  const attendeeEmail = event.attendees?.find((attendee) => attendee.self)?.email;
+  if (!attendeeEmail) throw new Error("Your attendee email is unavailable");
+  const payload: GoogleCalendarEventResponsePayload = {
+    attendeeEmail,
+    calendarSourceId: event.calendarId,
+    eventId: event.providerEventId ?? event.id,
+    responseStatus,
+  };
+  const response = await googleCalendarAuthorizedFetch(
+    event.calendarId,
+    "/api/google/events",
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    },
+  );
+  if (!response.ok) {
+    throw await responseError(response, "Google Calendar rejected the response");
+  }
+});
 
 export const createGoogleEvent = (
   event: CalendarEvent,

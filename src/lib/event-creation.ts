@@ -13,6 +13,18 @@ export type EventCreationSession = {
   dayIndex: number;
 };
 
+export const eventCreationAnchorRange = (
+  dayIndex: number,
+  minute: number,
+): EventCreationRange => ({
+  dayIndex,
+  endMinute: minute,
+  startMinute: minute,
+});
+
+export const isEventCreationAnchor = (range: EventCreationRange) =>
+  range.startMinute === range.endMinute;
+
 export const eventCreationPoint = (
   x: number,
   y: number,

@@ -1,4 +1,8 @@
-import type { CalendarEvent, CalendarEventAttendee } from "./calendar-types";
+import type {
+  CalendarEvent,
+  CalendarEventAttendee,
+  CalendarEventAttendeeResponseStatus,
+} from "./calendar-types";
 
 export type ParticipantResponseSummary = {
   accepted: number;
@@ -63,3 +67,13 @@ export const mergeParticipantEmails = (
     });
   return [...attendees, ...additions];
 };
+
+export const updateSelfParticipantResponse = (
+  event: CalendarEvent,
+  responseStatus: CalendarEventAttendeeResponseStatus,
+): CalendarEvent => ({
+  ...event,
+  attendees: event.attendees?.map((attendee) => attendee.self
+    ? { ...attendee, responseStatus }
+    : attendee),
+});

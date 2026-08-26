@@ -499,6 +499,8 @@ kbd {
 .event-creation-preview { position: absolute; z-index: 10; display: flex; min-height: 13px; align-items: center; overflow: hidden; padding: 0 6px 0 5px; border: 1px dashed color-mix(in oklab, var(--event-accent) 72%, white); border-left: 4px solid var(--event-accent); border-radius: 6px; background: color-mix(in oklab, var(--event-surface-dark) 84%, transparent); color: var(--event-text); text-align: left; pointer-events: none; box-shadow: 0 5px 18px rgba(0, 0, 0, 0.18); }
 :root[data-theme="light"] .event-creation-preview { background: color-mix(in oklab, var(--event-surface-light) 88%, transparent); }
 .event-creation-preview strong { overflow: hidden; font-size: 10px; font-weight: 620; line-height: 1; text-overflow: ellipsis; white-space: nowrap; }
+.event-creation-preview[data-anchor="true"] { min-height: 0; padding: 0; border: 0; border-radius: 99px; background: var(--event-accent); box-shadow: 0 0 0 1px color-mix(in oklab, var(--event-accent) 22%, transparent), 0 0 8px color-mix(in oklab, var(--event-accent) 28%, transparent); }
+.event-creation-preview[data-anchor="true"] strong { display: none; }
 .event-creation-preview[data-persistent="true"] { cursor: pointer; pointer-events: auto; }
 
 .modal-backdrop { position: fixed; z-index: 100; inset: 0; display: grid; place-items: center; background: var(--modal-backdrop); backdrop-filter: blur(3px); animation: fade-in 150ms ease; }
@@ -913,7 +915,7 @@ kbd {
 .todo-event-group:not([data-collapsed="true"]) .todo-event-group-toggle > svg:first-child { transform: rotate(90deg); }
 .todo-event-group-toggle > svg:nth-child(2) { flex: 0 0 auto; color: var(--text-faint); }
 .todo-event-group-heading strong { overflow: hidden; font-size: 9px; font-weight: 680; letter-spacing: 0.045em; text-overflow: ellipsis; text-transform: uppercase; white-space: nowrap; }
-.todo-event-group-heading > span { display: grid; min-width: 18px; height: 18px; flex: 0 0 auto; place-items: center; padding: 0 5px; border-radius: 99px; background: var(--hover); color: var(--text-faint); font-size: 8px; }
+.todo-event-group-heading > span { display: grid; min-width: 18px; height: 18px; flex: 0 0 auto; place-items: center; padding: 0 5px; border-radius: 99px; background: var(--hover-strong); color: var(--muted); font-size: 8px; font-weight: 560; }
 .todo-event-group-delete-button { width: 22px; flex: 0 0 22px; justify-content: center; padding: 0; color: #e8736b; }
 .todo-event-group-delete-button:hover { background: color-mix(in oklab, #e75a50 13%, transparent); color: #f38a83; }
 .todo-event-group-rename { display: flex; min-width: 0; height: 25px; flex: 1; align-items: center; gap: 5px; padding: 0 4px; transform-origin: left center; animation: todo-folder-editor-in 160ms cubic-bezier(0.2, 0.8, 0.2, 1); }
@@ -944,11 +946,13 @@ kbd {
 .todo-event-block-shell[data-pending="true"]::after { content: ""; position: absolute; z-index: 5; top: 50%; right: 10px; width: 12px; height: 12px; margin-top: -6px; border: 2px solid var(--blue-border); border-top-color: var(--blue-ink); border-right-color: var(--blue-ink); border-radius: 50%; pointer-events: none; animation: spin 700ms linear infinite; }
 .todo-event-drop-projection { min-width: 0; min-height: 6px; border: 2px solid var(--event-accent); border-radius: 7px; background: color-mix(in oklab, var(--event-accent) 7%, transparent); pointer-events: none; box-shadow: 0 0 0 1px color-mix(in oklab, var(--event-accent) 24%, transparent); }
 .calendar-event.todo-event-block { position: relative; inset: auto; width: 100%; transition: width 160ms cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 120ms ease, filter 120ms ease, opacity 140ms ease, transform 120ms ease; }
-.todo-event-card-actions { position: absolute; z-index: 12; top: 0; right: 0; display: flex; width: 98px; height: 100%; align-items: center; justify-content: flex-end; gap: 4px; animation: todo-event-actions-in 160ms cubic-bezier(0.2, 0.8, 0.2, 1) both; }
-.todo-event-card-actions button { display: grid; width: 30px; height: min(30px, 100%); place-items: center; padding: 0; border: 1px solid var(--line); border-radius: 7px; background: var(--surface-muted); color: var(--text-soft); cursor: pointer; }
+.todo-event-card-actions { position: absolute; z-index: 12; top: 0; right: 0; display: flex; width: 30px; height: 100%; align-items: center; justify-content: flex-end; animation: todo-event-actions-in 160ms cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+.todo-event-card-actions button { display: grid; width: 30px; height: min(30px, 100%); flex: 0 0 30px; place-items: center; padding: 0; border: 1px solid var(--line); border-radius: 7px; background: var(--surface-muted); color: var(--text-soft); cursor: pointer; }
 .todo-event-card-actions button:hover { border-color: var(--line-strong); background: var(--hover); color: var(--ink); }
 .todo-event-card-actions button:disabled { opacity: 0.45; cursor: default; }
-.todo-event-card-actions .todo-event-card-delete:hover { border-color: color-mix(in oklab, #ff5f57 35%, var(--line)); background: color-mix(in oklab, #ff5f57 11%, var(--surface)); color: #e8736b; }
+.todo-event-card-actions-trigger[aria-expanded="true"] { border-color: var(--line-strong); background: var(--hover); color: var(--ink); }
+.todo-event-card-actions-popover { position: absolute; z-index: 1; top: 0; right: 34px; display: flex; width: 98px; height: min(30px, 100%); align-items: center; justify-content: flex-end; gap: 4px; animation: todo-event-actions-menu-in 140ms cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+.todo-event-card-actions-popover .todo-event-card-delete:hover { border-color: color-mix(in oklab, #ff5f57 35%, var(--line)); background: color-mix(in oklab, #ff5f57 11%, var(--surface)); color: #e8736b; }
 .todo-event-inline-editor { position: absolute; z-index: 14; top: 0; right: 0; left: 0; display: flex; min-width: 0; align-items: center; padding: 2px 5px 2px 8px; border: 0; border-left: 4px solid var(--event-accent); border-radius: 6px; background: var(--event-surface-dark); animation: todo-event-editor-in 120ms ease both; }
 :root[data-theme="light"] .todo-event-inline-editor { background: var(--event-surface-light); }
 .todo-event-inline-editor input { width: 100%; min-width: 0; height: 100%; padding: 0 5px; border: 0; border-radius: 4px; outline: 0; background: transparent; color: var(--event-text); font: inherit; font-size: 12px; font-weight: 540; letter-spacing: -0.01em; box-shadow: inset 0 -1px color-mix(in oklab, var(--event-text) 28%, transparent); }
@@ -962,6 +966,7 @@ kbd {
 .todo-event-resize-handle:focus-visible { opacity: 1; box-shadow: 0 0 0 2px var(--blue-border); }
 .todo-event-block-shell[data-resizing="true"] { z-index: 15; }
 @keyframes todo-event-actions-in { from { opacity: 0; transform: translateX(10px); } to { opacity: 1; transform: translateX(0); } }
+@keyframes todo-event-actions-menu-in { from { opacity: 0; transform: translateX(6px) scale(0.96); } to { opacity: 1; transform: translateX(0) scale(1); } }
 @keyframes todo-event-editor-in { from { opacity: 0; } to { opacity: 1; } }
 .calendar-event.todo-event-drag-image { position: fixed; z-index: 9999; top: 0; left: 0; margin: 0; animation: none; cursor: grabbing; opacity: 0.94; pointer-events: none; box-shadow: 0 12px 28px rgba(0, 0, 0, 0.3) !important; transition: none; }
 .todoist-drag-hint { margin: auto 12px 0; padding: 11px 0 13px; border-top: 1px solid var(--line); color: var(--text-faint); font-size: 8.5px; text-align: center; }
@@ -1098,6 +1103,15 @@ kbd {
 .event-participant-response-accepted { border-color: color-mix(in oklab, #34b978 44%, var(--line)); background: color-mix(in oklab, #34b978 13%, transparent); color: #4fd08d; }
 .event-participant-response-declined { border-color: color-mix(in oklab, #db625b 42%, var(--line)); background: color-mix(in oklab, #db625b 12%, transparent); color: #e97b74; }
 .event-participant-response-tentative { border-color: color-mix(in oklab, #d09a3d 42%, var(--line)); background: color-mix(in oklab, #d09a3d 12%, transparent); color: #dbaa55; }
+.event-participant-row[data-self="true"] { grid-template-rows: auto auto; padding-block: 5px; }
+.event-participant-rsvp { display: grid; grid-column: 2 / -1; grid-row: 2; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; }
+.event-participant-rsvp button { display: flex; min-width: 0; height: 27px; align-items: center; justify-content: center; gap: 4px; padding: 0 5px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface-muted); color: var(--text-soft); font-size: 9px; font-weight: 620; cursor: pointer; transition: border-color 140ms ease, background 140ms ease, color 140ms ease, transform 120ms ease; }
+.event-participant-rsvp button:hover:not(:disabled) { border-color: var(--line-strong); background: var(--hover-strong); color: var(--ink); }
+.event-participant-rsvp button:active:not(:disabled) { transform: scale(0.97); }
+.event-participant-rsvp button:disabled { cursor: default; }
+.event-participant-rsvp button[aria-pressed="true"][data-response="accepted"] { border-color: color-mix(in oklab, #34b978 50%, var(--line)); background: color-mix(in oklab, #34b978 14%, var(--surface-muted)); color: #58d89a; }
+.event-participant-rsvp button[aria-pressed="true"][data-response="tentative"] { border-color: color-mix(in oklab, #d09a3d 50%, var(--line)); background: color-mix(in oklab, #d09a3d 14%, var(--surface-muted)); color: #e0b25e; }
+.event-participant-rsvp button[aria-pressed="true"][data-response="declined"] { border-color: color-mix(in oklab, #db625b 50%, var(--line)); background: color-mix(in oklab, #db625b 14%, var(--surface-muted)); color: #ee827b; }
 .event-participant-row > button { display: grid; width: 22px; height: 22px; place-items: center; border: 0; border-radius: 6px; background: transparent; color: transparent; cursor: pointer; transition: background 140ms ease, color 140ms ease; }
 .event-participant-row:hover > button,
 .event-participant-row > button:focus-visible { color: var(--text-soft); }

@@ -1,9 +1,9 @@
 "use client";
 
-import { Copy, Pencil, Trash2 } from "lucide-react";
 import * as React from "react";
 
 import { CalendarEventContent } from "@/components/calendar-event-content";
+import { TodoistEventActions } from "@/components/todoist-event-actions";
 import type { EventPalette } from "@/lib/event-color";
 import { eventVisualDensity } from "@/lib/event-visual-density";
 import type { TodoistTask } from "@/lib/todoist";
@@ -13,7 +13,7 @@ import {
 } from "@/lib/todoist-calendar";
 
 const RESIZE_STEP_MINUTES = 15;
-const ACTIONS_WIDTH = 98;
+const ACTION_TRIGGER_WIDTH = 30;
 
 const formatDuration = (minutes: number) => {
   const hours = Math.floor(minutes / 60);
@@ -179,7 +179,7 @@ export function TodoistEventCard({
         style={{
           ...style,
           height: eventHeight,
-          width: controlsVisible ? `calc(100% - ${ACTIONS_WIDTH + 4}px)` : "100%",
+          width: controlsVisible ? `calc(100% - ${ACTION_TRIGGER_WIDTH + 4}px)` : "100%",
         }}
         type="button"
       >
@@ -217,44 +217,21 @@ export function TodoistEventCard({
           />
         </form>
       ) : controlsVisible ? (
-        <div className="todo-event-card-actions">
-          <button
-            aria-label={`Duplicate ${title}`}
-            disabled={busy}
-            onClick={() => {
-              onActivate();
-              setSaving(true);
-              void onDuplicate().catch(() => undefined).finally(() => setSaving(false));
-            }}
-            title="Duplicate"
-            type="button"
-          >
-            <Copy aria-hidden="true" size={12} />
-          </button>
-          <button
-            aria-label={`Rename ${title}`}
-            disabled={busy}
-            onClick={beginRename}
-            title="Rename"
-            type="button"
-          >
-            <Pencil aria-hidden="true" size={12} />
-          </button>
-          <button
-            aria-label={`Delete ${title}`}
-            className="todo-event-card-delete"
-            disabled={busy}
-            onClick={() => {
-              onActivate();
-              setSaving(true);
-              void onDelete().catch(() => undefined).finally(() => setSaving(false));
-            }}
-            title="Delete"
-            type="button"
-          >
-            <Trash2 aria-hidden="true" size={12} />
-          </button>
-        </div>
+        <TodoistEventActions
+          busy={busy}
+          onDelete={() => {
+            onActivate();
+            setSaving(true);
+            void onDelete().catch(() => undefined).finally(() => setSaving(false));
+          }}
+          onDuplicate={() => {
+            onActivate();
+            setSaving(true);
+            void onDuplicate().catch(() => undefined).finally(() => setSaving(false));
+          }}
+          onRename={beginRename}
+          title={title}
+        />
       ) : null}
 
       {!editing && (
@@ -263,7 +240,7 @@ export function TodoistEventCard({
           aria-orientation="horizontal"
           className="todo-event-resize-handle"
           style={{
-            right: controlsVisible ? ACTIONS_WIDTH + 11 : 7,
+            right: controlsVisible ? ACTION_TRIGGER_WIDTH + 11 : 7,
             top: Math.max(0, eventHeight - 5),
           }}
           onKeyDown={(event) => {

@@ -6,6 +6,7 @@ import {
   participantInitials,
   participantResponseSummary,
   participantResponseSummaryLabel,
+  updateSelfParticipantResponse,
 } from "./event-participants";
 
 test("participant response summaries group Google response states", () => {
@@ -67,4 +68,28 @@ test("only events awaiting the current attendee's acceptance use the pending sty
   }), false);
   assert.equal(isEventUnaccepted({ ...baseEvent, organizerSelf: true }), false);
   assert.equal(isEventUnaccepted(baseEvent), false);
+});
+
+test("updating the current participant response preserves every other attendee", () => {
+  const event = {
+    id: "event",
+    calendarId: "calendar",
+    title: "Dev Sync",
+    start: "2026-08-22T17:00:00.000Z",
+    end: "2026-08-22T17:45:00.000Z",
+    calendarColor: "#8b332d",
+    color: "#8b332d",
+    provider: "google" as const,
+    attendees: [
+      { email: "organizer@example.com", organizer: true, responseStatus: "accepted" as const },
+      { email: "me@example.com", self: true, responseStatus: "needsAction" as const },
+      { email: "guest@example.com", responseStatus: "tentative" as const },
+    ],
+  };
+
+  const updated = updateSelfParticipantResponse(event, "declined");
+
+  assert.equal(updated.attendees?.[1].responseStatus, "declined");
+  assert.equal(updated.attendees?.[0], event.attendees[0]);
+  assert.equal(updated.attendees?.[2], event.attendees[2]);
 });

@@ -6,13 +6,17 @@ import {
   ChevronUp,
   Clock3,
   HelpCircle,
+  LoaderCircle,
   Mail,
   Plus,
   Users,
   X,
 } from "lucide-react";
 import * as React from "react";
-import type { CalendarEventAttendee } from "@/lib/calendar-types";
+import type {
+  CalendarEventAttendee,
+  CalendarEventRsvpStatus,
+} from "@/lib/calendar-types";
 import {
   mergeParticipantEmails,
   participantInitials,
@@ -40,12 +44,21 @@ function ParticipantResponseIcon({ attendee }: { attendee: CalendarEventAttendee
 export function EventParticipantsEditor({
   attendees,
   onChange,
+  onRespond,
 }: {
   attendees: CalendarEventAttendee[];
   onChange: (attendees: CalendarEventAttendee[]) => void;
+  onRespond?: (
+    attendee: CalendarEventAttendee,
+    responseStatus: CalendarEventRsvpStatus,
+  ) => Promise<boolean>;
 }) {
   const [expanded, setExpanded] = React.useState(false);
   const [newParticipants, setNewParticipants] = React.useState("");
+  const [responding, setResponding] = React.useState<{
+    attendeeKey: string;
+    responseStatus: CalendarEventRsvpStatus;
+  } | null>(null);
   const summary = participantResponseSummary(attendees);
   const visibleAttendees = expanded
     ? attendees
@@ -58,6 +71,20 @@ export function EventParticipantsEditor({
     if (next.length === attendees.length) return;
     onChange(next);
     setNewParticipants("");
+  };
+
+  const respond = async (
+    attendee: CalendarEventAttendee,
+    attendeeKey: string,
+    responseStatus: CalendarEventRsvpStatus,
+  ) => {
+    if (!onRespond || responding) return;
+    setResponding({ attendeeKey, responseStatus });
+    try {
+      await onRespond(attendee, responseStatus);
+    } finally {
+      setResponding(null);
+    }
   };
 
   return (
@@ -86,10 +113,20 @@ export function EventParticipantsEditor({
           {visibleAttendees.map((attendee, index) => {
             const label = attendee.displayName || attendee.email || "Guest";
             const avatarSeed = attendee.email || attendee.displayName || String(index);
+            const attendeeKey = `${attendee.email ?? attendee.displayName ?? "guest"}-${index}`;
+            const optimisticResponse = responding?.attendeeKey === attendeeKey
+              ? responding.responseStatus
+              : attendee.responseStatus;
+            const displayedAttendee = { ...attendee, responseStatus: optimisticResponse };
+            const canRespond = attendee.self && !attendee.organizer && Boolean(onRespond);
             const hue = [...avatarSeed].reduce((total, character) =>
               total + character.charCodeAt(0), 0) % 360;
             return (
-              <div className="event-participant-row" key={`${attendee.email ?? attendee.displayName ?? "guest"}-${index}`}>
+              <div
+                className="event-participant-row"
+                data-self={canRespond ? "true" : undefined}
+                key={attendeeKey}
+              >
                 <span
                   className="event-participant-avatar"
                   style={{ "--participant-hue": hue } as React.CSSProperties}
@@ -98,14 +135,42 @@ export function EventParticipantsEditor({
                 </span>
                 <span className="event-participant-copy">
                   <strong>{attendee.self ? `${label} (you)` : label}</strong>
-                  <small>{responseCopy(attendee)}</small>
+                  <small>{responseCopy(displayedAttendee)}</small>
                 </span>
-                <span
-                  className={`event-participant-response event-participant-response-${attendee.responseStatus ?? "needsAction"}`}
-                  title={responseCopy(attendee)}
-                >
-                  <ParticipantResponseIcon attendee={attendee} />
-                </span>
+                {canRespond ? (
+                  <div aria-label="Respond to invitation" className="event-participant-rsvp" role="group">
+                    {([
+                      ["accepted", "Yes", Check],
+                      ["tentative", "Maybe", HelpCircle],
+                      ["declined", "No", X],
+                    ] as const).map(([responseStatus, copy, Icon]) => {
+                      const active = optimisticResponse === responseStatus;
+                      const saving = responding?.attendeeKey === attendeeKey
+                        && responding.responseStatus === responseStatus;
+                      return (
+                        <button
+                          aria-label={`${copy} to ${label}`}
+                          aria-pressed={active}
+                          data-response={responseStatus}
+                          disabled={responding !== null}
+                          key={responseStatus}
+                          onClick={() => void respond(attendee, attendeeKey, responseStatus)}
+                          type="button"
+                        >
+                          {saving ? <LoaderCircle className="spin" size={11} /> : <Icon size={11} />}
+                          {copy}
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <span
+                    className={`event-participant-response event-participant-response-${attendee.responseStatus ?? "needsAction"}`}
+                    title={responseCopy(attendee)}
+                  >
+                    <ParticipantResponseIcon attendee={attendee} />
+                  </span>
+                )}
                 {!attendee.self && !attendee.organizer && (
                   <button
                     aria-label={`Remove ${label}`}

@@ -89,13 +89,17 @@ import {
 } from "@/lib/calendar-position-history";
 import type {
   CalendarEvent,
+  CalendarEventAttendeeResponseStatus,
+  CalendarEventRsvpStatus,
   CalendarSource,
   GoogleSendUpdates,
 } from "@/lib/calendar-types";
 import {
   eventCreationDates,
+  eventCreationAnchorRange,
   eventCreationPoint,
   eventCreationRange,
+  isEventCreationAnchor,
   type EventCreationRange,
   type EventCreationSession,
 } from "@/lib/event-creation";
@@ -128,7 +132,10 @@ import {
   providerEventSearchQuery,
   searchLoadedEvents,
 } from "@/lib/event-search";
-import { isEventUnaccepted } from "@/lib/event-participants";
+import {
+  isEventUnaccepted,
+  updateSelfParticipantResponse,
+} from "@/lib/event-participants";
 import {
   findDirectionalEventKey,
   resolveEventNavigationAnchorKey,
@@ -142,7 +149,6 @@ import {
 } from "@/lib/calendar-time-scale";
 import {
   MINUTES_IN_DAY,
-  SNAP_MINUTES,
   clamp,
   eventGeometry,
   eventSegmentGeometries,
@@ -161,6 +167,7 @@ import {
   createGoogleCompatibleEventId,
   createGoogleEvent,
   deleteGoogleEvent,
+  respondToGoogleEvent,
   updateGoogleEvent,
 } from "@/lib/google-event-client";
 import { updateGoogleCalendarSelection } from "@/lib/google-calendar-list-client";
@@ -1468,6 +1475,9 @@ export function CalendarApp() {
             calendarId: creation.calendarId,
             ...eventCreationDates(creation.range, renderedDays),
           });
+        } else {
+          setCreationRange(null);
+          setCreationCalendarId(null);
         }
       }
       if (resizeRef.current) {
@@ -1909,16 +1919,14 @@ export function CalendarApp() {
         calendarId: defaultCalendar.id,
         dayIndex: point.dayIndex,
         hasDragged: false,
-        range: {
-          dayIndex: point.dayIndex,
-          endMinute: point.minute + SNAP_MINUTES,
-          startMinute: point.minute,
-        },
+        range: eventCreationAnchorRange(point.dayIndex, point.minute),
         startX: pointer.clientX,
         startY: pointer.clientY,
       };
-      creationRef.current = session;
       dismissCreationDraft();
+      creationRef.current = session;
+      setCreationCalendarId(session.calendarId);
+      setCreationRange(session.range);
       clearEventSelection();
       return;
     }
@@ -2817,6 +2825,49 @@ export function CalendarApp() {
     return true;
   }, [chooseGuestNotifications, toastDuration]);
 
+  const respondToEventInvitation = React.useCallback(async (
+    event: CalendarEvent,
+    responseStatus: CalendarEventRsvpStatus,
+  ) => {
+    const selfAttendee = event.attendees?.find((attendee) => attendee.self);
+    if (event.provider !== "google" || !selfAttendee?.email) {
+      toast.error("Your attendee email is unavailable");
+      return false;
+    }
+    const previousStatus: CalendarEventAttendeeResponseStatus =
+      selfAttendee.responseStatus ?? "needsAction";
+    const applyResponse = (status: CalendarEventAttendeeResponseStatus) => {
+      setEvents((current) => current.map((candidate) =>
+        candidate.id === event.id
+          ? updateSelfParticipantResponse(candidate, status)
+          : candidate,
+      ));
+      setEventDetailsPreview((current) => current?.id === event.id
+        ? updateSelfParticipantResponse(current, status)
+        : current);
+    };
+
+    applyResponse(responseStatus);
+    setSyncing(true);
+    try {
+      await respondToGoogleEvent(event, responseStatus);
+      toast.success(responseStatus === "accepted"
+        ? "Invitation accepted"
+        : responseStatus === "tentative"
+          ? "Response set to maybe"
+          : "Invitation declined");
+      return true;
+    } catch (error) {
+      applyResponse(previousStatus);
+      toast.error(error instanceof Error
+        ? error.message
+        : "Your response could not be saved");
+      return false;
+    } finally {
+      setSyncing(false);
+    }
+  }, []);
+
   const createEventConference = React.useCallback(async (event: CalendarEvent) => {
     const conferenceLink = await createGoogleMeet(event);
     setEvents((current) => current.map((candidate) =>
@@ -2993,6 +3044,9 @@ export function CalendarApp() {
   const creationPreviewPalette = creationPreviewCalendar
     ? getEventPalette(creationPreviewCalendar.backgroundColor)
     : null;
+  const creationIsAnchor = creationRange
+    ? isEventCreationAnchor(creationRange)
+    : false;
   const todoistDropSegments = todoistCalendarDropPoint
     ? todoistCalendarDropSegments(
         draggedTodoistTasks,
@@ -3265,6 +3319,7 @@ export function CalendarApp() {
                 className="event-creation-preview"
                 aria-label={creationDraft ? "Edit new event" : undefined}
                 aria-hidden={creationDraft ? undefined : true}
+                data-anchor={creationIsAnchor ? "true" : undefined}
                 data-persistent={creationDraft ? "true" : undefined}
                 disabled={!creationDraft}
                 onClick={() => setRightSidebarTab("events")}
@@ -3272,10 +3327,12 @@ export function CalendarApp() {
                 style={{
                   ...eventInlinePosition(renderedDayCount, creationRange.dayIndex),
                   top: creationRange.startMinute * pixelsPerMinute + 1,
-                  height: Math.max(
-                    (creationRange.endMinute - creationRange.startMinute) * pixelsPerMinute - 2,
-                    6,
-                  ),
+                  height: creationIsAnchor
+                    ? 2
+                    : Math.max(
+                        (creationRange.endMinute - creationRange.startMinute) * pixelsPerMinute - 2,
+                        6,
+                      ),
                   "--event-accent": creationPreviewPalette.accent,
                   "--event-surface-dark": creationPreviewPalette.darkSurface,
                   "--event-surface-light": creationPreviewPalette.lightSurface,
@@ -3770,6 +3827,7 @@ export function CalendarApp() {
               return next;
             })}
             onPreviewEvent={setEventDetailsPreview}
+            onRespondToEvent={respondToEventInvitation}
             onUpdateEvent={updateEventDetails}
             selectedEvents={selectedEvents}
           />
