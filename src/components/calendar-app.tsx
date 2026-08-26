@@ -103,6 +103,7 @@ import {
   eventCreationAnchorRange,
   eventCreationPoint,
   eventCreationRange,
+  hasEventCreationDuration,
   isEventCreationAnchor,
   type EventCreationRange,
   type EventCreationSession,
@@ -284,7 +285,7 @@ type ActiveMarquee = Marquee & {
 };
 
 type ActiveEventCreation = EventCreationSession & {
-  hasDragged: boolean;
+  hasMoved: boolean;
   range: EventCreationRange;
   startX: number;
   startY: number;
@@ -1417,14 +1418,27 @@ export function CalendarApp() {
 
       if (creationRef.current && gridRef.current) {
         const gridRect = gridRef.current.getBoundingClientRect();
-        if (!creationRef.current.hasDragged) {
+        if (!creationRef.current.hasMoved) {
           const distance = Math.hypot(
             pointer.clientX - creationRef.current.startX,
             pointer.clientY - creationRef.current.startY,
           );
           if (distance < EVENT_CREATION_DRAG_THRESHOLD) return;
-          creationRef.current.hasDragged = true;
+          creationRef.current.hasMoved = true;
           setCreationCalendarId(creationRef.current.calendarId);
+          setCreationRange(creationRef.current.range);
+        }
+        if (!hasEventCreationDuration(
+          pointer.clientY - creationRef.current.startY,
+          pixelsPerMinute,
+        )) {
+          const anchorRange = eventCreationAnchorRange(
+            creationRef.current.dayIndex,
+            creationRef.current.anchorMinute,
+          );
+          creationRef.current.range = anchorRange;
+          setCreationRange(anchorRange);
+          return;
         }
         const range = eventCreationRange(
           creationRef.current,
@@ -1497,7 +1511,7 @@ export function CalendarApp() {
       if (creationRef.current) {
         const creation = creationRef.current;
         creationRef.current = null;
-        if (creation.hasDragged) {
+        if (!isEventCreationAnchor(creation.range)) {
           setRightSidebarTab("events");
           setCreationDraft({
             calendarId: creation.calendarId,
@@ -1821,6 +1835,11 @@ export function CalendarApp() {
     const handlePointerCancel = () => {
       pendingEventClickRef.current = null;
       clearTodoistDropFeedback();
+      if (creationRef.current) {
+        creationRef.current = null;
+        setCreationRange(null);
+        setCreationCalendarId(null);
+      }
       if (marqueeRef.current) {
         setSelected(marqueeRef.current.baseSelection);
         marqueeRef.current = null;
@@ -1952,15 +1971,13 @@ export function CalendarApp() {
         anchorMinute: point.minute,
         calendarId: defaultCalendar.id,
         dayIndex: point.dayIndex,
-        hasDragged: false,
+        hasMoved: false,
         range: eventCreationAnchorRange(point.dayIndex, point.minute),
         startX: pointer.clientX,
         startY: pointer.clientY,
       };
       dismissCreationDraft();
       creationRef.current = session;
-      setCreationCalendarId(session.calendarId);
-      setCreationRange(session.range);
       clearEventSelection();
       return;
     }

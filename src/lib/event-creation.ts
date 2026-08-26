@@ -25,6 +25,11 @@ export const eventCreationAnchorRange = (
 export const isEventCreationAnchor = (range: EventCreationRange) =>
   range.startMinute === range.endMinute;
 
+export const hasEventCreationDuration = (
+  verticalDragPixels: number,
+  pixelsPerMinute: number,
+) => Math.abs(verticalDragPixels) >= SNAP_MINUTES * pixelsPerMinute;
+
 export const eventCreationPoint = (
   x: number,
   y: number,

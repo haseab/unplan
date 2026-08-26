@@ -3,10 +3,11 @@ import test from "node:test";
 import {
   eventCreationAnchorRange,
   eventCreationRange,
+  hasEventCreationDuration,
   isEventCreationAnchor,
 } from "./event-creation";
 
-test("pointer down creates a zero-duration visual anchor", () => {
+test("represents pending creation as a zero-duration anchor", () => {
   const range = eventCreationAnchorRange(2, 600);
 
   assert.deepEqual(range, {
@@ -15,6 +16,14 @@ test("pointer down creates a zero-duration visual anchor", () => {
     startMinute: 600,
   });
   assert.equal(isEventCreationAnchor(range), true);
+});
+
+test("requires a full 15-minute visual drag before creating a duration", () => {
+  assert.equal(hasEventCreationDuration(14.99, 1), false);
+  assert.equal(hasEventCreationDuration(15, 1), true);
+  assert.equal(hasEventCreationDuration(-15, 1), true);
+  assert.equal(hasEventCreationDuration(7.49, 0.5), false);
+  assert.equal(hasEventCreationDuration(7.5, 0.5), true);
 });
 
 test("dragging promotes the anchor to a minimum 15-minute event", () => {
