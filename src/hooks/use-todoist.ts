@@ -6,6 +6,7 @@ import {
   closeTodoistTask,
   createTodoistProject,
   createTodoistTask,
+  deleteTodoistTask,
   loadTodoistDestinations,
   loadTodoistTasks,
   insertTodoistTasksAtTarget,
@@ -625,6 +626,10 @@ export function useTodoist() {
     await saveTaskOrderByProject(tasksRef.current);
   }, [saveTaskOrderByProject, token]);
 
+  const deleteTask = React.useCallback(async (taskId: string) => {
+    if (!token) throw new Error("Connect Todoist in Settings first");
+    await deleteTodoistTask(token, taskId);
+  }, [token]);
   return {
     addTask,
     bucketProjectIds,
@@ -634,6 +639,7 @@ export function useTodoist() {
     commitStagedTask,
     completeTask,
     connected: Boolean(token),
+    deleteTask,
     disconnect,
     error,
     insertLocalTaskAt,

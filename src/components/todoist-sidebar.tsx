@@ -201,7 +201,7 @@ type TodoistSidebarProps = {
   error: string | null;
   loading: boolean;
   onCreateGroup: (group: string) => void;
-  onDeleteTask: (task: TodoistTask) => Promise<void>;
+  onDeleteTasks: (tasks: TodoistTask[]) => Promise<void>;
   onDuplicateTask: (task: TodoistTask) => Promise<void>;
   onDeleteGroup: (group: string) => void;
   onCalendarDragEnd: () => void;
@@ -256,7 +256,7 @@ export function TodoistSidebar({
   onCalendarDragEnd,
   onCalendarDragStart,
   onCreateGroup,
-  onDeleteTask,
+  onDeleteTasks,
   onDuplicateTask,
   onDeleteGroup,
   onMoveTaskToGroup,
@@ -498,6 +498,35 @@ export function TodoistSidebar({
       target?.scrollIntoView({ behavior: "smooth", block: "nearest" });
     });
   }, [orderedVisibleTaskIds, selectedTaskIds]);
+
+  const deleteSelectedTasks = React.useCallback(() => {
+    const selectedTasks = orderedVisibleTasks.filter(({ id }) => selectedTaskIds.has(id));
+    if (!selectedTasks.length) return;
+    selectionAnchorRef.current = null;
+    setSelectedTaskIds(new Set());
+    void onDeleteTasks(selectedTasks);
+  }, [onDeleteTasks, orderedVisibleTasks, selectedTaskIds]);
+
+  React.useEffect(() => {
+    if (selectedTaskIds.size === 0) return;
+    const deleteWithKeyboard = (event: KeyboardEvent) => {
+      if (
+        event.altKey
+        || event.repeat
+        || (event.key !== "Delete" && event.key !== "Backspace")
+      ) return;
+      if (
+        event.target instanceof HTMLElement
+        && (event.target.isContentEditable
+          || event.target.matches("input, textarea, select"))
+      ) return;
+      event.preventDefault();
+      event.stopPropagation();
+      deleteSelectedTasks();
+    };
+    document.addEventListener("keydown", deleteWithKeyboard, true);
+    return () => document.removeEventListener("keydown", deleteWithKeyboard, true);
+  }, [deleteSelectedTasks, selectedTaskIds.size]);
 
   React.useEffect(() => {
     if (selectedTaskIds.size === 0) return;
@@ -1475,7 +1504,7 @@ export function TodoistSidebar({
                             next.delete(task.id);
                             return next;
                           });
-                          return onDeleteTask(task);
+                          return onDeleteTasks([task]);
                         }}
                         onDuplicate={() => onDuplicateTask(task)}
                         onDragEnd={(event) => {

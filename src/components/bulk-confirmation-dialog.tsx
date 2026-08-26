@@ -53,7 +53,11 @@ export function BulkConfirmationDialog({
   if (!request) return null;
   const copy = actionCopy[request.action];
   const Icon = copy.Icon;
-  const title = `${copy.label} ${request.count} events?`;
+  const subject = request.subject ?? "events";
+  const title = `${copy.label} ${request.count} ${subject}?`;
+  const description = subject === "tasks" && request.action === "delete"
+    ? "These tasks will be permanently removed from Todoist. You can still undo before they are deleted."
+    : copy.description;
 
   return (
     <div className="modal-backdrop confirmation-backdrop" onMouseDown={onCancel}>
@@ -71,7 +75,7 @@ export function BulkConfirmationDialog({
           </div>
           <div className="confirmation-copy">
             <strong id="bulk-confirmation-title">{title}</strong>
-            <p id="bulk-confirmation-description">{copy.description}</p>
+            <p id="bulk-confirmation-description">{description}</p>
           </div>
         </div>
         <div className="confirmation-actions">

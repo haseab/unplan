@@ -56,7 +56,10 @@ import {
   TODOIST_MULTI_DRAG_TYPE,
   TodoistSidebar,
 } from "@/components/todoist-sidebar";
-import { useBulkConfirmation } from "@/hooks/use-bulk-confirmation";
+import {
+  TASK_DELETE_CONFIRMATION_THRESHOLD,
+  useBulkConfirmation,
+} from "@/hooks/use-bulk-confirmation";
 import { normalizeDayCount, useDayCount } from "@/hooks/use-day-count";
 import { useGuestNotificationConfirmation } from "@/hooks/use-guest-notification-confirmation";
 import { useGoogleCalendarRefresh } from "@/hooks/use-google-calendar-refresh";
@@ -420,6 +423,7 @@ export function CalendarApp() {
     commitStagedTask: commitStagedTodoistTask,
     completeTask: completeTodoistTask,
     connected: todoistConnected,
+    deleteTask: deleteTodoistTask,
     disconnect: disconnectTodoist,
     error: todoistError,
     insertLocalTaskAt: insertLocalTodoistTaskAt,
@@ -2141,6 +2145,57 @@ export function CalendarApp() {
     );
   }, [chooseGuestNotifications, chooseRecurringDeleteScope, confirmBulkAction, selected, toastDuration]);
 
+  const deleteTodoistTasks = React.useCallback(async (source: TodoistTask[]) => {
+    if (!source.length) return;
+    const confirmed = await confirmBulkAction({
+      action: "delete",
+      count: source.length,
+      subject: "tasks",
+      threshold: TASK_DELETE_CONFIRMATION_THRESHOLD,
+    });
+    if (!confirmed) return;
+
+    const taskIds = new Set(source.map((task) => task.id));
+    const deleted = todoistTasks.flatMap((task, index) =>
+      taskIds.has(task.id) ? [{ task, index }] : [],
+    );
+    if (!deleted.length) return;
+
+    const restoreTasks = (snapshots: typeof deleted) => {
+      snapshots
+        .slice()
+        .sort((first, second) => first.index - second.index)
+        .forEach(({ task, index }) => insertLocalTodoistTaskAt(task, index));
+    };
+    removeLocalTodoistTasks(taskIds);
+
+    queueActionToast(
+      `Deleted ${source.length === 1 ? source[0].content : `${source.length} tasks`}`,
+      {
+        duration: toastDuration,
+        onUndo: () => restoreTasks(deleted),
+        onSubmit: async (reportProgress) => {
+          const { failed } = await runMutationBatch(
+            source,
+            (task) => deleteTodoistTask(task.id),
+            (completed, total) => reportProgress(`Deleting tasks… ${completed}/${total}`),
+          );
+          if (!failed.length) return;
+
+          const failedIds = new Set(failed.map(({ item }) => item.id));
+          restoreTasks(deleted.filter(({ task }) => failedIds.has(task.id)));
+          throw new Error(
+            `${failed.length} ${failed.length === 1 ? "task" : "tasks"} could not be deleted`,
+          );
+        },
+        onError: (error) => {
+          toast.error(error instanceof Error ? error.message : "Task deletion could not be saved");
+        },
+        submittingMessage: "Deleting tasks…",
+      },
+    );
+  }, [confirmBulkAction, deleteTodoistTask, insertLocalTodoistTaskAt, removeLocalTodoistTasks, toastDuration, todoistTasks]);
+
   const copySelection = React.useCallback(() => {
     const source = eventsRef.current.filter((event) => selected.has(event.id));
     if (!source.length) return;
@@ -2974,23 +3029,6 @@ export function CalendarApp() {
     return Promise.resolve();
   }, [replaceLocalTodoistTask, toastDuration, updateTodoistTask]);
 
-  const deleteSidebarTodoistTask = React.useCallback((task: TodoistTask) => {
-    const originalIndex = todoistTasks.findIndex(({ id }) => id === task.id);
-    const title = calendarEventDetailsFromTodoistContent(task.content).title || task.content;
-    removeLocalTodoistTasks([task.id]);
-    queueActionToast(`Deleted ${title}`, {
-      duration: toastDuration,
-      onUndo: () => insertLocalTodoistTaskAt(task, originalIndex),
-      onSubmit: () => completeTodoistTask(task.id),
-      onError: (error) => {
-        insertLocalTodoistTaskAt(task, originalIndex);
-        toast.error(error instanceof Error ? error.message : "Event could not be deleted");
-      },
-      submittingMessage: "Deleting event…",
-    });
-    return Promise.resolve();
-  }, [completeTodoistTask, insertLocalTodoistTaskAt, removeLocalTodoistTasks, toastDuration, todoistTasks]);
-
   const duplicateSidebarTodoistTask = React.useCallback((task: TodoistTask) => {
     const title = calendarEventDetailsFromTodoistContent(task.content).title || task.content;
     const input = {
@@ -3719,7 +3757,7 @@ export function CalendarApp() {
               );
               return next;
             })}
-            onDeleteTask={deleteSidebarTodoistTask}
+            onDeleteTasks={deleteTodoistTasks}
             onDuplicateTask={duplicateSidebarTodoistTask}
             onDeleteGroup={(group) => setTodoistCustomGroups((current) => {
               const next = current.filter((candidate) => candidate !== group);
