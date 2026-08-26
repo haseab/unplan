@@ -4,13 +4,16 @@ import { addDays, differenceInCalendarDays } from "date-fns";
 import * as React from "react";
 import { getWeekDays } from "@/lib/calendar-utils";
 import {
+  adjustCalendarDateBuffer,
+  calendarDateBuffersEqual,
+  createCalendarDateBuffer,
+  type CalendarDateBuffer,
+} from "@/lib/calendar-date-buffer";
+import {
   type CalendarScrollAxis,
-  horizontalCalendarDayShift,
   intentionalCalendarScrollDelta,
-  recenteredCalendarScrollLeft,
 } from "@/lib/calendar-horizontal-position";
 
-const BUFFER_PAGE_COUNT = 3;
 const DATE_RANGE_JUMP_THRESHOLD_DAYS = 7;
 const DAY_MIN_WIDTH = 110;
 const HORIZONTAL_SCROLL_SETTLE_MS = 160;
@@ -21,30 +24,58 @@ const TIME_AXIS_WIDTH = 57;
 type ScrollBoundary = "center" | "left" | "right" | "unknown";
 export type DateNavigationDirection = "backward" | "forward" | "none";
 
-type PageShift = {
+type PendingBufferPosition = {
   anchorScrollLeft: number;
-  dayShift: number;
+  buffer: CalendarDateBuffer;
+  dayOffset: number;
+  kind: "reset" | "shift";
+  targetViewStart: Date;
 };
 
 type ScrollTraceEntry = {
   boundary: ScrollBoundary;
-  pageWidth: number;
-  pendingPageShift: PageShift | null;
+  hiddenAfterDays: number;
+  hiddenBeforeDays: number;
+  pendingBufferPosition: PendingBufferPosition | null;
   recentering: boolean;
   scrollLeft: number;
   timestamp: number;
 };
 
-const getPageWidth = (scroller: HTMLDivElement) =>
-  Math.max((scroller.scrollWidth - TIME_AXIS_WIDTH) / BUFFER_PAGE_COUNT, 0);
+const getDayWidth = (
+  scroller: HTMLDivElement,
+  renderedDayCount: number,
+) => renderedDayCount > 0
+  ? Math.max((scroller.scrollWidth - TIME_AXIS_WIDTH) / renderedDayCount, 0)
+  : 0;
+
+const getVisibleStartOffsetDays = (
+  scroller: HTMLDivElement,
+  renderedDayCount: number,
+) => {
+  const dayWidth = getDayWidth(scroller, renderedDayCount);
+  return dayWidth > 0 ? scroller.scrollLeft / dayWidth : 0;
+};
+
+const getScrollReserves = (
+  scroller: HTMLDivElement,
+  renderedDayCount: number,
+  periodDayCount: number,
+) => {
+  const hiddenBeforeDays = getVisibleStartOffsetDays(scroller, renderedDayCount);
+  return {
+    hiddenAfterDays: renderedDayCount - hiddenBeforeDays - periodDayCount,
+    hiddenBeforeDays,
+  };
+};
 
 const getScrollBoundary = (
-  scrollLeft: number,
-  pageWidth: number,
+  hiddenBeforeDays: number,
+  hiddenAfterDays: number,
+  periodDayCount: number,
 ): ScrollBoundary => {
-  if (!pageWidth) return "unknown";
-  if (scrollLeft < pageWidth * 0.45) return "left";
-  if (scrollLeft > pageWidth * 1.55) return "right";
+  if (hiddenBeforeDays < periodDayCount) return "left";
+  if (hiddenAfterDays < periodDayCount) return "right";
   return "center";
 };
 
@@ -61,17 +92,18 @@ export function useInfiniteCalendarScroll({
   setViewStart,
   viewStart,
 }: InfiniteCalendarScrollOptions) {
-  const renderedDayCount = dayCount * BUFFER_PAGE_COUNT;
-  const renderStart = React.useMemo(
-    () => addDays(viewStart, -dayCount),
-    [dayCount, viewStart],
+  const [dateBuffer, setDateBuffer] = React.useState(() =>
+    createCalendarDateBuffer(viewStart, dayCount)
   );
+  const renderStart = dateBuffer.start;
+  const renderedDayCount = dateBuffer.dayCount;
   const renderedDays = React.useMemo(
     () => getWeekDays(renderStart, renderedDayCount),
     [renderStart, renderedDayCount],
   );
-  const pendingPageShift = React.useRef<PageShift | null>(null);
-  const lastCommittedPageShift = React.useRef<PageShift | null>(null);
+  const dateBufferRef = React.useRef(dateBuffer);
+  const pendingBufferPosition = React.useRef<PendingBufferPosition | null>(null);
+  const lastCommittedViewStart = React.useRef<Date | null>(null);
   const recentering = React.useRef(false);
   const navigationFrame = React.useRef<number | null>(null);
   const navigationPaintFrame = React.useRef<number | null>(null);
@@ -81,36 +113,118 @@ export function useInfiniteCalendarScroll({
     axis: CalendarScrollAxis;
     timestamp: number;
   } | null>(null);
+  const internalViewStartTimestamp = React.useRef<number | null>(null);
+  const observedInputs = React.useRef({ dayCount, viewStart });
+  const positioned = React.useRef(false);
   const previousRange = React.useRef({ dayCount, viewStart });
   const scrollTrace = React.useRef<ScrollTraceEntry[]>([]);
 
+  const periodCount = renderedDayCount / dayCount;
   const calendarCanvasStyle = React.useMemo<React.CSSProperties>(
     () => ({
-      width: `max(calc(300% - ${TIME_AXIS_WIDTH * (BUFFER_PAGE_COUNT - 1)}px), ${TIME_AXIS_WIDTH + renderedDayCount * DAY_MIN_WIDTH}px)`,
+      width: `max(calc(${periodCount * 100}% - ${TIME_AXIS_WIDTH * (periodCount - 1)}px), ${TIME_AXIS_WIDTH + renderedDayCount * DAY_MIN_WIDTH}px)`,
     }),
-    [renderedDayCount],
+    [periodCount, renderedDayCount],
   );
+
+  React.useLayoutEffect(() => {
+    dateBufferRef.current = dateBuffer;
+  }, [dateBuffer]);
+
+  React.useLayoutEffect(() => {
+    const previous = observedInputs.current;
+    const dayCountChanged = previous.dayCount !== dayCount;
+    const viewStartChanged = previous.viewStart.getTime() !== viewStart.getTime();
+    observedInputs.current = { dayCount, viewStart };
+    if (!dayCountChanged && !viewStartChanged) return;
+
+    const isInternalViewStart = !dayCountChanged
+      && internalViewStartTimestamp.current === viewStart.getTime();
+    internalViewStartTimestamp.current = null;
+    if (isInternalViewStart) return;
+
+    const nextBuffer = createCalendarDateBuffer(viewStart, dayCount);
+    const scroller = scrollRef.current;
+    pendingBufferPosition.current = {
+      anchorScrollLeft: scroller?.scrollLeft ?? 0,
+      buffer: nextBuffer,
+      dayOffset: 0,
+      kind: "reset",
+      targetViewStart: viewStart,
+    };
+    recentering.current = true;
+    scroller?.setAttribute("data-calendar-recentering", "true");
+    setDateBuffer((current) =>
+      calendarDateBuffersEqual(current, nextBuffer) ? current : nextBuffer
+    );
+  }, [dayCount, scrollRef, viewStart]);
+
+  React.useLayoutEffect(() => {
+    const scroller = scrollRef.current;
+    if (!scroller) return;
+    const pending = pendingBufferPosition.current;
+    if (pending && !calendarDateBuffersEqual(pending.buffer, dateBuffer)) return;
+
+    if (!pending && positioned.current) return;
+    positioned.current = true;
+    pendingBufferPosition.current = null;
+    recentering.current = true;
+    scroller.setAttribute("data-calendar-recentering", "true");
+
+    let frame = 0;
+    let attempts = 0;
+    const positionScroller = () => {
+      const dayWidth = getDayWidth(scroller, renderedDayCount);
+      const maxScrollLeft = Math.max(scroller.scrollWidth - scroller.clientWidth, 0);
+      if ((!dayWidth || maxScrollLeft <= 0) && attempts < 12) {
+        attempts += 1;
+        frame = window.requestAnimationFrame(positionScroller);
+        return;
+      }
+      const requestedScrollLeft = pending?.kind === "shift"
+        ? pending.anchorScrollLeft + pending.dayOffset * dayWidth
+        : differenceInCalendarDays(
+            pending?.targetViewStart ?? viewStart,
+            renderStart,
+          ) * dayWidth;
+      scroller.scrollLeft = Math.min(
+        Math.max(requestedScrollLeft, 0),
+        maxScrollLeft,
+      );
+      frame = window.requestAnimationFrame(() => {
+        scroller.removeAttribute("data-calendar-recentering");
+        recentering.current = false;
+      });
+    };
+    positionScroller();
+
+    return () => {
+      window.cancelAnimationFrame(frame);
+      scroller.removeAttribute("data-calendar-recentering");
+      recentering.current = false;
+    };
+  }, [dateBuffer, renderStart, renderedDayCount, scrollRef, viewStart]);
 
   const settleHorizontalScroll = React.useCallback(() => {
     const scroller = scrollRef.current;
-    if (!scroller || recentering.current || pendingPageShift.current) return;
+    const buffer = dateBufferRef.current;
+    if (!scroller || recentering.current || pendingBufferPosition.current) return;
 
-    const pageWidth = getPageWidth(scroller);
-    const dayShift = horizontalCalendarDayShift(
-      scroller.scrollLeft,
-      pageWidth,
-      dayCount,
+    const visibleStartOffsetDays = getVisibleStartOffsetDays(
+      scroller,
+      buffer.dayCount,
     );
-    if (!dayShift) return;
+    const roundedOffsetDays = Math.min(
+      Math.max(Math.round(visibleStartOffsetDays), 0),
+      buffer.dayCount - dayCount,
+    );
+    const nextViewStart = addDays(buffer.start, roundedOffsetDays);
+    if (nextViewStart.getTime() === viewStart.getTime()) return;
 
-    const shift: PageShift = {
-      anchorScrollLeft: scroller.scrollLeft,
-      dayShift,
-    };
-    pendingPageShift.current = shift;
-    lastCommittedPageShift.current = shift;
-    setViewStart((current) => addDays(current, dayShift));
-  }, [dayCount, scrollRef, setViewStart]);
+    internalViewStartTimestamp.current = nextViewStart.getTime();
+    lastCommittedViewStart.current = nextViewStart;
+    setViewStart(nextViewStart);
+  }, [dayCount, scrollRef, setViewStart, viewStart]);
 
   const scheduleHorizontalSettle = React.useCallback(() => {
     if (settleTimer.current !== null) {
@@ -124,6 +238,29 @@ export function useInfiniteCalendarScroll({
       settleHorizontalScroll();
     }, HORIZONTAL_SCROLL_SETTLE_MS);
   }, [scrollRef, settleHorizontalScroll]);
+
+  const adjustBufferForScroll = React.useCallback((scroller: HTMLDivElement) => {
+    if (recentering.current || pendingBufferPosition.current) return;
+    const buffer = dateBufferRef.current;
+    const visibleStartOffsetDays = getVisibleStartOffsetDays(
+      scroller,
+      buffer.dayCount,
+    );
+    const adjustment = adjustCalendarDateBuffer(buffer, visibleStartOffsetDays);
+    if (calendarDateBuffersEqual(buffer, adjustment.buffer)) return;
+
+    pendingBufferPosition.current = {
+      anchorScrollLeft: scroller.scrollLeft,
+      buffer: adjustment.buffer,
+      dayOffset: adjustment.prependedDayCount
+        - adjustment.removedBeforeDayCount,
+      kind: "shift",
+      targetViewStart: viewStart,
+    };
+    recentering.current = true;
+    scroller.setAttribute("data-calendar-recentering", "true");
+    setDateBuffer(adjustment.buffer);
+  }, [viewStart]);
 
   React.useEffect(() => {
     const scroller = scrollRef.current;
@@ -197,49 +334,6 @@ export function useInfiniteCalendarScroll({
     };
   }, [scheduleHorizontalSettle, scrollRef]);
 
-  React.useLayoutEffect(() => {
-    const scroller = scrollRef.current;
-    if (!scroller) return;
-    const shift = pendingPageShift.current;
-    pendingPageShift.current = null;
-    recentering.current = true;
-    scroller.setAttribute("data-calendar-recentering", "true");
-    let frame = 0;
-    let attempts = 0;
-    const positionScroller = () => {
-      const pageWidth = getPageWidth(scroller);
-      const maxScrollLeft = scroller.scrollWidth - scroller.clientWidth;
-      if (!shift && maxScrollLeft <= 0 && attempts < 12) {
-        attempts += 1;
-        frame = window.requestAnimationFrame(positionScroller);
-        return;
-      }
-      const requestedScrollLeft = shift
-        ? recenteredCalendarScrollLeft(
-            shift.anchorScrollLeft,
-            shift.dayShift,
-            pageWidth,
-            dayCount,
-          )
-        : pageWidth;
-      scroller.scrollLeft = Math.min(
-        Math.max(requestedScrollLeft, 0),
-        maxScrollLeft,
-      );
-      frame = window.requestAnimationFrame(() => {
-        scroller.removeAttribute("data-calendar-recentering");
-        recentering.current = false;
-      });
-    };
-    positionScroller();
-
-    return () => {
-      window.cancelAnimationFrame(frame);
-      scroller.removeAttribute("data-calendar-recentering");
-      recentering.current = false;
-    };
-  }, [dayCount, scrollRef, viewStart]);
-
   React.useEffect(() => {
     const previous = previousRange.current;
     const previousEnd = addDays(previous.viewStart, previous.dayCount - 1);
@@ -273,8 +367,8 @@ export function useInfiniteCalendarScroll({
           },
           scroll: {
             clientWidth: scroller?.clientWidth ?? null,
-            lastCommittedPageShift: lastCommittedPageShift.current,
-            pendingPageShift: pendingPageShift.current,
+            lastCommittedViewStart: lastCommittedViewStart.current,
+            pendingBufferPosition: pendingBufferPosition.current,
             recentering: recentering.current,
             scrollLeft: scroller?.scrollLeft ?? null,
             scrollWidth: scroller?.scrollWidth ?? null,
@@ -290,24 +384,33 @@ export function useInfiniteCalendarScroll({
   const handleHorizontalScroll = React.useCallback(
     (event: React.UIEvent<HTMLDivElement>) => {
       const scroller = event.currentTarget;
-      const pageWidth = getPageWidth(scroller);
-      const boundary = getScrollBoundary(scroller.scrollLeft, pageWidth);
+      const buffer = dateBufferRef.current;
+      const reserves = getScrollReserves(
+        scroller,
+        buffer.dayCount,
+        buffer.periodDayCount,
+      );
       scrollTrace.current = [
         ...scrollTrace.current,
         {
-          boundary,
-          pageWidth,
-          pendingPageShift: pendingPageShift.current,
+          boundary: getScrollBoundary(
+            reserves.hiddenBeforeDays,
+            reserves.hiddenAfterDays,
+            buffer.periodDayCount,
+          ),
+          ...reserves,
+          pendingBufferPosition: pendingBufferPosition.current,
           recentering: recentering.current,
           scrollLeft: scroller.scrollLeft,
           timestamp: Date.now(),
         },
       ].slice(-12);
 
-      if (recentering.current || pendingPageShift.current) return;
+      if (recentering.current || pendingBufferPosition.current) return;
+      adjustBufferForScroll(scroller);
       scheduleHorizontalSettle();
     },
-    [scheduleHorizontalSettle],
+    [adjustBufferForScroll, scheduleHorizontalSettle],
   );
 
   const getVisibleViewStart = React.useCallback((
@@ -315,38 +418,45 @@ export function useInfiniteCalendarScroll({
     visibleDayCount: number,
   ) => {
     const scroller = scrollRef.current;
+    const buffer = dateBufferRef.current;
     if (!scroller) return canonicalViewStart;
-    const pageWidth = getPageWidth(scroller);
+    const visibleStartOffsetDays = getVisibleStartOffsetDays(
+      scroller,
+      buffer.dayCount,
+    );
     return addDays(
-      canonicalViewStart,
-      horizontalCalendarDayShift(
-        scroller.scrollLeft,
-        pageWidth,
-        visibleDayCount,
+      buffer.start,
+      Math.min(
+        Math.max(Math.round(visibleStartOffsetDays), 0),
+        buffer.dayCount - visibleDayCount,
       ),
     );
   }, [scrollRef]);
 
   const navigateDays = React.useCallback((dayShift: number) => {
     const scroller = scrollRef.current;
+    const buffer = dateBufferRef.current;
     if (!scroller || !dayShift) return;
 
-    const pageWidth = getPageWidth(scroller);
-    if (!pageWidth) return;
+    const dayWidth = getDayWidth(scroller, buffer.dayCount);
+    if (!dayWidth) return;
 
     scroller.scrollTo({
       behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches
         ? "auto"
         : "smooth",
       left: Math.min(
-        Math.max(
-          scroller.scrollLeft + dayShift * (pageWidth / dayCount),
-          0,
-        ),
+        Math.max(scroller.scrollLeft + dayShift * dayWidth, 0),
         scroller.scrollWidth - scroller.clientWidth,
       ),
     });
-  }, [dayCount, scrollRef]);
+  }, [scrollRef]);
+
+  const visibleViewScrollLeft = React.useCallback((scroller: HTMLDivElement) => {
+    const buffer = dateBufferRef.current;
+    return differenceInCalendarDays(viewStart, buffer.start)
+      * getDayWidth(scroller, buffer.dayCount);
+  }, [viewStart]);
 
   const animateDateNavigation = React.useCallback((
     direction: DateNavigationDirection,
@@ -361,7 +471,7 @@ export function useInfiniteCalendarScroll({
       window.cancelAnimationFrame(navigationPaintFrame.current);
     }
 
-    const pageWidth = getPageWidth(scroller);
+    const targetLeft = visibleViewScrollLeft(scroller);
     const offset = Math.min(scroller.clientWidth * 0.18, 160);
     const scrollerRect = scroller.getBoundingClientRect();
     const targetRect = target.getBoundingClientRect();
@@ -375,7 +485,7 @@ export function useInfiniteCalendarScroll({
     );
 
     if (direction !== "none") {
-      scroller.scrollLeft = pageWidth
+      scroller.scrollLeft = targetLeft
         + (direction === "forward" ? -offset : offset);
     }
     navigationFrame.current = window.requestAnimationFrame(() => {
@@ -384,12 +494,12 @@ export function useInfiniteCalendarScroll({
         navigationPaintFrame.current = null;
         scroller.scrollTo({
           behavior: "smooth",
-          left: pageWidth,
+          left: targetLeft,
           top: targetTop,
         });
       });
     });
-  }, [scrollRef]);
+  }, [scrollRef, visibleViewScrollLeft]);
 
   const animateCalendarPosition = React.useCallback((
     direction: DateNavigationDirection,
@@ -404,14 +514,14 @@ export function useInfiniteCalendarScroll({
       window.cancelAnimationFrame(navigationPaintFrame.current);
     }
 
-    const pageWidth = getPageWidth(scroller);
+    const targetLeft = visibleViewScrollLeft(scroller);
     const offset = Math.min(scroller.clientWidth * 0.18, 160);
     const targetTop = Math.min(
       Math.max(scrollTop, 0),
       Math.max(scroller.scrollHeight - scroller.clientHeight, 0),
     );
     if (direction !== "none") {
-      scroller.scrollLeft = pageWidth
+      scroller.scrollLeft = targetLeft
         + (direction === "forward" ? -offset : offset);
     }
 
@@ -421,12 +531,12 @@ export function useInfiniteCalendarScroll({
         navigationPaintFrame.current = null;
         scroller.scrollTo({
           behavior: "smooth",
-          left: pageWidth,
+          left: targetLeft,
           top: targetTop,
         });
       });
     });
-  }, [scrollRef]);
+  }, [scrollRef, visibleViewScrollLeft]);
 
   React.useEffect(
     () => () => {

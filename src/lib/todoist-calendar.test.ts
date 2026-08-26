@@ -24,6 +24,7 @@ import {
   todoistContentWithTitle,
   todoistDurationFromResize,
   todoistTaskInputFromCalendarEvent,
+  todoistTaskDisplayTitle,
 } from "./todoist-calendar";
 
 const calendar = (id: string, name: string): CalendarSource => ({
@@ -109,6 +110,19 @@ test("reads and removes namespaced Todoist calendar metadata anywhere in task co
       color: "#d18a31",
       group: "Deep work",
     },
+  );
+});
+
+test("uses only the human title in Todoist UI labels", () => {
+  assert.equal(
+    todoistTaskDisplayTitle(
+      "pick up mail [[unplan:v1;duration=60;calendar=google%7Caccount%7Ccalendar;group=Ungrouped]]",
+    ),
+    "pick up mail",
+  );
+  assert.equal(
+    todoistTaskDisplayTitle("[[unplan:v1;duration=60;calendar=work]]"),
+    "Untitled event",
   );
 });
 

@@ -214,6 +214,7 @@ import {
   todoistContentWithTitle,
   todoistEventRenderedHeight,
   todoistTaskInputFromCalendarEvent,
+  todoistTaskDisplayTitle,
 } from "@/lib/todoist-calendar";
 import { findTechnicalitiesCalendar } from "@/lib/task-extraction";
 
@@ -1660,8 +1661,10 @@ export function CalendarApp() {
                     );
                     const syncOutcomes = await Promise.all(stagedMoves.map(async (move) => {
                       try {
-                        await commitStagedTodoistTask(move.task.id, move.input);
-                        return { ...move, status: "synced" as const };
+                        const committedTask = await commitStagedTodoistTask(move.task.id, move.input);
+                        return committedTask
+                          ? { ...move, status: "synced" as const }
+                          : { ...move, status: "cancelled" as const };
                       } catch (error) {
                         return { ...move, error, status: "sync-failed" as const };
                       }
@@ -1671,6 +1674,9 @@ export function CalendarApp() {
                     );
                     removeLocalTodoistTasks(syncFailures.map(({ task }) => task.id));
                     restoreEvents(syncFailures.map(({ event }) => event));
+                    restoreEvents(syncOutcomes.flatMap((outcome) =>
+                      outcome.status === "cancelled" ? [outcome.event] : [],
+                    ));
 
                     const synced = syncOutcomes.flatMap((outcome) =>
                       outcome.status === "synced" ? [outcome] : [],
@@ -2194,7 +2200,7 @@ export function CalendarApp() {
     removeLocalTodoistTasks(taskIds);
 
     queueActionToast(
-      `Deleted ${source.length === 1 ? source[0].content : `${source.length} tasks`}`,
+      `Deleted ${source.length === 1 ? todoistTaskDisplayTitle(source[0].content) : `${source.length} tasks`}`,
       {
         duration: toastDuration,
         onUndo: () => restoreTasks(deleted),
@@ -3238,7 +3244,7 @@ export function CalendarApp() {
   }, [replaceLocalTodoistTask, toastDuration, updateTodoistTask]);
 
   const duplicateSidebarTodoistTask = React.useCallback((task: TodoistTask) => {
-    const title = calendarEventDetailsFromTodoistContent(task.content).title || task.content;
+    const title = todoistTaskDisplayTitle(task.content);
     const input = {
       content: task.content,
       description: task.description,
@@ -3254,7 +3260,8 @@ export function CalendarApp() {
       duration: toastDuration,
       onUndo: () => removeLocalTodoistTasks([stagedTask.id]),
       onSubmit: async () => {
-        await commitStagedTodoistTask(stagedTask.id, input);
+        const committedTask = await commitStagedTodoistTask(stagedTask.id, input);
+        if (!committedTask) return;
         try {
           await persistTodoistTaskOrder();
         } catch {
@@ -3418,17 +3425,6 @@ export function CalendarApp() {
           )}
 
           <div className="topbar-right">
-            {extractedTasks.length + ungroupedTodoistTasks.length > 0 && (
-              <button
-                className="task-triage-trigger"
-                onClick={() => setShowTaskTriage(true)}
-                type="button"
-              >
-                <Sparkles size={14} />
-                <span>Triage</span>
-                <strong>{extractedTasks.length + ungroupedTodoistTasks.length}</strong>
-              </button>
-            )}
             <button className="icon-button" onClick={() => void loadGoogleEvents()} aria-label="Refresh" disabled={!google.connected}><RefreshCw size={15} /></button>
             <DayCountPicker dayCount={dayCount} onChange={changeDayCount} />
             <button className="icon-button" onClick={() => setShowShortcuts(true)} aria-label="Keyboard shortcuts"><CircleHelp size={16} /></button>
@@ -3817,8 +3813,7 @@ export function CalendarApp() {
         extractedTasks={extractedTasks}
         groups={todoistGroups}
         onAssignGroup={async (task, group) => {
-          const title = calendarEventDetailsFromTodoistContent(task.content).title
-            || task.content;
+          const title = todoistTaskDisplayTitle(task.content);
           const groupedTask = {
             ...task,
             content: todoistContentWithGroup(task.content, group),
@@ -3859,8 +3854,7 @@ export function CalendarApp() {
           if (resolution === "keep" && !taskExtractionDestination) {
             throw new Error("Create another Todoist project to keep extracted tasks");
           }
-          const title = calendarEventDetailsFromTodoistContent(task.content).title
-            || task.content;
+          const title = todoistTaskDisplayTitle(task.content);
           const returnDirection = resolution === "keep" ? "right" : "left";
           const stagedTask = resolution === "keep" ? {
             ...task,
@@ -4002,6 +3996,7 @@ export function CalendarApp() {
               }
             }}
             onRefresh={() => refreshTodoist()}
+            onOpenTriage={() => setShowTaskTriage(true)}
             onRenameTask={renameSidebarTodoistTask}
             onRenameGroup={async (group, nextGroup) => {
               const previousCustomGroups = todoistCustomGroups;
@@ -4056,6 +4051,7 @@ export function CalendarApp() {
             )}
             pixelsPerMinute={pixelsPerMinute}
             tasks={visibleTodoistTasks}
+            triageCount={extractedTasks.length + ungroupedTodoistTasks.length}
           />
         ) : (
           <EventCreationSidebar

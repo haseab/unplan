@@ -15,6 +15,7 @@ import {
 import * as React from "react";
 import { TodoistEventCard } from "@/components/todoist-event-card";
 import { TodoistGroupDeleteBlockedDialog } from "@/components/todoist-group-delete-blocked-dialog";
+import { TaskTriageCard } from "@/components/task-triage-card";
 import { useListMarqueeSelection } from "@/hooks/use-list-marquee-selection";
 import { useTodoistGroupPreferences } from "@/hooks/use-todoist-group-preferences";
 import type { CalendarSource } from "@/lib/calendar-types";
@@ -220,8 +221,10 @@ type TodoistSidebarProps = {
   onRenameGroup: (group: string, nextGroup: string) => Promise<void>;
   onReorderTasks: (orderedTaskIds: string[]) => Promise<void>;
   onResizeTask: (task: TodoistTask, durationMinutes: number) => Promise<void>;
+  onOpenTriage: () => void;
   pixelsPerMinute: number;
   tasks: TodoistTask[];
+  triageCount: number;
 };
 
 const setTodoistDragImage = (event: React.DragEvent<HTMLButtonElement>) => {
@@ -273,8 +276,10 @@ export function TodoistSidebar({
   onRenameGroup,
   onReorderTasks,
   onResizeTask,
+  onOpenTriage,
   pixelsPerMinute,
   tasks,
+  triageCount,
 }: TodoistSidebarProps) {
   const [creatingGroup, setCreatingGroup] = React.useState(false);
   const [dragOverGroup, setDragOverGroup] = React.useState<string | null>(null);
@@ -1028,7 +1033,7 @@ export function TodoistSidebar({
       });
   };
 
-  if (!connected) {
+  if (!connected && triageCount <= 0) {
     return (
       <div className="todoist-empty">
         <span><Inbox size={20} /></span>
@@ -1067,7 +1072,7 @@ export function TodoistSidebar({
       )}
 
       {error && <div className="todoist-error">{error}</div>}
-      {!loading && tasks.length === 0 && customGroups.length === 0 ? (
+      {!loading && tasks.length === 0 && customGroups.length === 0 && triageCount <= 0 ? (
         <div className="todoist-list-empty"><CalendarPlus size={19} /><strong>No stored event tasks</strong><span>Drag an event here to take it off the calendar and store it as a task.</span></div>
       ) : (
         <div
@@ -1078,6 +1083,11 @@ export function TodoistSidebar({
           }}
           ref={groupsRef}
         >
+          <TaskTriageCard
+            count={triageCount}
+            onOpen={onOpenTriage}
+            pixelsPerMinute={pixelsPerMinute}
+          />
           {visibleTaskGroups.map(([group, items]) => {
             const collapsed = collapsedGroups.has(group);
             const groupPath = todoistGroupPath(group);
@@ -1425,6 +1435,12 @@ export function TodoistSidebar({
                 })}
                 style={{ order: folderRowOrder }}
               >
+                <span
+                  className="todo-event-group-count"
+                  title={`${folderItemCount} total events`}
+                >
+                  {folderItemCount}
+                </span>
                 {renamingGroup === group ? (
                   <form
                     className="todo-event-group-rename"
@@ -1506,7 +1522,7 @@ export function TodoistSidebar({
                     <Plus aria-hidden="true" size={12} />
                   </button>
                 )}
-                {renamingGroup === group ? (
+                {renamingGroup === group && (
                   <button
                     aria-label={`Delete ${group} folder`}
                     className="todo-event-group-delete-button"
@@ -1517,8 +1533,6 @@ export function TodoistSidebar({
                   >
                     <Trash2 aria-hidden="true" size={11} />
                   </button>
-                ) : (
-                  <span title={`${folderItemCount} total events`}>{folderItemCount}</span>
                 )}
               </div>
               {creatingChildFor === group && (

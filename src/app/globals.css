@@ -616,10 +616,12 @@ kbd {
 .modal-heading strong { font-size: 13px; }
 .modal-heading small { margin-top: 2px; color: var(--text-soft); font-size: 9px; }
 
-.task-triage-trigger { display: inline-flex; height: 31px; align-items: center; gap: 6px; padding: 0 7px 0 10px; border: 1px solid var(--blue-border); border-radius: 999px; background: var(--blue-soft); color: var(--blue-ink); font-size: 10px; font-weight: 650; cursor: pointer; animation: triage-trigger-in 220ms cubic-bezier(0.2, 0.8, 0.2, 1); }
-.task-triage-trigger:hover { background: color-mix(in oklab, var(--blue-soft) 78%, var(--surface-hover)); }
-.task-triage-trigger strong { display: grid; min-width: 18px; height: 18px; place-items: center; padding: 0 5px; border-radius: 999px; background: var(--surface-translucent); color: var(--ink); font-size: 9px; font-variant-numeric: tabular-nums; }
-@keyframes triage-trigger-in { from { opacity: 0; transform: translateY(-5px) scale(0.94); } }
+.task-triage-card-trigger { display: grid; width: 100%; min-height: 34px; max-height: 54px; flex: 0 0 auto; grid-template-columns: max-content 17px minmax(0, 1fr); align-items: center; gap: 7px; margin: 0 0 8px; padding: 0 9px 0 10px; overflow: hidden; border: 0; border-left: 4px solid var(--blue-ink); border-radius: 6px; background: var(--blue-soft); color: var(--blue-ink); font: inherit; text-align: left; cursor: pointer; animation: triage-trigger-in 220ms cubic-bezier(0.2, 0.8, 0.2, 1); }
+.task-triage-card-trigger:hover { background: color-mix(in oklab, var(--blue-soft) 78%, var(--surface-hover)); }
+.task-triage-card-trigger:focus-visible { outline: 2px solid var(--blue-border); outline-offset: 2px; }
+.task-triage-card-trigger strong { overflow: hidden; font-size: 12px; font-weight: 560; letter-spacing: -0.01em; text-overflow: ellipsis; white-space: nowrap; }
+.task-triage-card-trigger span { display: grid; min-width: 22px; height: 20px; place-items: center; padding: 0 6px; border-radius: 999px; background: var(--surface-translucent); color: var(--ink); font-size: 9px; font-weight: 650; font-variant-numeric: tabular-nums; }
+@keyframes triage-trigger-in { from { opacity: 0; transform: translateY(-5px) scale(0.98); } }
 
 .task-triage-backdrop { padding: 16px; overflow: hidden; backdrop-filter: blur(8px); }
 .task-triage-modal { width: min(560px, 100%); max-height: calc(100vh - 32px); overflow-y: auto; padding: 20px 22px 18px; border: 1px solid var(--line-strong); border-radius: 18px; background: var(--surface-elevated); box-shadow: 0 28px 90px var(--shadow-color); animation: modal-in 180ms cubic-bezier(0.2, 0.8, 0.2, 1); }
@@ -914,22 +916,22 @@ kbd {
 .todo-event-group[data-group-drag-over="true"] > .todo-event-group-heading,
 .todo-event-group[data-group-drag-over="true"] > .todo-event-group-blocks { background: color-mix(in oklab, var(--blue-soft) 52%, transparent); box-shadow: inset 0 0 0 2px var(--blue-border); }
 .todo-event-group[data-group-nest-over="true"] > .todo-event-group-heading { border-radius: 8px; background: var(--blue-soft); box-shadow: inset 0 0 0 1px var(--blue-border); color: var(--blue-ink); transform: scale(0.985); }
-.todo-event-group-heading { display: flex; height: 31px; flex: 0 0 auto; align-items: center; gap: 4px; margin-bottom: 3px; padding: 0 3px 0 calc(2px + var(--folder-depth, 0) * 13px); border-radius: 8px; color: var(--text-soft); cursor: grab; transform-origin: center; transition: background 140ms ease, color 140ms ease, opacity 140ms ease, transform 160ms cubic-bezier(0.2, 0.8, 0.2, 1); }
+.todo-event-group-heading { display: grid; height: 31px; flex: 0 0 auto; grid-template-columns: 26px minmax(0, 1fr) auto auto; align-items: center; gap: 0; margin-bottom: 3px; padding: 0 3px; border-radius: 8px; color: var(--text-soft); cursor: grab; transform-origin: center; transition: background 140ms ease, color 140ms ease, opacity 140ms ease, transform 160ms cubic-bezier(0.2, 0.8, 0.2, 1); }
 .todo-event-group-heading:hover { background: var(--hover); color: var(--ink); }
 .todo-event-group-heading:active { cursor: grabbing; transform: scale(0.99); }
 .todo-event-group-heading[data-dragged="true"] { opacity: 0.45; }
 .todo-event-group-toggle, .todo-event-group-rename-button, .todo-event-group-add-button, .todo-event-group-delete-button { display: flex; height: 25px; align-items: center; border: 0; border-radius: 7px; background: transparent; color: inherit; cursor: pointer; }
-.todo-event-group-toggle { min-width: 0; flex: 1; gap: 5px; padding: 0 4px; text-align: left; }
+.todo-event-group-toggle { min-width: 0; gap: 5px; padding: 0 4px 0 calc(var(--folder-depth, 0) * 13px); text-align: left; }
 .todo-event-group-toggle:hover, .todo-event-group-rename-button:hover, .todo-event-group-add-button:hover { background: var(--hover-strong); color: var(--ink); }
 .todo-event-group-toggle:focus-visible { outline: 2px solid white; box-shadow: 0 0 0 4px rgba(70, 102, 229, 0.55), 0 7px 18px rgba(37, 50, 105, 0.2); }
 .todo-event-group-toggle > svg:first-child { flex: 0 0 auto; transition: transform 140ms ease; }
 .todo-event-group:not([data-collapsed="true"]) .todo-event-group-toggle > svg:first-child { transform: rotate(90deg); }
 .todo-event-group-toggle > svg:nth-child(2) { flex: 0 0 auto; color: var(--text-faint); }
 .todo-event-group-heading strong { overflow: hidden; font-size: 9px; font-weight: 680; letter-spacing: 0.045em; text-overflow: ellipsis; text-transform: uppercase; white-space: nowrap; }
-.todo-event-group-heading > span { display: grid; min-width: 18px; height: 18px; flex: 0 0 auto; place-items: center; padding: 0 5px; border-radius: 99px; background: var(--hover-strong); color: var(--muted); font-size: 8px; font-weight: 560; }
+.todo-event-group-heading > .todo-event-group-count { display: grid; min-width: 22px; height: 20px; justify-self: start; place-items: center; padding: 0 6px; border-radius: 99px; background: var(--hover-strong); color: var(--muted); font-size: 8px; font-weight: 560; font-variant-numeric: tabular-nums; }
 .todo-event-group-delete-button { width: 22px; flex: 0 0 22px; justify-content: center; padding: 0; color: #e8736b; }
 .todo-event-group-delete-button:hover { background: color-mix(in oklab, #e75a50 13%, transparent); color: #f38a83; }
-.todo-event-group-rename { display: flex; min-width: 0; height: 25px; flex: 1; align-items: center; gap: 5px; padding: 0 4px; transform-origin: left center; animation: todo-folder-editor-in 160ms cubic-bezier(0.2, 0.8, 0.2, 1); }
+.todo-event-group-rename { display: flex; min-width: 0; height: 25px; align-items: center; gap: 5px; padding: 0 4px 0 calc(4px + var(--folder-depth, 0) * 13px); transform-origin: left center; animation: todo-folder-editor-in 160ms cubic-bezier(0.2, 0.8, 0.2, 1); }
 .todo-event-group-rename > svg { flex: 0 0 auto; color: var(--text-faint); }
 .todo-event-group-rename input { min-width: 0; height: 23px; flex: 1; padding: 0 7px; border: 0; border-radius: 7px; outline: none; background: var(--hover); color: var(--ink); font: inherit; font-size: 9px; font-weight: 650; letter-spacing: -0.02em; box-shadow: inset 0 0 0 1px var(--line-strong); }
 .todo-event-group-rename input:focus { box-shadow: inset 0 0 0 1px var(--blue-ink); }
@@ -941,7 +943,7 @@ kbd {
 .todo-event-child-folder-form input:focus { box-shadow: inset 0 0 0 1px var(--blue-ink); }
 .todo-event-group-drag-image { position: fixed; z-index: 9999; top: 0; left: 0; border-radius: 8px; background: var(--surface-elevated); color: var(--ink); opacity: 0.94; pointer-events: none; box-shadow: 0 12px 28px rgba(0, 0, 0, 0.3); }
 .todo-event-group-drop-projection { height: 31px; flex: 0 0 auto; margin: 0 0 5px calc(var(--folder-depth, 0) * 13px); border: 2px solid var(--blue-border); border-radius: 8px; background: color-mix(in oklab, var(--blue) 9%, transparent); pointer-events: auto; box-shadow: 0 0 0 1px color-mix(in oklab, var(--blue) 18%, transparent); }
-.todo-event-group-blocks-shell { display: grid; min-height: 0; flex: 0 0 auto; grid-template-rows: 1fr; margin: 0 0 13px calc(26px + var(--folder-depth, 0) * 13px); opacity: 1; transition: grid-template-rows 220ms cubic-bezier(0.2, 0.8, 0.2, 1), margin-bottom 220ms cubic-bezier(0.2, 0.8, 0.2, 1), opacity 160ms ease; }
+.todo-event-group-blocks-shell { display: grid; min-height: 0; flex: 0 0 auto; grid-template-rows: 1fr; margin: 0 0 13px calc(42px + var(--folder-depth, 0) * 13px); opacity: 1; transition: grid-template-rows 220ms cubic-bezier(0.2, 0.8, 0.2, 1), margin-bottom 220ms cubic-bezier(0.2, 0.8, 0.2, 1), opacity 160ms ease; }
 .todo-event-group-blocks-shell[data-collapsed="true"] { grid-template-rows: 0fr; margin-bottom: 3px; opacity: 0; }
 .todo-event-group-blocks { position: relative; display: grid; min-height: 0; max-height: var(--todoist-group-scroll-height); align-content: start; gap: 5px; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; scrollbar-color: var(--text-faint) transparent; scrollbar-width: thin; touch-action: pan-y; }
 .todo-event-group-blocks[data-scrollable="true"] { padding-right: 5px; overflow-y: scroll; scrollbar-gutter: stable; }

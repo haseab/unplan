@@ -35,6 +35,7 @@ import {
   todoistManagedBucketProjects,
 } from "@/lib/todoist-buckets";
 import { LatestMutationQueue } from "@/lib/mutation-queue";
+import { TodoistStagedTaskCoordinator } from "@/lib/todoist-staged-task-coordinator";
 
 export type TodoistBucketSelectionRequest = {
   error: string | null;
@@ -92,6 +93,10 @@ export function useTodoist() {
     async () => undefined,
   );
   const taskOrderQueueRef = React.useRef<LatestMutationQueue<TodoistOrderSave> | null>(null);
+  const stagedTaskCoordinatorRef = React.useRef<TodoistStagedTaskCoordinator<TodoistTask> | null>(null);
+  if (!stagedTaskCoordinatorRef.current) {
+    stagedTaskCoordinatorRef.current = new TodoistStagedTaskCoordinator<TodoistTask>();
+  }
   if (!taskOrderQueueRef.current) {
     taskOrderQueueRef.current = new LatestMutationQueue<TodoistOrderSave>({
       debounceMs: 350,
@@ -512,6 +517,7 @@ export function useTodoist() {
       stagedTasks,
       placement,
     );
+    stagedTaskCoordinatorRef.current!.stage(stagedTasks.map(({ id }) => id));
     tasksRef.current = nextTasks;
     setTasks(nextTasks);
     return stagedTasks;
@@ -525,17 +531,35 @@ export function useTodoist() {
     input: CreateTodoistTaskInput,
   ) => {
     if (!token) throw new Error("Connect Todoist in Settings first");
-    const task = await createTaskInBucket(input);
-    const nextTasks = tasksRef.current.map((candidate) =>
-      candidate.id === stagedTaskId ? task : candidate,
-    );
-    tasksRef.current = nextTasks;
-    setTasks(nextTasks);
-    return task;
+    return stagedTaskCoordinatorRef.current!.commit(stagedTaskId, {
+      cleanupCreated: async (task) => {
+        console.debug("[BUG:TODOIST-DUPLICATE-RACE] [TODOIST:CREATE] cleaning up cancelled create", {
+          stagedTaskId,
+          taskId: task.id,
+        });
+        await deleteTodoistTask(token, task.id);
+      },
+      commitLocal: (task) => {
+        const nextTasks = tasksRef.current.map((candidate) =>
+          candidate.id === stagedTaskId ? task : candidate,
+        );
+        tasksRef.current = nextTasks;
+        setTasks(nextTasks);
+      },
+      create: () => createTaskInBucket(input),
+      isPresent: () => tasksRef.current.some(({ id }) => id === stagedTaskId),
+    });
   }, [createTaskInBucket, token]);
 
   const removeLocalTasks = React.useCallback((taskIds: Iterable<string>) => {
     const ids = new Set(taskIds);
+    ids.forEach((taskId) => {
+      if (stagedTaskCoordinatorRef.current!.cancel(taskId) !== undefined) {
+        console.debug("[BUG:TODOIST-DUPLICATE-RACE] [TODOIST:CREATE] cancelled staged task", {
+          taskId,
+        });
+      }
+    });
     const nextTasks = tasksRef.current.filter(({ id }) => !ids.has(id));
     tasksRef.current = nextTasks;
     setTasks(nextTasks);
@@ -683,6 +707,16 @@ export function useTodoist() {
 
   const deleteTask = React.useCallback(async (taskId: string) => {
     if (!token) throw new Error("Connect Todoist in Settings first");
+    const stagedCommit = stagedTaskCoordinatorRef.current!.cancel(taskId);
+    if (stagedCommit !== undefined) {
+      const committedTask = await stagedCommit;
+      if (!committedTask) return;
+      await deleteTodoistTask(token, committedTask.id);
+      const nextTasks = tasksRef.current.filter(({ id }) => id !== committedTask.id);
+      tasksRef.current = nextTasks;
+      setTasks(nextTasks);
+      return;
+    }
     await deleteTodoistTask(token, taskId);
   }, [token]);
   return {

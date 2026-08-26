@@ -99,6 +99,10 @@ export const calendarEventDetailsFromTodoistContent = (content: string) => {
   };
 };
 
+/** Human-readable task title for UI labels; never exposes encoded metadata. */
+export const todoistTaskDisplayTitle = (content: string) =>
+  calendarEventDetailsFromTodoistContent(content).title || "Untitled event";
+
 export type TodoistCalendarDropSegment = {
   calendarId?: string;
   color?: string;
