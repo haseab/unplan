@@ -114,6 +114,7 @@ import {
   getEventPalette,
 } from "@/lib/event-color";
 import { calendarEventInlinePosition } from "@/lib/calendar-event-position";
+import { isEventDragActivated } from "@/lib/event-drag";
 import { sendUpdatesForEvent } from "@/lib/event-guest-notifications";
 import { layoutTimedEventSegments } from "@/lib/event-layout";
 import {
@@ -190,6 +191,7 @@ import {
   browserGoogleStatus,
   loadBrowserGoogleCalendars,
   loadBrowserGoogleEvents,
+  mergeGoogleEventsAfterPartialSync,
   reconcileImportedGoogleCalendars,
   reconcileImportedGoogleVisibility,
   retainEventsForFailedGoogleAccounts,
@@ -229,6 +231,7 @@ type GoogleStatus = {
 type DragSession = {
   hasDragged: boolean;
   ids: string[];
+  items: DragOverlayItem[];
   originals: CalendarEvent[];
   startX: number;
   startY: number;
@@ -283,6 +286,7 @@ type Marquee = { x1: number; y1: number; x2: number; y2: number };
 
 type ActiveMarquee = Marquee & {
   baseSelection: Set<string>;
+  selection: Set<string>;
 };
 
 type ActiveEventCreation = EventCreationSession & {
@@ -299,9 +303,7 @@ type TodoistCalendarDropPoint = {
 
 const hours = Array.from({ length: 24 }, (_, index) => index);
 const DEFAULT_CALENDAR_STORAGE_KEY = "unplan:default-event-calendar";
-const EVENT_DRAG_THRESHOLD = 5;
 const EVENT_CREATION_DRAG_THRESHOLD = 5;
-const EVENT_CLICK_DRAG_THRESHOLD = 5;
 const CROSS_SERVICE_DRAG_THRESHOLD = 12;
 const EVENT_SEARCH_CACHE_TTL_MS = 5 * 60 * 1000;
 const EVENT_INLINE_START_INSET_PX = 3;
@@ -525,6 +527,7 @@ export function CalendarApp() {
   const eventSearchCacheRef = React.useRef<Map<string, EventSearchCacheEntry>>(
     new Map(),
   );
+  const googleEventsLoadControllerRef = React.useRef<AbortController | null>(null);
   const googleEventsLoadVersionRef = React.useRef(0);
   const pendingSearchNavigationRef = React.useRef<{
     calendarId: string;
@@ -960,10 +963,15 @@ export function CalendarApp() {
       (calendar) => calendar.provider === "google" && visibleCalendars.has(calendar.id),
     );
     if (!active.length) {
+      googleEventsLoadControllerRef.current?.abort();
+      googleEventsLoadControllerRef.current = null;
       googleEventsLoadVersionRef.current += 1;
       setEvents([]);
       return;
     }
+    googleEventsLoadControllerRef.current?.abort();
+    const controller = new AbortController();
+    googleEventsLoadControllerRef.current = controller;
     const loadVersion = ++googleEventsLoadVersionRef.current;
     setSyncing(true);
     const params = new URLSearchParams({
@@ -978,12 +986,20 @@ export function CalendarApp() {
     try {
       const data = await loadBrowserGoogleEvents({
         calendars: active,
+        signal: controller.signal,
         timeMax: params.get("timeMax")!,
         timeMin: params.get("timeMin")!,
       });
       if (loadVersion !== googleEventsLoadVersionRef.current) return;
       setGoogle(browserGoogleStatus());
-      const loadedEvents = data.events ?? [];
+      const failedAccountIds = new Set(
+        data.errors?.map((error) => error.accountId) ?? [],
+      );
+      const loadedEvents = mergeGoogleEventsAfterPartialSync(
+        eventsRef.current,
+        data.events ?? [],
+        failedAccountIds,
+      );
       const reconciliation = reconcileOptimisticCalendarEvents(
         loadedEvents,
         pendingTodoistCalendarEventsRef.current.values(),
@@ -1049,9 +1065,14 @@ export function CalendarApp() {
       if (loadVersion !== googleEventsLoadVersionRef.current) return;
       toast.error(error instanceof Error ? error.message : "Calendar sync failed");
     } finally {
+      if (googleEventsLoadControllerRef.current === controller) {
+        googleEventsLoadControllerRef.current = null;
+      }
       if (loadVersion === googleEventsLoadVersionRef.current) setSyncing(false);
     }
   }, [calendars, connectGoogle, google.connected, renderStart, renderedDayCount, visibleCalendars]);
+
+  React.useEffect(() => () => googleEventsLoadControllerRef.current?.abort(), []);
 
   React.useEffect(() => {
     if (!google.connected) return;
@@ -1227,9 +1248,11 @@ export function CalendarApp() {
       moved: CalendarEvent[],
       reportProgress?: (message: string) => void,
       sendUpdates: GoogleSendUpdates = "none",
+      originals: CalendarEvent[] = moved,
     ) => {
       const googleEvents = moved.filter((event) => event.provider === "google");
       if (!googleEvents.length) return [];
+      const originalsById = new Map(originals.map((event) => [event.id, event]));
       setSyncing(true);
       try {
         const { failed } = await runMutationBatch(
@@ -1237,6 +1260,7 @@ export function CalendarApp() {
           (event) => updateGoogleEvent(
             event,
             sendUpdatesForEvent(event, sendUpdates),
+            originalsById.get(event.id)?.calendarId,
           ),
           (completed, total) => reportProgress?.(`Saving event changes… ${completed}/${total}`),
         );
@@ -1281,11 +1305,9 @@ export function CalendarApp() {
     const handlePointerMove = (pointer: PointerEvent) => {
       if (eventSelectionRef.current) {
         const selection = eventSelectionRef.current;
-        const distance = Math.hypot(
-          pointer.clientX - selection.startX,
-          pointer.clientY - selection.startY,
-        );
-        if (distance >= EVENT_DRAG_THRESHOLD) eventSelectionRef.current = null;
+        if (isEventDragActivated(selection, pointer)) {
+          eventSelectionRef.current = null;
+        }
       }
 
       if (resizeRef.current) {
@@ -1307,16 +1329,12 @@ export function CalendarApp() {
 
       if (dragRef.current) {
         const drag = dragRef.current;
-        if (!drag.hasDragged) {
-          const distance = Math.hypot(
-            pointer.clientX - drag.startX,
-            pointer.clientY - drag.startY,
-          );
-          if (distance < EVENT_DRAG_THRESHOLD) return;
-          drag.hasDragged = true;
-        }
         const offsetX = pointer.clientX - drag.startX;
         const offsetY = pointer.clientY - drag.startY;
+        if (!drag.hasDragged) {
+          if (!isEventDragActivated(drag, pointer)) return;
+          drag.hasDragged = true;
+        }
         const todoTarget = document.querySelector<HTMLElement>("[data-todo-drop-target='true']");
         const todoRect = todoTarget?.getBoundingClientRect();
         const todoistCandidates = partitionCalendarEventsForTodoist(
@@ -1404,10 +1422,11 @@ export function CalendarApp() {
           || minuteDelta !== drag.minuteDelta;
         drag.dayDelta = dayDelta;
         drag.minuteDelta = minuteDelta;
-        setActiveEventDrag((current) => current
-          ? { ...current, offsetX, offsetY }
-          : current,
-        );
+        setActiveEventDrag((current) => ({
+          items: current?.items ?? drag.items,
+          offsetX,
+          offsetY,
+        }));
         if (snappedPositionChanged) {
           const originals = new Map(drag.originals.map((event) => [event.id, event]));
           setEvents((current) =>
@@ -1460,7 +1479,6 @@ export function CalendarApp() {
           x2: clamp(pointer.clientX - gridRect.left, 0, gridRect.width),
           y2: clamp(pointer.clientY - gridRect.top, 0, gridHeight),
         };
-        marqueeRef.current = next;
         setMarquee({ x1: next.x1, x2: next.x2, y1: next.y1, y2: next.y2 });
         const left = Math.min(next.x1, next.x2);
         const right = Math.max(next.x1, next.x2);
@@ -1487,7 +1505,9 @@ export function CalendarApp() {
           right,
           top,
         });
-        setSelected(addMarqueeSelection(next.baseSelection, marqueeSelection));
+        const selection = addMarqueeSelection(next.baseSelection, marqueeSelection);
+        marqueeRef.current = { ...next, selection };
+        setSelected(selection);
       }
     };
 
@@ -1506,10 +1526,7 @@ export function CalendarApp() {
       pendingEventClickRef.current = null;
       if (
         pendingEventClick
-        && Math.hypot(
-          pointer.clientX - pendingEventClick.startX,
-          pointer.clientY - pendingEventClick.startY,
-        ) < EVENT_CLICK_DRAG_THRESHOLD
+        && !isEventDragActivated(pendingEventClick, pointer)
       ) {
         setRightSidebarTab("events");
       }
@@ -1832,6 +1849,9 @@ export function CalendarApp() {
         }
       }
       if (marqueeRef.current) {
+        if (marqueeRef.current.selection.size > 0) {
+          setRightSidebarTab("events");
+        }
         marqueeRef.current = null;
         setMarquee(null);
       }
@@ -1926,6 +1946,7 @@ export function CalendarApp() {
     dragRef.current = {
       hasDragged: false,
       ids,
+      items: overlayItems,
       originals,
       startX: pointer.clientX,
       startY: pointer.clientY,
@@ -1935,7 +1956,6 @@ export function CalendarApp() {
       maxDayDelta: renderedDayCount - 1 - Math.max(...originalDayIndexes),
       minuteDelta: 0,
     };
-    setActiveEventDrag({ items: overlayItems, offsetX: 0, offsetY: 0 });
   };
 
   const beginEventResize = (
@@ -1989,6 +2009,7 @@ export function CalendarApp() {
     if (!pointer.shiftKey) return;
     const point = {
       baseSelection: new Set(selected),
+      selection: new Set(selected),
       x1: pointer.clientX - rect.left,
       y1: pointer.clientY - rect.top,
       x2: pointer.clientX - rect.left,
@@ -2468,6 +2489,7 @@ export function CalendarApp() {
         !event.altKey &&
         event.key === "Enter" &&
         !isEditableTarget(event.target) &&
+        !(event.target instanceof Element && event.target.closest(".event-creation-form")) &&
         triggerToastSubmit()
       ) {
         event.preventDefault();
@@ -3180,23 +3202,45 @@ export function CalendarApp() {
     updatedEvents: CalendarEvent[],
   ) => {
     if (!updatedEvents.length) return false;
-    const confirmed = await confirmBulkAction({
-      action: "update",
-      count: updatedEvents.length,
-    });
-    if (!confirmed) return false;
-    const sendUpdates = await chooseGuestNotifications("update", updatedEvents);
-    if (!sendUpdates) return false;
-
     const updatedById = new Map(
       updatedEvents.map((event) => [event.id, event]),
     );
     const originals = eventsRef.current.filter((event) =>
       updatedById.has(event.id),
     );
+    const originalsById = new Map(originals.map((event) => [event.id, event]));
+    const calendarMoves = updatedEvents.filter((event) =>
+      originalsById.get(event.id)?.calendarId !== event.calendarId,
+    );
+    const sourceCalendarCount = new Set(
+      originals.map((event) => event.calendarId),
+    ).size;
+    const destinationCalendar = calendarMoves.length
+      ? calendars.find((calendar) => calendar.id === calendarMoves[0].calendarId)
+      : null;
+    const confirmed = calendarMoves.length
+      ? sourceCalendarCount <= 1 || await confirmBulkAction({
+          action: "move",
+          confirmLabel: `Move ${updatedEvents.length}`,
+          count: updatedEvents.length,
+          description: `These events currently belong to ${sourceCalendarCount} calendars. They will all be moved to ${destinationCalendar?.name ?? "the chosen calendar"}.`,
+          threshold: 1,
+          title: `Move ${updatedEvents.length} events to ${destinationCalendar?.name ?? "one calendar"}?`,
+        })
+      : await confirmBulkAction({
+          action: "update",
+          count: updatedEvents.length,
+        });
+    if (!confirmed) return false;
+    const sendUpdates = await chooseGuestNotifications("update", updatedEvents);
+    if (!sendUpdates) return false;
+
     setEvents((current) => current.map((event) =>
       updatedById.get(event.id) ?? event,
     ));
+    if (destinationCalendar) {
+      setVisibleCalendars((current) => new Set(current).add(destinationCalendar.id));
+    }
 
     const restoreOriginals = (eventIds?: Set<string>) => {
       const snapshots = eventIds
@@ -3205,30 +3249,38 @@ export function CalendarApp() {
       setEvents((current) => restoreEventSnapshots(current, snapshots));
     };
 
-    queueActionToast(`Updated ${updatedEvents.length} events`, {
-      duration: toastDuration,
-      onUndo: () => restoreOriginals(),
-      onSubmit: async (reportProgress) => {
-        const failedIds = new Set(await persistMovedEvents(
-          updatedEvents,
-          reportProgress,
-          sendUpdates,
-        ));
-        if (!failedIds.size) return;
-        restoreOriginals(failedIds);
-        throw new Error(
-          `${failedIds.size} ${failedIds.size === 1 ? "event" : "events"} could not be updated`,
-        );
+    queueActionToast(
+      destinationCalendar
+        ? `Moved ${updatedEvents.length} events to ${destinationCalendar.name}`
+        : `Updated ${updatedEvents.length} events`,
+      {
+        duration: toastDuration,
+        onUndo: () => restoreOriginals(),
+        onSubmit: async (reportProgress) => {
+          const failedIds = new Set(await persistMovedEvents(
+            updatedEvents,
+            reportProgress,
+            sendUpdates,
+            originals,
+          ));
+          if (!failedIds.size) return;
+          restoreOriginals(failedIds);
+          throw new Error(
+            `${failedIds.size} ${failedIds.size === 1 ? "event" : "events"} could not be updated`,
+          );
+        },
+        onError: (error) => {
+          toast.error(
+            error instanceof Error ? error.message : "Bulk update could not be saved",
+          );
+        },
+        submittingMessage: destinationCalendar
+          ? "Moving events to calendar…"
+          : "Saving event changes…",
       },
-      onError: (error) => {
-        toast.error(
-          error instanceof Error ? error.message : "Bulk update could not be saved",
-        );
-      },
-      submittingMessage: "Saving event changes…",
-    });
+    );
     return true;
-  }, [chooseGuestNotifications, confirmBulkAction, persistMovedEvents, toastDuration]);
+  }, [calendars, chooseGuestNotifications, confirmBulkAction, persistMovedEvents, toastDuration]);
 
   const updateSidebarTodoistTask = React.useCallback(async (
     task: TodoistTask,
@@ -3374,6 +3426,7 @@ export function CalendarApp() {
     <main
       className="calendar-shell"
       data-active-selection-surface={activeSelectionSurface}
+      data-event-dragging={activeEventDrag ? "true" : undefined}
       onFocusCapture={(event) => activateSelectionSurfaceFromTarget(event.target)}
       onPointerDownCapture={(event) => activateSelectionSurfaceFromTarget(event.target)}
     >
@@ -3801,7 +3854,7 @@ export function CalendarApp() {
               <span>Previous / next day</span><span><kbd>⌥ ←</kbd> <kbd>⌥ →</kbd></span>
               <span>Focus calendar / sidebar</span><span><kbd>⌘ ←</kbd> <kbd>⌘ →</kbd></span>
               <span>Search events</span><span><kbd>⌘ F</kbd> <kbd>⌘ K</kbd></span>
-              <span>Change selected event calendar</span><kbd>C</kbd>
+              <span>Change selected events’ calendar</span><kbd>C</kbd>
               <span>Duplicate selected events</span><kbd>⌘ D</kbd>
               <span>Copy / paste events</span><span><kbd>⌘ C</kbd> <kbd>⌘ V</kbd></span>
               <span>Delete selected occurrences only</span><kbd>⌘ ⌫</kbd>

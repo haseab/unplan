@@ -6,7 +6,7 @@
     "node": ">=20.9.0"
   },
   "scripts": {
-    "dev": "node scripts/run-with-debug-log.mjs next dev",
+    "dev": "node scripts/run-with-debug-log.mjs next dev --port 3004",
     "build": "node scripts/run-with-debug-log.mjs next build --webpack",
     "start": "node scripts/run-with-debug-log.mjs next start",
     "lint": "node scripts/run-with-debug-log.mjs eslint",

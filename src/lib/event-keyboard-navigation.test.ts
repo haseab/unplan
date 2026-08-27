@@ -11,7 +11,7 @@ import {
   type EventNavigationRect,
 } from "./event-keyboard-navigation";
 
-test("C opens the calendar picker only for one selected event", () => {
+test("C opens the calendar picker for any event selection", () => {
   const shortcut = (overrides: Partial<Parameters<typeof isEventCalendarPickerShortcut>[0]> = {}) =>
     isEventCalendarPickerShortcut({
       altKey: false,
@@ -27,7 +27,7 @@ test("C opens the calendar picker only for one selected event", () => {
   assert.equal(shortcut(), true);
   assert.equal(shortcut({ key: "C" }), true);
   assert.equal(shortcut({ selectedCount: 0 }), false);
-  assert.equal(shortcut({ selectedCount: 2 }), false);
+  assert.equal(shortcut({ selectedCount: 2 }), true);
   assert.equal(shortcut({ modifier: true }), false);
   assert.equal(shortcut({ shiftKey: true }), false);
   assert.equal(shortcut({ repeat: true }), false);

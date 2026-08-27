@@ -21,7 +21,7 @@ cp .env.example .env.local
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000).
+Open [http://localhost:3004](http://localhost:3004).
 
 ## Connect Google Calendar
 
@@ -29,7 +29,7 @@ Open [http://localhost:3000](http://localhost:3000).
 2. Enable the Google Calendar API.
 3. Configure the OAuth consent screen.
 4. Create an OAuth 2.0 Client ID with the **Web application** type.
-5. Add `http://localhost:3000` as an authorized JavaScript origin.
+5. Add `http://localhost:3004` as an authorized JavaScript origin.
 6. Copy the client ID and client secret into `.env.local`.
 
 For production on `unplan.io`, add `https://unplan.io` to the same OAuth Web

@@ -7,9 +7,12 @@ export const TASK_DELETE_CONFIRMATION_THRESHOLD = 4;
 
 export type BulkConfirmationRequest = {
   action: "create" | "delete" | "move" | "update";
+  confirmLabel?: string;
   count: number;
+  description?: string;
   subject?: "events" | "tasks";
   threshold?: number;
+  title?: string;
 };
 
 export const requiresBulkConfirmation = ({

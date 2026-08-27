@@ -10,17 +10,23 @@ import {
 } from "lucide-react";
 import * as React from "react";
 import { format, isSameDay } from "date-fns";
+import { CalendarPicker } from "@/components/calendar-picker";
 import type { CalendarEvent, CalendarSource } from "@/lib/calendar-types";
 import {
+  calendarsForEventSelection,
   multiEventSelectionSummary,
+  moveSelectionToCalendar,
   sharedSelectionValue,
 } from "@/lib/multi-event-selection";
 import { moveEvent } from "@/lib/calendar-utils";
 
 type MultiEventSidebarProps = {
   calendars: CalendarSource[];
+  editableCalendars: CalendarSource[];
   events: CalendarEvent[];
+  openCalendarPicker: boolean;
   onBulkUpdate: (events: CalendarEvent[]) => Promise<boolean>;
+  onCalendarPickerClose: () => void;
   onCopy: () => void;
   onDelete: () => void | Promise<void>;
   onDuplicate: () => void | Promise<void>;
@@ -36,8 +42,11 @@ const formatTotalDuration = (minutes: number) => {
 
 export function MultiEventSidebar({
   calendars,
+  editableCalendars,
   events,
+  openCalendarPicker,
   onBulkUpdate,
+  onCalendarPickerClose,
   onCopy,
   onDelete,
   onDuplicate,
@@ -45,22 +54,36 @@ export function MultiEventSidebar({
 }: MultiEventSidebarProps) {
   const [saving, setSaving] = React.useState(false);
   const summary = multiEventSelectionSummary(events);
-  if (!summary) return null;
-
   const availability = sharedSelectionValue(
     events.map((event) => event.transparency ?? "opaque"),
   );
   const visibility = sharedSelectionValue(
     events.map((event) => event.visibility ?? "default"),
   );
+  const calendarId = sharedSelectionValue(events.map((event) => event.calendarId));
+  const availableCalendars = calendarsForEventSelection(
+    events,
+    calendars,
+    editableCalendars,
+  );
+  React.useEffect(() => {
+    if (openCalendarPicker && availableCalendars.length === 0) {
+      onCalendarPickerClose();
+    }
+  }, [availableCalendars.length, onCalendarPickerClose, openCalendarPicker]);
+
+  if (!summary) return null;
   const dateRange = isSameDay(summary.earliestStart, summary.latestEnd)
     ? format(summary.earliestStart, "EEE, MMM d")
     : `${format(summary.earliestStart, "MMM d")}–${format(summary.latestEnd, "MMM d")}`;
 
   const apply = async (nextEvents: CalendarEvent[]) => {
     setSaving(true);
-    await onBulkUpdate(nextEvents);
-    setSaving(false);
+    try {
+      await onBulkUpdate(nextEvents);
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -78,6 +101,31 @@ export function MultiEventSidebar({
 
       <section className="multi-event-section">
         <div className="multi-event-section-heading"><span>Bulk edit</span>{saving && <small>Saving…</small>}</div>
+        <div className="multi-event-calendar-field">
+          <span>Calendar</span>
+          {availableCalendars.length > 0 ? (
+            <CalendarPicker
+              calendars={availableCalendars}
+              forcedOpen={openCalendarPicker}
+              onChange={(nextCalendarId) => {
+                const destination = availableCalendars.find(
+                  (calendar) => calendar.id === nextCalendarId,
+                );
+                if (!destination || nextCalendarId === calendarId) return;
+                void apply(moveSelectionToCalendar(events, destination));
+              }}
+              onOpenChange={(open) => {
+                if (!open) onCalendarPickerClose();
+              }}
+              placeholder="Mixed calendars"
+              value={calendarId}
+            />
+          ) : (
+            <small className="multi-event-calendar-unavailable">
+              Selected events span different Google accounts
+            </small>
+          )}
+        </div>
         <div className="multi-event-field-grid">
           <label>
             <span>Availability</span>

@@ -48,6 +48,21 @@ export const retainEventsForFailedGoogleAccounts = (
   return Boolean(accountId && failedAccountIds.has(accountId));
 });
 
+export const mergeGoogleEventsAfterPartialSync = (
+  current: CalendarEvent[],
+  loaded: CalendarEvent[],
+  failedAccountIds: ReadonlySet<string>,
+) => {
+  if (!failedAccountIds.size) return loaded;
+  const loadedIds = new Set(loaded.map((event) => event.id));
+  return [
+    ...loaded,
+    ...retainEventsForFailedGoogleAccounts(current, failedAccountIds).filter(
+      (event) => !loadedIds.has(event.id),
+    ),
+  ];
+};
+
 export const browserGoogleStatus = () => {
   const stored = readGoogleAccounts();
   const accounts: GoogleConnectedAccount[] = stored.map((account) => ({

@@ -22,6 +22,7 @@ import { toast } from "sonner";
 import { addDays, differenceInMinutes, format, setHours, startOfDay } from "date-fns";
 import { EventParticipantsEditor } from "@/components/event-participants-editor";
 import { EventColorPicker } from "@/components/event-color-picker";
+import { EventTitleField } from "@/components/event-title-field";
 import { CalendarPicker } from "@/components/calendar-picker";
 import { MultiEventSidebar } from "@/components/multi-event-sidebar";
 import { useDebouncedEventUpdate } from "@/hooks/use-debounced-event-update";
@@ -183,13 +184,6 @@ function EventDetailsEditor({
   );
 
   React.useLayoutEffect(() => {
-    const title = titleRef.current;
-    if (!title) return;
-    title.style.height = "auto";
-    title.style.height = `${title.scrollHeight}px`;
-  }, [edited.title]);
-
-  React.useLayoutEffect(() => {
     if (!autoFocusTitle) return;
     const title = titleRef.current;
     if (!title) return;
@@ -289,16 +283,14 @@ function EventDetailsEditor({
 
   return (
     <div className="event-details event-editor">
-      <section className="event-details-hero event-editor-hero">
-        <span className="event-details-color" style={{ backgroundColor: edited.color }} aria-hidden="true" />
-        <textarea
-          ref={titleRef}
-          aria-label="Event title"
-          data-sidebar-primary-focus
-          rows={1}
-          value={edited.title}
-          onChange={(input) => change({ title: input.target.value })}
-          onKeyDown={(keyboardEvent) => {
+      <EventTitleField
+        ref={titleRef}
+        accentColor={edited.color}
+        aria-label="Event title"
+        data-sidebar-primary-focus
+        value={edited.title}
+        onValueChange={(title) => change({ title })}
+        onKeyDown={(keyboardEvent) => {
             if (keyboardEvent.key !== "Enter" || keyboardEvent.nativeEvent.isComposing) return;
             keyboardEvent.preventDefault();
             console.debug("[BUG:EVENT-TITLE-FOCUS] [TITLE:ENTER] submitting title", {
@@ -315,9 +307,8 @@ function EventDetailsEditor({
               });
               if (saved) onFocusEvent(edited);
             });
-          }}
-        />
-      </section>
+        }}
+      />
 
       <section className="event-details-section event-editor-time">
         <div className="event-details-row event-details-time-row event-editor-summary-row">
@@ -533,8 +524,15 @@ export function EventCreationSidebar({
   const [calendarId, setCalendarId] = React.useState(draft?.calendarId ?? "");
   const selectedEvent = selectedEvents.length === 1 ? selectedEvents[0] : null;
   const selectedCalendar = selectedEvent ? calendarSources.find((calendar) => calendar.id === selectedEvent.calendarId) ?? null : null;
+  const creationCalendar = calendars.find((calendar) => calendar.id === calendarId)
+    ?? calendars[0]
+    ?? null;
   const isShowingSelection = selectedEvents.length > 0 && !draft;
   const isShowingMultiSelection = selectedEvents.length > 1 && !draft;
+  const submitCreation = () => {
+    const normalizedTitle = title.trim();
+    if (normalizedTitle) onCreate(normalizedTitle, calendarId);
+  };
 
   return (
     <div
@@ -548,13 +546,60 @@ export function EventCreationSidebar({
       </div>
 
       {draft ? (
-        <form className="event-creation-form" onSubmit={(submitEvent) => { submitEvent.preventDefault(); if (title.trim()) onCreate(title.trim(), calendarId); }}>
-          <label><span>Event name</span><input autoFocus value={title} onChange={(input) => setTitle(input.target.value)} placeholder="What are you planning?" /></label>
-          <div className="event-creation-time"><Clock3 size={14} /><span><strong>{format(draft.start, "EEEE, MMMM d")}</strong><small>{format(draft.start, "h:mm a")}–{format(draft.end, "h:mm a")}</small></span></div>
-          <div className="event-creation-field">
-            <span>Calendar</span>
-            <CalendarPicker calendars={calendars} onChange={setCalendarId} value={calendarId} />
-          </div>
+        <form
+          className="event-details event-editor event-creation-form"
+          onKeyDown={(event) => {
+            if (
+              !(event.metaKey || event.ctrlKey)
+              || event.shiftKey
+              || event.altKey
+              || event.key !== "Enter"
+              || event.nativeEvent.isComposing
+            ) return;
+            event.preventDefault();
+            event.stopPropagation();
+            event.currentTarget.requestSubmit();
+          }}
+          onSubmit={(event) => {
+            event.preventDefault();
+            submitCreation();
+          }}
+        >
+          <EventTitleField
+            accentColor={creationCalendar?.backgroundColor ?? "#9ba1ad"}
+            aria-label="Event name"
+            autoFocus
+            onSubmit={submitCreation}
+            onValueChange={setTitle}
+            placeholder="What are you planning?"
+            value={title}
+          />
+          <section className="event-details-section event-editor-time">
+            <div className="event-details-row event-details-time-row">
+              <Clock3 size={15} />
+              <div>
+                <strong>
+                  {format(draft.start, "h:mm a")}
+                  <span>→</span>
+                  {format(draft.end, "h:mm a")}
+                  <em>{formatDuration(draft.start, draft.end)}</em>
+                </strong>
+                <small>{format(draft.start, "EEEE, MMMM d")}</small>
+              </div>
+            </div>
+          </section>
+          <section className="event-details-section event-editor-preferences">
+            <div className="event-editor-calendar-select event-editor-select-field">
+              <span
+                className="event-details-calendar-color"
+                style={{ backgroundColor: creationCalendar?.backgroundColor ?? "#9ba1ad" }}
+              />
+              <div className="event-editor-calendar-picker">
+                <small>Calendar</small>
+                <CalendarPicker calendars={calendars} onChange={setCalendarId} value={calendarId} />
+              </div>
+            </div>
+          </section>
           <div className="event-creation-actions"><button type="button" onClick={onCancel}>Cancel</button><button className="event-create-button" type="submit" disabled={!title.trim()}>Create event</button></div>
         </form>
       ) : selectedEvent ? (
@@ -575,8 +620,11 @@ export function EventCreationSidebar({
       ) : selectedEvents.length > 1 ? (
         <MultiEventSidebar
           calendars={calendarSources}
+          editableCalendars={calendars}
           events={selectedEvents}
+          openCalendarPicker={openSelectedEventCalendarPicker}
           onBulkUpdate={onBulkUpdateEvents}
+          onCalendarPickerClose={onSelectedEventCalendarPickerClose}
           onCopy={onCopySelection}
           onDelete={onDeleteSelection}
           onDuplicate={onDuplicateSelection}

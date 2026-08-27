@@ -32,6 +32,16 @@ export const dominantAxisCalendarScrollDelta = (
 
 export type CalendarScrollAxis = "horizontal" | "vertical";
 
+export const canSettleCalendarHorizontalInteraction = ({
+  horizontalWheelScrolling,
+  pendingBufferPosition,
+  recentering,
+}: {
+  horizontalWheelScrolling: boolean;
+  pendingBufferPosition: boolean;
+  recentering: boolean;
+}) => !horizontalWheelScrolling && !pendingBufferPosition && !recentering;
+
 const AXIS_SWITCH_DOMINANCE_RATIO = 1.6;
 const AXIS_SWITCH_MIN_DELTA = 4;
 

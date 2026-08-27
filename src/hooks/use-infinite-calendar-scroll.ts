@@ -11,6 +11,7 @@ import {
 } from "@/lib/calendar-date-buffer";
 import {
   type CalendarScrollAxis,
+  canSettleCalendarHorizontalInteraction,
   intentionalCalendarScrollDelta,
 } from "@/lib/calendar-horizontal-position";
 
@@ -226,19 +227,6 @@ export function useInfiniteCalendarScroll({
     setViewStart(nextViewStart);
   }, [dayCount, scrollRef, setViewStart, viewStart]);
 
-  const scheduleHorizontalSettle = React.useCallback(() => {
-    if (settleTimer.current !== null) {
-      window.clearTimeout(settleTimer.current);
-    }
-    settleTimer.current = window.setTimeout(() => {
-      settleTimer.current = null;
-      if (scrollRef.current?.hasAttribute("data-horizontal-wheel-scrolling")) {
-        return;
-      }
-      settleHorizontalScroll();
-    }, HORIZONTAL_SCROLL_SETTLE_MS);
-  }, [scrollRef, settleHorizontalScroll]);
-
   const adjustBufferForScroll = React.useCallback((scroller: HTMLDivElement) => {
     if (recentering.current || pendingBufferPosition.current) return;
     const buffer = dateBufferRef.current;
@@ -261,6 +249,31 @@ export function useInfiniteCalendarScroll({
     scroller.setAttribute("data-calendar-recentering", "true");
     setDateBuffer(adjustment.buffer);
   }, [viewStart]);
+
+  const settleHorizontalInteraction = React.useCallback(() => {
+    const scroller = scrollRef.current;
+    if (!scroller || !canSettleCalendarHorizontalInteraction({
+      horizontalWheelScrolling: scroller.hasAttribute("data-horizontal-wheel-scrolling"),
+      pendingBufferPosition: pendingBufferPosition.current !== null,
+      recentering: recentering.current,
+    })) return;
+
+    // Commit the visible date before shifting the backing buffer. Re-centering
+    // while trackpad momentum is still active lets the remaining wheel deltas
+    // hit the same boundary again, producing a date jump and a refresh storm.
+    settleHorizontalScroll();
+    adjustBufferForScroll(scroller);
+  }, [adjustBufferForScroll, scrollRef, settleHorizontalScroll]);
+
+  const scheduleHorizontalSettle = React.useCallback(() => {
+    if (settleTimer.current !== null) {
+      window.clearTimeout(settleTimer.current);
+    }
+    settleTimer.current = window.setTimeout(() => {
+      settleTimer.current = null;
+      settleHorizontalInteraction();
+    }, HORIZONTAL_SCROLL_SETTLE_MS);
+  }, [settleHorizontalInteraction]);
 
   React.useEffect(() => {
     const scroller = scrollRef.current;
@@ -407,10 +420,9 @@ export function useInfiniteCalendarScroll({
       ].slice(-12);
 
       if (recentering.current || pendingBufferPosition.current) return;
-      adjustBufferForScroll(scroller);
       scheduleHorizontalSettle();
     },
-    [adjustBufferForScroll, scheduleHorizontalSettle],
+    [scheduleHorizontalSettle],
   );
 
   const getVisibleViewStart = React.useCallback((

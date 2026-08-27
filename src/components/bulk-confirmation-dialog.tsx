@@ -61,10 +61,10 @@ export function BulkConfirmationDialog({
   const copy = actionCopy[request.action];
   const Icon = copy.Icon;
   const subject = request.subject ?? "events";
-  const title = `${copy.label} ${request.count} ${subject}?`;
-  const description = subject === "tasks" && request.action === "delete"
+  const title = request.title ?? `${copy.label} ${request.count} ${subject}?`;
+  const description = request.description ?? (subject === "tasks" && request.action === "delete"
     ? "These tasks will be permanently removed from Todoist. You can still undo before they are deleted."
-    : copy.description;
+    : copy.description);
 
   return (
     <div className="modal-backdrop confirmation-backdrop" onMouseDown={onCancel}>
@@ -92,7 +92,7 @@ export function BulkConfirmationDialog({
             aria-keyshortcuts="Meta+Enter"
             onClick={onConfirm}
           >
-            {copy.label} {request.count}
+            {request.confirmLabel ?? `${copy.label} ${request.count}`}
           </button>
         </div>
       </section>

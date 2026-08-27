@@ -45,7 +45,7 @@ export const isEventCalendarPickerShortcut = ({
   && !modifier
   && !modalOpen
   && !repeat
-  && selectedCount === 1
+  && selectedCount > 0
   && !shiftKey
   && key.toLowerCase() === "c"
 );

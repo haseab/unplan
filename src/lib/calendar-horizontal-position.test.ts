@@ -1,11 +1,35 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  canSettleCalendarHorizontalInteraction,
   dominantAxisCalendarScrollDelta,
   horizontalCalendarDayShift,
   intentionalCalendarScrollDelta,
   recenteredCalendarScrollLeft,
 } from "./calendar-horizontal-position";
+
+test("settles only after wheel momentum and buffer positioning finish", () => {
+  assert.equal(canSettleCalendarHorizontalInteraction({
+    horizontalWheelScrolling: true,
+    pendingBufferPosition: false,
+    recentering: false,
+  }), false);
+  assert.equal(canSettleCalendarHorizontalInteraction({
+    horizontalWheelScrolling: false,
+    pendingBufferPosition: true,
+    recentering: false,
+  }), false);
+  assert.equal(canSettleCalendarHorizontalInteraction({
+    horizontalWheelScrolling: false,
+    pendingBufferPosition: false,
+    recentering: true,
+  }), false);
+  assert.equal(canSettleCalendarHorizontalInteraction({
+    horizontalWheelScrolling: false,
+    pendingBufferPosition: false,
+    recentering: false,
+  }), true);
+});
 
 test("detects a one-day horizontal move in a five-day view", () => {
   assert.equal(horizontalCalendarDayShift(600, 500, 5), 1);

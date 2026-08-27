@@ -9,7 +9,8 @@ type CalendarPickerProps = {
   forcedOpen?: boolean;
   onChange: (calendarId: string) => void;
   onOpenChange?: (open: boolean) => void;
-  value: string;
+  placeholder?: string;
+  value: string | null;
 };
 
 export function CalendarPicker({
@@ -17,6 +18,7 @@ export function CalendarPicker({
   forcedOpen = false,
   onChange,
   onOpenChange,
+  placeholder = "Choose calendar",
   value,
 }: CalendarPickerProps) {
   const [internalOpen, setInternalOpen] = React.useState(false);
@@ -29,11 +31,8 @@ export function CalendarPicker({
   const optionRefs = React.useRef<Array<HTMLButtonElement | null>>([]);
   const listboxId = React.useId();
   const optionIdPrefix = React.useId();
-  const selectedIndex = Math.max(
-    calendars.findIndex((calendar) => calendar.id === value),
-    0,
-  );
-  const selectedCalendar = calendars[selectedIndex] ?? null;
+  const selectedIndex = calendars.findIndex((calendar) => calendar.id === value);
+  const selectedCalendar = selectedIndex >= 0 ? calendars[selectedIndex] : null;
   const filteredCalendars = React.useMemo(() => {
     const normalizedQuery = query.trim().toLocaleLowerCase();
     if (!normalizedQuery) return calendars;
@@ -62,7 +61,7 @@ export function CalendarPicker({
     return [...groups.values()];
   }, [filteredCalendars]);
 
-  const openPicker = React.useCallback((index = selectedIndex) => {
+  const openPicker = React.useCallback((index = Math.max(selectedIndex, 0)) => {
     setQuery("");
     setActiveIndex(index);
     setInternalOpen(true);
@@ -102,6 +101,7 @@ export function CalendarPicker({
   const selectCalendar = (calendarId: string) => {
     onChange(calendarId);
     closePicker();
+    triggerRef.current?.focus({ preventScroll: true });
   };
 
   const handleSearchKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
@@ -132,7 +132,7 @@ export function CalendarPicker({
         aria-expanded={open}
         aria-haspopup="listbox"
         className="calendar-picker-trigger"
-        disabled={!selectedCalendar}
+        disabled={calendars.length === 0}
         onClick={() => open ? closePicker() : openPicker()}
         onKeyDown={(event) => {
           if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
@@ -154,6 +154,12 @@ export function CalendarPicker({
             <ChevronDown className="calendar-picker-chevron" size={15} />
           </>
         )}
+        {!selectedCalendar && (
+          <>
+            <span className="calendar-picker-copy"><strong>{placeholder}</strong></span>
+            <ChevronDown className="calendar-picker-chevron" size={15} />
+          </>
+        )}
       </button>
 
       {open && (
@@ -171,6 +177,7 @@ export function CalendarPicker({
               aria-expanded="true"
               aria-label="Search calendars"
               autoComplete="off"
+              className="calendar-picker-search-input"
               onChange={(event) => {
                 setQuery(event.target.value);
                 setActiveIndex(0);
