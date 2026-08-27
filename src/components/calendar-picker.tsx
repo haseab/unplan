@@ -6,12 +6,21 @@ import type { CalendarSource } from "@/lib/calendar-types";
 
 type CalendarPickerProps = {
   calendars: CalendarSource[];
+  forcedOpen?: boolean;
   onChange: (calendarId: string) => void;
+  onOpenChange?: (open: boolean) => void;
   value: string;
 };
 
-export function CalendarPicker({ calendars, onChange, value }: CalendarPickerProps) {
-  const [open, setOpen] = React.useState(false);
+export function CalendarPicker({
+  calendars,
+  forcedOpen = false,
+  onChange,
+  onOpenChange,
+  value,
+}: CalendarPickerProps) {
+  const [internalOpen, setInternalOpen] = React.useState(false);
+  const open = forcedOpen || internalOpen;
   const [query, setQuery] = React.useState("");
   const [activeIndex, setActiveIndex] = React.useState(0);
   const rootRef = React.useRef<HTMLDivElement>(null);
@@ -34,17 +43,37 @@ export function CalendarPicker({ calendars, onChange, value }: CalendarPickerPro
         .some((field) => field?.toLocaleLowerCase().includes(normalizedQuery))
     );
   }, [calendars, query]);
+  const calendarGroups = React.useMemo(() => {
+    const groups = new Map<string, {
+      calendars: Array<{ calendar: CalendarSource; index: number }>;
+      label: string;
+    }>();
+
+    filteredCalendars.forEach((calendar, index) => {
+      const label = calendar.accountEmail?.trim() || "Local calendars";
+      const key = label.toLocaleLowerCase();
+      const group = groups.get(key);
+      const item = { calendar, index };
+
+      if (group) group.calendars.push(item);
+      else groups.set(key, { calendars: [item], label });
+    });
+
+    return [...groups.values()];
+  }, [filteredCalendars]);
 
   const openPicker = React.useCallback((index = selectedIndex) => {
     setQuery("");
     setActiveIndex(index);
-    setOpen(true);
-  }, [selectedIndex]);
+    setInternalOpen(true);
+    onOpenChange?.(true);
+  }, [onOpenChange, selectedIndex]);
 
   const closePicker = React.useCallback(() => {
-    setOpen(false);
+    setInternalOpen(false);
     setQuery("");
-  }, []);
+    onOpenChange?.(false);
+  }, [onOpenChange]);
 
   React.useEffect(() => {
     if (!open) return;
@@ -121,7 +150,6 @@ export function CalendarPicker({ calendars, onChange, value }: CalendarPickerPro
             />
             <span className="calendar-picker-copy">
               <strong>{selectedCalendar.name}</strong>
-              <small>{selectedCalendar.accountEmail ?? "Local calendar"}</small>
             </span>
             <ChevronDown className="calendar-picker-chevron" size={15} />
           </>
@@ -161,34 +189,48 @@ export function CalendarPicker({ calendars, onChange, value }: CalendarPickerPro
             id={listboxId}
             role="listbox"
           >
-            {filteredCalendars.map((calendar, index) => {
-              const selected = calendar.id === value;
+            {calendarGroups.map((group, groupIndex) => {
+              const groupLabelId = `${optionIdPrefix}-group-${groupIndex}`;
               return (
-                <button
-                  aria-selected={selected}
-                  className="calendar-picker-option"
-                  data-active={index === activeIndex ? "true" : undefined}
-                  id={`${optionIdPrefix}-${index}`}
-                  key={calendar.id}
-                  onClick={() => selectCalendar(calendar.id)}
-                  onMouseMove={() => setActiveIndex(index)}
-                  ref={(element) => { optionRefs.current[index] = element; }}
-                  role="option"
-                  tabIndex={-1}
-                  type="button"
+                <div
+                  aria-labelledby={groupLabelId}
+                  className="calendar-picker-group"
+                  key={group.label.toLocaleLowerCase()}
+                  role="group"
                 >
-                  <span
-                    className="calendar-picker-color"
-                    style={{ backgroundColor: calendar.backgroundColor }}
-                  />
-                  <span className="calendar-picker-copy">
-                    <strong>{calendar.name}</strong>
-                    <small>{calendar.accountEmail ?? "Local calendar"}</small>
-                  </span>
-                  <span className="calendar-picker-check" aria-hidden="true">
-                    {selected && <Check size={13} strokeWidth={2.8} />}
-                  </span>
-                </button>
+                  <div className="calendar-picker-group-label" id={groupLabelId}>
+                    {group.label}
+                  </div>
+                  {group.calendars.map(({ calendar, index }) => {
+                    const selected = calendar.id === value;
+                    return (
+                      <button
+                        aria-selected={selected}
+                        className="calendar-picker-option"
+                        data-active={index === activeIndex ? "true" : undefined}
+                        id={`${optionIdPrefix}-${index}`}
+                        key={calendar.id}
+                        onClick={() => selectCalendar(calendar.id)}
+                        onMouseMove={() => setActiveIndex(index)}
+                        ref={(element) => { optionRefs.current[index] = element; }}
+                        role="option"
+                        tabIndex={-1}
+                        type="button"
+                      >
+                        <span
+                          className="calendar-picker-color"
+                          style={{ backgroundColor: calendar.backgroundColor }}
+                        />
+                        <span className="calendar-picker-copy">
+                          <strong>{calendar.name}</strong>
+                        </span>
+                        <span className="calendar-picker-check" aria-hidden="true">
+                          {selected && <Check size={13} strokeWidth={2.8} />}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
               );
             })}
             {filteredCalendars.length === 0 && (

@@ -22,6 +22,55 @@ export type EventNavigationTimePoint = Pick<
   "dayIndex" | "endMinute" | "eventKey" | "startMinute"
 >;
 
+export type SidebarHorizontalArrowAction = "focus-calendar" | "suppress";
+
+export const isEventCalendarPickerShortcut = ({
+  altKey,
+  key,
+  modifier,
+  modalOpen,
+  repeat,
+  selectedCount,
+  shiftKey,
+}: {
+  altKey: boolean;
+  key: string;
+  modifier: boolean;
+  modalOpen: boolean;
+  repeat: boolean;
+  selectedCount: number;
+  shiftKey: boolean;
+}) => (
+  !altKey
+  && !modifier
+  && !modalOpen
+  && !repeat
+  && selectedCount === 1
+  && !shiftKey
+  && key.toLowerCase() === "c"
+);
+
+export const sidebarHorizontalArrowAction = ({
+  altKey,
+  ctrlKey,
+  editable,
+  key,
+  metaKey,
+  shiftKey,
+}: {
+  altKey: boolean;
+  ctrlKey: boolean;
+  editable: boolean;
+  key: string;
+  metaKey: boolean;
+  shiftKey: boolean;
+}): SidebarHorizontalArrowAction | null => {
+  if (altKey || ctrlKey || editable || metaKey || shiftKey) return null;
+  if (key === "ArrowLeft") return "focus-calendar";
+  if (key === "ArrowRight") return "suppress";
+  return null;
+};
+
 const center = (start: number, end: number) => start + (end - start) / 2;
 
 export const findEventClosestToMiddleDayNoon = (

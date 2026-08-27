@@ -53,8 +53,10 @@ export function EventParticipantsEditor({
     responseStatus: CalendarEventRsvpStatus,
   ) => Promise<boolean>;
 }) {
+  const [addingParticipants, setAddingParticipants] = React.useState(false);
   const [expanded, setExpanded] = React.useState(false);
   const [newParticipants, setNewParticipants] = React.useState("");
+  const participantInputRef = React.useRef<HTMLInputElement>(null);
   const [responding, setResponding] = React.useState<{
     attendeeKey: string;
     responseStatus: CalendarEventRsvpStatus;
@@ -66,11 +68,16 @@ export function EventParticipantsEditor({
   const hiddenCount = attendees.length - visibleAttendees.length;
   const participantEmails = attendees.flatMap(({ email }) => email ? [email] : []);
 
+  React.useLayoutEffect(() => {
+    if (addingParticipants) participantInputRef.current?.focus({ preventScroll: true });
+  }, [addingParticipants]);
+
   const addParticipants = () => {
     const next = mergeParticipantEmails(attendees, newParticipants);
     if (next.length === attendees.length) return;
     onChange(next);
     setNewParticipants("");
+    setAddingParticipants(false);
   };
 
   const respond = async (
@@ -197,24 +204,42 @@ export function EventParticipantsEditor({
         </div>
       )}
 
-      <div className="event-participant-add">
-        <Plus size={14} />
-        <input
-          aria-label="Add participants or rooms"
-          onChange={(input) => setNewParticipants(input.target.value)}
-          onKeyDown={(event) => {
-            if (event.key !== "Enter") return;
-            event.preventDefault();
-            addParticipants();
-          }}
-          placeholder="Add participant or room"
-          type="email"
-          value={newParticipants}
-        />
-        {newParticipants.trim() && (
-          <button onClick={addParticipants} type="button">Add</button>
-        )}
-      </div>
+      {addingParticipants ? (
+        <div className="event-participant-add" data-expanded="true">
+          <Plus size={14} />
+          <input
+            aria-label="Add participants or rooms"
+            onChange={(input) => setNewParticipants(input.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Escape" && !newParticipants.trim()) {
+                event.preventDefault();
+                event.stopPropagation();
+                setAddingParticipants(false);
+                return;
+              }
+              if (event.key !== "Enter") return;
+              event.preventDefault();
+              addParticipants();
+            }}
+            placeholder="Email address"
+            ref={participantInputRef}
+            type="email"
+            value={newParticipants}
+          />
+          {newParticipants.trim() && (
+            <button onClick={addParticipants} type="button">Add</button>
+          )}
+        </div>
+      ) : (
+        <button
+          className="event-participant-add-trigger"
+          onClick={() => setAddingParticipants(true)}
+          type="button"
+        >
+          <Plus size={14} />
+          Add participant or room
+        </button>
+      )}
     </div>
   );
 }

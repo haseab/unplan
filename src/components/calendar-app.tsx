@@ -145,6 +145,7 @@ import {
   findEventClosestToMiddleDayNoon,
   findEventNavigationBacktrackKey,
   findDirectionalEventKey,
+  isEventCalendarPickerShortcut,
   isHorizontalEventNavigationCandidate,
   resolveEventNavigationAnchorKey,
   type EventNavigationDirection,
@@ -400,7 +401,11 @@ export function CalendarApp() {
     id: string;
   } | null>(null);
   const [rightSidebarTab, setRightSidebarTab] = React.useState<RightSidebarTab>("todos");
+  const [openSelectedEventCalendarPicker, setOpenSelectedEventCalendarPicker] = React.useState(false);
   const [autoFocusSelectedEventTitle, setAutoFocusSelectedEventTitle] = React.useState(false);
+  const closeSelectedEventCalendarPicker = React.useCallback(() => {
+    setOpenSelectedEventCalendarPicker(false);
+  }, []);
   const consumeSelectedEventTitleAutoFocus = React.useCallback(() => {
     setAutoFocusSelectedEventTitle(false);
   }, []);
@@ -2612,15 +2617,24 @@ export function CalendarApp() {
         if (event.shiftKey && event.target.closest(".right-sidebar")) {
           event.preventDefault();
           event.stopPropagation();
-          if (rightSidebarTab === "events") {
-            setRightSidebarTab("todos");
-          }
           focusCalendarSurface();
           return;
         }
       }
       if (isEditableTarget(event.target)) return;
-      if (
+      if (isEventCalendarPickerShortcut({
+        altKey: event.altKey,
+        key: event.key,
+        modifier,
+        modalOpen: Boolean(document.querySelector(".modal-backdrop")),
+        repeat: event.repeat,
+        selectedCount: selected.size,
+        shiftKey: event.shiftKey,
+      })) {
+        event.preventDefault();
+        setOpenSelectedEventCalendarPicker(true);
+        setRightSidebarTab("events");
+      } else if (
         event.altKey
         && !modifier
         && (event.key === "ArrowLeft" || event.key === "ArrowRight")
@@ -3787,6 +3801,7 @@ export function CalendarApp() {
               <span>Previous / next day</span><span><kbd>⌥ ←</kbd> <kbd>⌥ →</kbd></span>
               <span>Focus calendar / sidebar</span><span><kbd>⌘ ←</kbd> <kbd>⌘ →</kbd></span>
               <span>Search events</span><span><kbd>⌘ F</kbd> <kbd>⌘ K</kbd></span>
+              <span>Change selected event calendar</span><kbd>C</kbd>
               <span>Duplicate selected events</span><kbd>⌘ D</kbd>
               <span>Copy / paste events</span><span><kbd>⌘ C</kbd> <kbd>⌘ V</kbd></span>
               <span>Delete selected occurrences only</span><kbd>⌘ ⌫</kbd>
@@ -4072,6 +4087,7 @@ export function CalendarApp() {
           />
         ) : (
           <EventCreationSidebar
+            openSelectedEventCalendarPicker={openSelectedEventCalendarPicker}
             autoFocusSelectedEventTitle={autoFocusSelectedEventTitle}
             key={creationDraft
               ? `${creationDraft.start.toISOString()}-${creationDraft.end.toISOString()}`
@@ -4124,6 +4140,7 @@ export function CalendarApp() {
               next.delete(eventId);
               return next;
             })}
+            onSelectedEventCalendarPickerClose={closeSelectedEventCalendarPicker}
             onSelectedEventTitleAutoFocused={consumeSelectedEventTitleAutoFocus}
             onPreviewEvent={setEventDetailsPreview}
             onRespondToEvent={respondToEventInvitation}

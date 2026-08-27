@@ -6,6 +6,7 @@ import {
   participantInitials,
   participantResponseSummary,
   participantResponseSummaryLabel,
+  shouldAutoCreateEventConference,
   updateSelfParticipantResponse,
 } from "./event-participants";
 
@@ -28,6 +29,22 @@ test("participant response summaries group Google response states", () => {
     participantResponseSummaryLabel(summary),
     "1 yes, 1 no, 1 maybe, 1 awaiting",
   );
+});
+
+test("adding a Google Calendar participant requests a conference only when needed", () => {
+  const shouldCreate = (overrides: Partial<Parameters<typeof shouldAutoCreateEventConference>[0]> = {}) =>
+    shouldAutoCreateEventConference({
+      currentParticipantCount: 0,
+      nextParticipantCount: 1,
+      provider: "google",
+      ...overrides,
+    });
+
+  assert.equal(shouldCreate(), true);
+  assert.equal(shouldCreate({ currentParticipantCount: 1, nextParticipantCount: 1 }), false);
+  assert.equal(shouldCreate({ currentParticipantCount: 2, nextParticipantCount: 1 }), false);
+  assert.equal(shouldCreate({ conferenceLink: "https://meet.google.com/example" }), false);
+  assert.equal(shouldCreate({ provider: "demo" }), false);
 });
 
 test("participant helpers preserve existing attendees and avoid duplicates", () => {

@@ -4,10 +4,59 @@ import {
   findEventNavigationBacktrackKey,
   findEventClosestToMiddleDayNoon,
   findDirectionalEventKey,
+  isEventCalendarPickerShortcut,
   resolveEventNavigationAnchorKey,
+  sidebarHorizontalArrowAction,
   type EventNavigationTransition,
   type EventNavigationRect,
 } from "./event-keyboard-navigation";
+
+test("C opens the calendar picker only for one selected event", () => {
+  const shortcut = (overrides: Partial<Parameters<typeof isEventCalendarPickerShortcut>[0]> = {}) =>
+    isEventCalendarPickerShortcut({
+      altKey: false,
+      key: "c",
+      modifier: false,
+      modalOpen: false,
+      repeat: false,
+      selectedCount: 1,
+      shiftKey: false,
+      ...overrides,
+    });
+
+  assert.equal(shortcut(), true);
+  assert.equal(shortcut({ key: "C" }), true);
+  assert.equal(shortcut({ selectedCount: 0 }), false);
+  assert.equal(shortcut({ selectedCount: 2 }), false);
+  assert.equal(shortcut({ modifier: true }), false);
+  assert.equal(shortcut({ shiftKey: true }), false);
+  assert.equal(shortcut({ repeat: true }), false);
+  assert.equal(shortcut({ modalOpen: true }), false);
+});
+
+test("sidebar horizontal arrows only return left to the calendar", () => {
+  const key = (value: string, editable = false) => sidebarHorizontalArrowAction({
+    altKey: false,
+    ctrlKey: false,
+    editable,
+    key: value,
+    metaKey: false,
+    shiftKey: false,
+  });
+
+  assert.equal(key("ArrowLeft"), "focus-calendar");
+  assert.equal(key("ArrowRight"), "suppress");
+  assert.equal(key("ArrowDown"), null);
+  assert.equal(key("ArrowLeft", true), null);
+  assert.equal(sidebarHorizontalArrowAction({
+    altKey: false,
+    ctrlKey: true,
+    editable: false,
+    key: "ArrowLeft",
+    metaKey: false,
+    shiftKey: false,
+  }), null);
+});
 
 test("calendar focus fallback chooses the event nearest the middle day at noon", () => {
   assert.equal(

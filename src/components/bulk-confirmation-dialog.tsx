@@ -41,14 +41,21 @@ export function BulkConfirmationDialog({
   React.useEffect(() => {
     if (!request) return;
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      event.preventDefault();
-      event.stopPropagation();
-      onCancel();
+      if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopPropagation();
+        onCancel();
+        return;
+      }
+      if (event.key === "Enter" && event.metaKey && !event.repeat) {
+        event.preventDefault();
+        event.stopPropagation();
+        onConfirm();
+      }
     };
     document.addEventListener("keydown", handleKeyDown, true);
     return () => document.removeEventListener("keydown", handleKeyDown, true);
-  }, [onCancel, request]);
+  }, [onCancel, onConfirm, request]);
 
   if (!request) return null;
   const copy = actionCopy[request.action];
@@ -82,6 +89,7 @@ export function BulkConfirmationDialog({
           <button className="confirmation-cancel" autoFocus onClick={onCancel}>Cancel</button>
           <button
             className={request.action === "delete" ? "confirmation-danger" : "confirmation-primary"}
+            aria-keyshortcuts="Meta+Enter"
             onClick={onConfirm}
           >
             {copy.label} {request.count}

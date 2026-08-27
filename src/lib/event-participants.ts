@@ -33,6 +33,22 @@ export const isEventUnaccepted = (event: CalendarEvent) => {
   return Boolean(self && self.responseStatus !== "accepted");
 };
 
+export const shouldAutoCreateEventConference = ({
+  conferenceLink,
+  currentParticipantCount,
+  nextParticipantCount,
+  provider,
+}: {
+  conferenceLink?: string;
+  currentParticipantCount: number;
+  nextParticipantCount: number;
+  provider: CalendarEvent["provider"];
+}) => (
+  provider === "google"
+  && !conferenceLink
+  && nextParticipantCount > currentParticipantCount
+);
+
 export const participantResponseSummaryLabel = (
   summary: ParticipantResponseSummary,
 ) => [
