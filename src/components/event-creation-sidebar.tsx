@@ -35,6 +35,7 @@ import { shouldAutoCreateEventConference } from "@/lib/event-participants";
 import { googleMeetCode } from "@/lib/google-conference-client";
 
 export type EventCreationDraft = {
+  allDay?: boolean;
   calendarId: string;
   end: Date;
   start: Date;
@@ -65,6 +66,7 @@ type EventCreationSidebarProps = {
   onPreviewEvent: (event: CalendarEvent) => void;
   onUpdateEvent: (event: CalendarEvent) => Promise<boolean>;
   selectedEvents: CalendarEvent[];
+  unsyncedEventIds: ReadonlySet<string>;
 };
 
 const formatDuration = (start: Date, end: Date) => {
@@ -519,9 +521,11 @@ export function EventCreationSidebar({
   onRespondToEvent,
   onUpdateEvent,
   selectedEvents,
+  unsyncedEventIds,
 }: EventCreationSidebarProps) {
   const [title, setTitle] = React.useState("");
   const [calendarId, setCalendarId] = React.useState(draft?.calendarId ?? "");
+  const [creationCalendarPickerOpen, setCreationCalendarPickerOpen] = React.useState(false);
   const selectedEvent = selectedEvents.length === 1 ? selectedEvents[0] : null;
   const selectedCalendar = selectedEvent ? calendarSources.find((calendar) => calendar.id === selectedEvent.calendarId) ?? null : null;
   const creationCalendar = calendars.find((calendar) => calendar.id === calendarId)
@@ -541,7 +545,7 @@ export function EventCreationSidebar({
       data-event-creation-surface="true"
     >
       <div className="event-creation-heading">
-        <div>{isShowingSelection ? <CalendarDays size={17} /> : <CalendarPlus size={17} />}<span><strong>{isShowingMultiSelection ? `${selectedEvents.length} events` : isShowingSelection ? "Event details" : "New event"}</strong>{!selectedEvent && <small>{isShowingMultiSelection ? "Bulk edit selection" : "Add it to your calendar"}</small>}</span></div>
+        <div>{isShowingSelection ? <CalendarDays size={17} /> : <CalendarPlus size={17} />}<span><strong>{isShowingMultiSelection ? `${selectedEvents.length} events` : isShowingSelection ? "Event details" : "New event"}</strong>{selectedEvents.some(({ id }) => unsyncedEventIds.has(id)) ? <small className="event-unsynced-label">Unsynced · editing keeps sync paused</small> : !selectedEvent && <small>{isShowingMultiSelection ? "Bulk edit selection" : "Add it to your calendar"}</small>}</span></div>
         {(draft || isShowingSelection) && <button className="icon-button" onClick={draft ? onCancel : onClearSelection} aria-label={draft ? "Cancel event creation" : "Close event details"}><X size={16} /></button>}
       </div>
 
@@ -569,6 +573,17 @@ export function EventCreationSidebar({
             accentColor={creationCalendar?.backgroundColor ?? "#9ba1ad"}
             aria-label="Event name"
             autoFocus
+            onKeyDown={(event) => {
+              if (
+                event.key !== "Tab"
+                || event.shiftKey
+                || event.metaKey
+                || event.ctrlKey
+                || event.altKey
+              ) return;
+              event.preventDefault();
+              setCreationCalendarPickerOpen(true);
+            }}
             onSubmit={submitCreation}
             onValueChange={setTitle}
             placeholder="What are you planning?"
@@ -596,7 +611,13 @@ export function EventCreationSidebar({
               />
               <div className="event-editor-calendar-picker">
                 <small>Calendar</small>
-                <CalendarPicker calendars={calendars} onChange={setCalendarId} value={calendarId} />
+                <CalendarPicker
+                  calendars={calendars}
+                  forcedOpen={creationCalendarPickerOpen}
+                  onChange={setCalendarId}
+                  onOpenChange={setCreationCalendarPickerOpen}
+                  value={calendarId}
+                />
               </div>
             </div>
           </section>

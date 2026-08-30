@@ -149,13 +149,12 @@ export const useCalendarSidebarFocus = (
 
       event.preventDefault();
       event.stopPropagation();
-      if (action === "focus-calendar") focusCalendar();
     };
 
     document.addEventListener("keydown", handleSidebarHorizontalArrow, true);
     return () =>
       document.removeEventListener("keydown", handleSidebarHorizontalArrow, true);
-  }, [focusCalendar]);
+  }, []);
 
   return { focusCalendar, focusSidebar };
 };

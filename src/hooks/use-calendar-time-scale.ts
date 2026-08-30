@@ -120,6 +120,7 @@ export function useCalendarTimeScale({
 
   const adjustTimeScaleWithKeyboard = React.useCallback(
     (event: React.KeyboardEvent<HTMLDivElement>) => {
+      if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
       const direction = event.key === "ArrowDown" || event.key === "+"
         ? 1
         : event.key === "ArrowUp" || event.key === "-" ? -1 : 0;

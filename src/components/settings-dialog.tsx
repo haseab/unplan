@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import * as React from "react";
 import { toast } from "sonner";
+import { CalendarPicker } from "@/components/calendar-picker";
 import { useTheme } from "@/hooks/use-theme";
 import { useToastSettings } from "@/hooks/use-toast-settings";
 import type { CalendarSource } from "@/lib/calendar-types";
@@ -208,17 +209,14 @@ export function SettingsDialog({
             <p>
               Used when you create an event by dragging empty calendar space.
             </p>
-            <select
-              className="settings-calendar-select"
-              value={defaultCalendarId ?? ""}
-              onChange={(event) => updateDefaultCalendar(event.target.value)}
-              aria-label="Default calendar for new events"
-              disabled={calendars.length === 0}
-            >
-              {calendars.map((calendar) => (
-                <option key={calendar.id} value={calendar.id}>{calendar.name}{calendar.accountEmail ? ` — ${calendar.accountEmail}` : ""}</option>
-              ))}
-            </select>
+            <div className="settings-calendar-picker">
+              <CalendarPicker
+                ariaLabel="Default calendar for new events"
+                calendars={calendars}
+                onChange={updateDefaultCalendar}
+                value={defaultCalendarId}
+              />
+            </div>
           </section>
 
           <section className="settings-section settings-primary-section">

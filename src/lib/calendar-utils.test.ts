@@ -7,6 +7,7 @@ import {
   eventSegmentKey,
   eventTimesMatch,
   formatEventStartTime,
+  formatTimeRange,
   resizeEvent,
 } from "./calendar-utils";
 
@@ -26,6 +27,10 @@ const event: CalendarEvent = {
 test("compact event card time shows only the start time without meridiem", () => {
   assert.equal(formatEventStartTime(event), "10:00");
   assert.equal(formatEventStartTime({ ...event, allDay: true }), "All day");
+});
+
+test("time ranges use the calendar event label format", () => {
+  assert.equal(formatTimeRange(originalStart, originalEnd), "10:00–11:00 AM");
 });
 
 test("dragging the start past the end flips the resized interval", () => {

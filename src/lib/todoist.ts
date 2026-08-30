@@ -68,6 +68,11 @@ export type TodoistTaskDropTarget = {
   taskId: string;
 };
 
+export type TodoistTaskOrderItem = {
+  childOrder: number;
+  id: string;
+};
+
 export const todoistTaskDropTargetAtPointer = (
   slots: Array<{ center: number; taskId: string }>,
   pointerPosition: number,
@@ -167,9 +172,12 @@ export const changedTodoistProjectOrders = (
   const nextByProject = persistedTaskIdsByProject(nextTasks);
   return [...nextByProject].flatMap(([projectId, taskIds]) => {
     const previousTaskIds = previousByProject.get(projectId) ?? [];
-    const unchanged = taskIds.length === previousTaskIds.length
-      && taskIds.every((taskId, index) => taskId === previousTaskIds[index]);
-    return unchanged ? [] : [{ projectId, taskIds }];
+    const items = taskIds.flatMap((id, index) =>
+      previousTaskIds[index] === id
+        ? []
+        : [{ childOrder: index + 1, id }],
+    );
+    return items.length ? [{ items, projectId }] : [];
   });
 };
 
@@ -376,11 +384,11 @@ export const moveTodoistTask = async (
 
 export const saveTodoistTaskOrder = async (
   token: string,
-  taskIds: string[],
+  items: TodoistTaskOrderItem[],
 ) => {
   await todoistRequest<{ ok: true }>("/api/todoist/tasks", token, {
     method: "POST",
-    body: JSON.stringify({ action: "reorder", taskIds }),
+    body: JSON.stringify({ action: "reorder", items }),
   });
 };
 

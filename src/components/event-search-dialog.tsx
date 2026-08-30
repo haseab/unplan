@@ -1,17 +1,23 @@
 "use client";
 
 import { format, parseISO } from "date-fns";
-import { CornerDownLeft, LoaderCircle, MapPin, Search, X } from "lucide-react";
+import { CalendarDays, CornerDownLeft, ListTodo, LoaderCircle, MapPin, Search, X } from "lucide-react";
 import * as React from "react";
 import type { CalendarEvent, CalendarSource } from "@/lib/calendar-types";
 import type { EventSearchTimeRange } from "@/lib/event-search";
+import type { TodoistTask } from "@/lib/todoist";
+import {
+  searchTodoistTasks,
+  type TodoistTaskSearchResult,
+} from "@/lib/todoist-calendar";
 
 type SearchStatus = "idle" | "loading" | "ready" | "error";
 
 type EventSearchDialogProps = {
   calendars: CalendarSource[];
   onOpenChange: (open: boolean) => void;
-  onSelect: (event: CalendarEvent) => void;
+  onSelectEvent: (event: CalendarEvent) => void;
+  onSelectTask: (task: TodoistTask) => void;
   open: boolean;
   searchEvents: (
     query: string,
@@ -19,11 +25,18 @@ type EventSearchDialogProps = {
     signal: AbortSignal,
     onPartialResults: (results: CalendarEvent[]) => void,
   ) => Promise<CalendarEvent[]>;
+  tasks: TodoistTask[];
 };
+
+type UnifiedSearchResult =
+  | { event: CalendarEvent; kind: "event" }
+  | ({ kind: "task" } & TodoistTaskSearchResult);
 
 const SEARCH_DEBOUNCE_MS = 180;
 const MINIMUM_QUERY_LENGTH = 2;
-const resultKey = (event: CalendarEvent) => `${event.calendarId}:${event.id}`;
+const resultKey = (result: UnifiedSearchResult) => result.kind === "event"
+  ? `event:${result.event.calendarId}:${result.event.id}`
+  : `task:${result.task.id}`;
 const TIME_RANGES: Array<{ label: string; value: EventSearchTimeRange }> = [
   { label: "All", value: "all" },
   { label: "Future", value: "future" },
@@ -40,14 +53,16 @@ const eventDateLabel = (event: CalendarEvent) => {
 export function EventSearchDialog({
   calendars,
   onOpenChange,
-  onSelect,
+  onSelectEvent,
+  onSelectTask,
   open,
   searchEvents,
+  tasks,
 }: EventSearchDialogProps) {
   const [activeIndex, setActiveIndex] = React.useState(-1);
   const [error, setError] = React.useState("");
   const [query, setQuery] = React.useState("");
-  const [results, setResults] = React.useState<CalendarEvent[]>([]);
+  const [results, setResults] = React.useState<UnifiedSearchResult[]>([]);
   const [status, setStatus] = React.useState<SearchStatus>("idle");
   const [timeRange, setTimeRange] = React.useState<EventSearchTimeRange>("all");
   const dialogRef = React.useRef<HTMLElement>(null);
@@ -75,13 +90,21 @@ export function EventSearchDialog({
     const timer = window.setTimeout(() => {
       setStatus("loading");
       setError("");
-      const applyResults = (nextResults: CalendarEvent[], complete: boolean) => {
+      const taskResults: UnifiedSearchResult[] = searchTodoistTasks(
+        tasks,
+        normalizedQuery,
+      ).map((result) => ({ ...result, kind: "task" }));
+      const applyResults = (nextEvents: CalendarEvent[], complete: boolean) => {
         if (controller.signal.aborted) return;
+        const nextResults: UnifiedSearchResult[] = [
+          ...nextEvents.map((event): UnifiedSearchResult => ({ event, kind: "event" })),
+          ...taskResults,
+        ];
         setResults(nextResults);
         setActiveIndex(() => {
           const preservedIndex = activeResultKeyRef.current
             ? nextResults.findIndex(
-              (event) => resultKey(event) === activeResultKeyRef.current,
+              (result) => resultKey(result) === activeResultKeyRef.current,
             )
             : -1;
           const nextIndex = preservedIndex >= 0
@@ -94,6 +117,7 @@ export function EventSearchDialog({
         });
         setStatus(complete ? "ready" : "loading");
       };
+      applyResults([], false);
       void searchEvents(
         normalizedQuery,
         timeRange,
@@ -105,14 +129,17 @@ export function EventSearchDialog({
         })
         .catch((searchError: unknown) => {
           if (controller.signal.aborted) return;
-          setResults([]);
-          setActiveIndex(-1);
+          setResults(taskResults);
+          setActiveIndex(taskResults.length ? 0 : -1);
+          activeResultKeyRef.current = taskResults.length
+            ? resultKey(taskResults[0])
+            : null;
           setError(
             searchError instanceof Error
               ? searchError.message
               : "Events could not be searched",
           );
-          setStatus("error");
+          setStatus(taskResults.length ? "ready" : "error");
         });
     }, SEARCH_DEBOUNCE_MS);
 
@@ -120,7 +147,7 @@ export function EventSearchDialog({
       controller.abort();
       window.clearTimeout(timer);
     };
-  }, [open, query, searchEvents, timeRange]);
+  }, [open, query, searchEvents, tasks, timeRange]);
 
   React.useEffect(() => {
     if (activeIndex < 0) return;
@@ -131,8 +158,9 @@ export function EventSearchDialog({
 
   if (!open) return null;
 
-  const chooseResult = (event: CalendarEvent) => {
-    onSelect(event);
+  const chooseResult = (result: UnifiedSearchResult) => {
+    if (result.kind === "event") onSelectEvent(result.event);
+    else onSelectTask(result.task);
     onOpenChange(false);
   };
 
@@ -192,13 +220,13 @@ export function EventSearchDialog({
   };
 
   const prompt = query.trim().length < MINIMUM_QUERY_LENGTH
-    ? "Type at least two characters to search events."
+    ? "Type at least two characters to search events and tasks."
     : status === "loading" && results.length === 0
-      ? `Searching ${timeRange} events…`
+      ? "Searching events and tasks…"
       : status === "error"
         ? error
         : results.length === 0
-          ? `No events found for “${query.trim()}”.`
+          ? `No events or tasks found for “${query.trim()}”.`
           : "";
 
   return (
@@ -215,7 +243,7 @@ export function EventSearchDialog({
         <div className="event-search-heading">
           <Search size={18} aria-hidden="true" />
           <label id="event-search-title" htmlFor="event-search-input">
-            Search events
+            Search events and tasks
           </label>
           <button
             className="icon-button"
@@ -233,7 +261,7 @@ export function EventSearchDialog({
             type="search"
             value={query}
             onChange={(event) => updateQuery(event.target.value)}
-            placeholder="Find titles, locations, or guests…"
+            placeholder="Find events, tasks, folders, or guests…"
             autoComplete="off"
             role="combobox"
             aria-autocomplete="list"
@@ -274,34 +302,50 @@ export function EventSearchDialog({
             <div className={`event-search-empty ${status === "error" ? "event-search-error" : ""}`}>
               {prompt}
             </div>
-          ) : results.map((event, index) => (
+          ) : results.map((result, index) => (
             <button
-              key={`${event.calendarId}-${event.id}`}
+              key={resultKey(result)}
               id={`${listboxId}-option-${index}`}
               className={index === activeIndex ? "event-search-result-active" : ""}
               role="option"
               aria-selected={index === activeIndex}
-              onClick={() => chooseResult(event)}
+              onClick={() => chooseResult(result)}
               onMouseMove={() => {
-                activeResultKeyRef.current = resultKey(event);
+                activeResultKeyRef.current = resultKey(result);
                 setActiveIndex(index);
               }}
             >
-              <span
-                className="event-search-color"
-                style={{ background: event.color || event.calendarColor }}
-                aria-hidden="true"
-              />
-              <span className="event-search-result-copy">
-                <strong>{event.title}</strong>
-                <small>
-                  <span>{eventDateLabel(event)}</span>
-                  <span>{calendarNames.get(event.calendarId) ?? "Calendar"}</span>
-                  {event.location && (
-                    <span><MapPin size={10} />{event.location}</span>
-                  )}
-                </small>
-              </span>
+              {result.kind === "event" ? (
+                <>
+                  <span
+                    className="event-search-color"
+                    style={{ background: result.event.color || result.event.calendarColor }}
+                    aria-hidden="true"
+                  />
+                  <span className="event-search-result-copy">
+                    <strong>{result.event.title}</strong>
+                    <small>
+                      <span><CalendarDays size={10} />{eventDateLabel(result.event)}</span>
+                      <span>{calendarNames.get(result.event.calendarId) ?? "Calendar"}</span>
+                      {result.event.location && (
+                        <span><MapPin size={10} />{result.event.location}</span>
+                      )}
+                    </small>
+                  </span>
+                </>
+              ) : (
+                <>
+                  <span className="event-search-color event-search-task-color" aria-hidden="true" />
+                  <span className="event-search-result-copy">
+                    <strong>{result.title}</strong>
+                    <small>
+                      <span><ListTodo size={10} />Task sidebar</span>
+                      <span>{result.group}</span>
+                      {result.task.description && <span>{result.task.description}</span>}
+                    </small>
+                  </span>
+                </>
+              )}
               <CornerDownLeft size={14} aria-hidden="true" />
             </button>
           ))}

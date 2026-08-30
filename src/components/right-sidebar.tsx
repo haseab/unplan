@@ -1,6 +1,11 @@
 "use client";
 
-import { CalendarDays, Layers3 } from "lucide-react";
+import {
+  CalendarDays,
+  Layers3,
+  PanelRightClose,
+  PanelRightOpen,
+} from "lucide-react";
 import * as React from "react";
 
 export type RightSidebarTab = "events" | "todos";
@@ -20,29 +25,61 @@ export function RightSidebar({
   onTabChange,
   todoCount,
 }: RightSidebarProps) {
+  const [collapsed, setCollapsed] = React.useState(false);
+
   return (
-    <aside className="right-sidebar" data-todo-drop-target="true" aria-label="Event tasks and event details">
-      <div className="right-sidebar-tabs" role="tablist" aria-label="Right sidebar">
-        <button
-          className={activeTab === "todos" ? "right-sidebar-tab-active" : ""}
-          type="button"
-          role="tab"
-          aria-selected={activeTab === "todos"}
-          onClick={() => onTabChange("todos")}
+    <aside
+      className="right-sidebar"
+      data-collapsed={collapsed ? "true" : undefined}
+      data-todo-drop-target="true"
+      aria-label="Event tasks and event details"
+    >
+      <div className="right-sidebar-header">
+        <div
+          className="right-sidebar-tabs"
+          role="tablist"
+          aria-label="Right sidebar"
+          aria-hidden={collapsed || undefined}
+          inert={collapsed || undefined}
         >
-          <Layers3 size={15} /> Event Tasks <span>{todoCount}</span>
-        </button>
+          <button
+            className={activeTab === "todos" ? "right-sidebar-tab-active" : ""}
+            type="button"
+            role="tab"
+            aria-selected={activeTab === "todos"}
+            onClick={() => onTabChange("todos")}
+          >
+            <Layers3 size={15} /> Event Tasks <span>{todoCount}</span>
+          </button>
+          <button
+            className={activeTab === "events" ? "right-sidebar-tab-active" : ""}
+            type="button"
+            role="tab"
+            aria-selected={activeTab === "events"}
+            onClick={() => onTabChange("events")}
+          >
+            <CalendarDays size={15} /> Event {eventCount > 0 && <span>{eventCount}</span>}
+          </button>
+        </div>
         <button
-          className={activeTab === "events" ? "right-sidebar-tab-active" : ""}
+          className="right-sidebar-collapse-button"
           type="button"
-          role="tab"
-          aria-selected={activeTab === "events"}
-          onClick={() => onTabChange("events")}
+          aria-expanded={!collapsed}
+          aria-label={collapsed ? "Expand right sidebar" : "Collapse right sidebar"}
+          title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          onClick={() => setCollapsed((current) => !current)}
         >
-          <CalendarDays size={15} /> Event {eventCount > 0 && <span>{eventCount}</span>}
+          {collapsed ? <PanelRightOpen size={16} /> : <PanelRightClose size={16} />}
         </button>
       </div>
-      <div className="right-sidebar-content" role="tabpanel">{children}</div>
+      <div
+        className="right-sidebar-content"
+        role="tabpanel"
+        aria-hidden={collapsed || undefined}
+        inert={collapsed || undefined}
+      >
+        {children}
+      </div>
     </aside>
   );
 }

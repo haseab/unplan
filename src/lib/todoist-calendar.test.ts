@@ -16,7 +16,13 @@ import {
   isTodoistCalendarName,
   moveCalendarEventToTodoist,
   partitionCalendarEventsForTodoist,
+  searchTodoistTasks,
+  shouldCollapseTodoistTaskMoveSource,
+  TODOIST_ROOT_GROUP,
+  todoistKeyboardTaskMoveChanges,
   todoistContentWithGroup,
+  todoistTaskFolderMoveOrder,
+  todoistTaskFolderMoveTarget,
   todoistCalendarDropSegments,
   todoistContentWithCalendar,
   todoistContentWithDuration,
@@ -260,6 +266,32 @@ test("recreates custom sections from the groups encoded in tasks", () => {
   );
 });
 
+test("searches task titles, descriptions, and folders", () => {
+  const planning = {
+    ...task("planning", todoistContentWithGroup("Plan launch", "Work")),
+    description: "Coordinate the release",
+  };
+  const errands = task("errands", todoistContentWithGroup("Buy milk", "Home"));
+
+  assert.deepEqual(
+    searchTodoistTasks([planning, errands], "release").map(({ task: match }) => match.id),
+    ["planning"],
+  );
+  assert.deepEqual(
+    searchTodoistTasks([planning, errands], "home").map(({ task: match }) => match.id),
+    ["errands"],
+  );
+  assert.deepEqual(
+    searchTodoistTasks([
+      task(
+        "optimization",
+        todoistContentWithGroup("Optimizing to make costs cheaper", "Work"),
+      ),
+    ], "optimiz costs").map(({ task: match }) => match.id),
+    ["optimization"],
+  );
+});
+
 test("applies a saved folder order and appends newly discovered groups", () => {
   const groups: Array<[string, number]> = [
     ["Ungrouped", 0],
@@ -417,6 +449,111 @@ test("builds an indented folder tree from persisted parent names", () => {
   );
   assert.equal(isTodoistGroupDescendant("Design", "Work", parents), true);
   assert.equal(isTodoistGroupDescendant("Work", "Design", parents), false);
+});
+
+test("resolves keyboard task moves across adjacent, parent, and child folders", () => {
+  const rootMove = (direction: "down" | "left" | "right" | "up") =>
+    todoistTaskFolderMoveTarget({
+      currentGroup: "Founders Inc",
+      direction,
+      orderedGroups: ["Ungrouped", "Founders Inc", "Priority", "Easy Tasks", "General"],
+      parents: { "Easy Tasks": "Founders Inc", Priority: "Founders Inc" },
+      visibleGroups: ["Ungrouped", "Founders Inc", "Priority", "Easy Tasks", "General"],
+    });
+
+  assert.equal(rootMove("up"), "Ungrouped");
+  assert.equal(rootMove("down"), "General");
+  assert.equal(rootMove("left"), TODOIST_ROOT_GROUP);
+  assert.equal(rootMove("right"), "Priority");
+
+  const childMove = (direction: "down" | "left" | "right" | "up") =>
+    todoistTaskFolderMoveTarget({
+      currentGroup: "Easy Tasks",
+      direction,
+      orderedGroups: ["Founders Inc", "Priority", "Easy Tasks", "Think", "General"],
+      parents: {
+        "Easy Tasks": "Founders Inc",
+        Priority: "Founders Inc",
+        Think: "Founders Inc",
+      },
+      visibleGroups: ["Founders Inc", "Priority", "Easy Tasks", "Think", "General"],
+    });
+
+  assert.equal(childMove("up"), "Priority");
+  assert.equal(childMove("down"), "Think");
+  assert.equal(childMove("left"), "Founders Inc");
+  assert.equal(childMove("right"), null);
+
+  assert.equal(todoistTaskFolderMoveTarget({
+    currentGroup: TODOIST_ROOT_GROUP,
+    direction: "right",
+    orderedGroups: ["Ungrouped", "Founders Inc", "General", TODOIST_ROOT_GROUP],
+    parents: {},
+    visibleGroups: ["Ungrouped", "Founders Inc", "General", TODOIST_ROOT_GROUP],
+  }), "Ungrouped");
+  assert.equal(todoistTaskFolderMoveTarget({
+    currentGroup: TODOIST_ROOT_GROUP,
+    direction: "left",
+    orderedGroups: ["Ungrouped", TODOIST_ROOT_GROUP],
+    parents: {},
+    visibleGroups: ["Ungrouped", TODOIST_ROOT_GROUP],
+  }), null);
+  assert.equal(todoistTaskFolderMoveTarget({
+    currentGroup: TODOIST_ROOT_GROUP,
+    direction: "up",
+    orderedGroups: ["Ungrouped", "General", TODOIST_ROOT_GROUP],
+    parents: {},
+    visibleGroups: ["Ungrouped", "General", TODOIST_ROOT_GROUP],
+  }), null);
+  assert.equal(todoistTaskFolderMoveTarget({
+    currentGroup: "General",
+    direction: "down",
+    orderedGroups: ["Ungrouped", "General", TODOIST_ROOT_GROUP],
+    parents: {},
+    visibleGroups: ["Ungrouped", "General", TODOIST_ROOT_GROUP],
+  }), null);
+});
+
+test("collapses the source folder except when moving toward a child", () => {
+  assert.equal(shouldCollapseTodoistTaskMoveSource("up"), true);
+  assert.equal(shouldCollapseTodoistTaskMoveSource("down"), true);
+  assert.equal(shouldCollapseTodoistTaskMoveSource("left"), true);
+  assert.equal(shouldCollapseTodoistTaskMoveSource("right"), false);
+});
+
+test("places a keyboard-moved task first in its destination folder order", () => {
+  assert.deepEqual(todoistTaskFolderMoveOrder({
+    orderedTaskIds: ["source-first", "target-first", "target-second", "moving"],
+    taskId: "moving",
+    targetTaskIds: ["target-first", "target-second"],
+  }), ["source-first", "moving", "target-first", "target-second"]);
+  assert.deepEqual(todoistTaskFolderMoveOrder({
+    orderedTaskIds: ["source-first", "moving"],
+    taskId: "moving",
+    targetTaskIds: [],
+  }), ["source-first", "moving"]);
+});
+
+test("treats a keyboard move back to its original folder and position as a no-op", () => {
+  assert.deepEqual(todoistKeyboardTaskMoveChanges({
+    latestContent: todoistContentWithGroup("Task", "Ungrouped"),
+    nextTaskIds: ["one", "task", "two"],
+    originalContent: "Task",
+    originalTaskIds: ["one", "task", "two"],
+  }), {
+    folderChanged: false,
+    orderChanged: false,
+  });
+
+  assert.deepEqual(todoistKeyboardTaskMoveChanges({
+    latestContent: todoistContentWithGroup("Task", "Root"),
+    nextTaskIds: ["task", "one", "two"],
+    originalContent: "Task",
+    originalTaskIds: ["one", "task", "two"],
+  }), {
+    folderChanged: true,
+    orderChanged: true,
+  });
 });
 
 test("places nested folder rows before their parent task rows", () => {

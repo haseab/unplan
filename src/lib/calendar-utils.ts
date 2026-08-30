@@ -30,12 +30,12 @@ export const snapMinutes = (minutes: number) =>
 export const clamp = (value: number, min: number, max: number) =>
   Math.min(Math.max(value, min), max);
 
+export const formatTimeRange = (start: Date, end: Date) =>
+  `${format(start, "h:mm")}–${format(end, "h:mm a")}`;
+
 export const formatEventTime = (event: CalendarEvent) => {
   if (event.allDay) return "All day";
-  return `${format(parseISO(event.start), "h:mm")}–${format(
-    parseISO(event.end),
-    "h:mm a",
-  )}`;
+  return formatTimeRange(parseISO(event.start), parseISO(event.end));
 };
 
 export const formatEventStartTime = (event: CalendarEvent) => {

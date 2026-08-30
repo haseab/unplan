@@ -22,7 +22,91 @@ export type EventNavigationTimePoint = Pick<
   "dayIndex" | "endMinute" | "eventKey" | "startMinute"
 >;
 
-export type SidebarHorizontalArrowAction = "focus-calendar" | "suppress";
+export type SidebarHorizontalArrowAction = "suppress";
+
+export type EventMoveShortcut = {
+  dayDelta: number;
+  minuteDelta: number;
+};
+
+export type CrossSurfaceMoveAction =
+  | "schedule-sidebar-task"
+  | "triage-calendar-events";
+
+export const crossSurfaceMoveShortcut = ({
+  activeSurface,
+  altKey,
+  editable,
+  key,
+  metaKey,
+  modalOpen,
+  shiftKey,
+}: {
+  activeSurface: "calendar" | "sidebar";
+  altKey: boolean;
+  editable: boolean;
+  key: string;
+  metaKey: boolean;
+  modalOpen: boolean;
+  shiftKey: boolean;
+}): CrossSurfaceMoveAction | null => {
+  if (!metaKey || !shiftKey || altKey || editable || modalOpen) return null;
+  if (activeSurface === "sidebar" && key === "ArrowLeft") {
+    return "schedule-sidebar-task";
+  }
+  if (activeSurface === "calendar" && key === "ArrowRight") {
+    return "triage-calendar-events";
+  }
+  return null;
+};
+
+export const isEventMoveAtOrigin = ({
+  dayDelta,
+  minuteDelta,
+}: EventMoveShortcut) => dayDelta === 0 && minuteDelta === 0;
+
+export const eventMoveShortcut = ({
+  activeCalendar,
+  altKey,
+  ctrlKey,
+  editable,
+  includesAllDay,
+  key,
+  metaKey,
+  modalOpen,
+  selectedCount,
+  shiftKey,
+}: {
+  activeCalendar: boolean;
+  altKey: boolean;
+  ctrlKey: boolean;
+  editable: boolean;
+  includesAllDay: boolean;
+  key: string;
+  metaKey: boolean;
+  modalOpen: boolean;
+  repeat: boolean;
+  selectedCount: number;
+  shiftKey: boolean;
+}): EventMoveShortcut | null => {
+  if (
+    !activeCalendar
+    || !altKey
+    || ctrlKey
+    || editable
+    || metaKey
+    || modalOpen
+    || selectedCount === 0
+    || shiftKey
+  ) return null;
+
+  if (key === "ArrowLeft") return { dayDelta: -1, minuteDelta: 0 };
+  if (key === "ArrowRight") return { dayDelta: 1, minuteDelta: 0 };
+  if (includesAllDay) return null;
+  if (key === "ArrowUp") return { dayDelta: 0, minuteDelta: -15 };
+  if (key === "ArrowDown") return { dayDelta: 0, minuteDelta: 15 };
+  return null;
+};
 
 export const isEventCalendarPickerShortcut = ({
   altKey,
@@ -50,6 +134,32 @@ export const isEventCalendarPickerShortcut = ({
   && key.toLowerCase() === "c"
 );
 
+export const isEventTitleFocusShortcut = ({
+  altKey,
+  calendarEventFocused,
+  key,
+  modalOpen,
+  modifier,
+  selectedCount,
+  shiftKey,
+}: {
+  altKey: boolean;
+  calendarEventFocused: boolean;
+  key: string;
+  modalOpen: boolean;
+  modifier: boolean;
+  selectedCount: number;
+  shiftKey: boolean;
+}) => (
+  key === "Enter"
+  && !modifier
+  && !altKey
+  && !shiftKey
+  && selectedCount > 0
+  && !modalOpen
+  && calendarEventFocused
+);
+
 export const sidebarHorizontalArrowAction = ({
   altKey,
   ctrlKey,
@@ -66,8 +176,7 @@ export const sidebarHorizontalArrowAction = ({
   shiftKey: boolean;
 }): SidebarHorizontalArrowAction | null => {
   if (altKey || ctrlKey || editable || metaKey || shiftKey) return null;
-  if (key === "ArrowLeft") return "focus-calendar";
-  if (key === "ArrowRight") return "suppress";
+  if (key === "ArrowLeft" || key === "ArrowRight") return "suppress";
   return null;
 };
 

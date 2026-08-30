@@ -50,6 +50,11 @@ const readParentRecord = (storage: Storage) => {
   }
 };
 
+export const readTodoistFolderPreferences = (storage: Storage) => ({
+  groupOrder: readStringArray(storage, TODOIST_GROUP_ORDER_STORAGE_KEY),
+  groupParents: readParentRecord(storage),
+});
+
 const uniqueNames = (values: string[]) => [...new Set(
   values.map((value) => value.trim()).filter(Boolean),
 )];

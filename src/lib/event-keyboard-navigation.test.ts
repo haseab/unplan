@@ -1,15 +1,106 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  crossSurfaceMoveShortcut,
+  eventMoveShortcut,
   findEventNavigationBacktrackKey,
   findEventClosestToMiddleDayNoon,
   findDirectionalEventKey,
   isEventCalendarPickerShortcut,
+  isEventMoveAtOrigin,
+  isEventTitleFocusShortcut,
   resolveEventNavigationAnchorKey,
   sidebarHorizontalArrowAction,
   type EventNavigationTransition,
   type EventNavigationRect,
 } from "./event-keyboard-navigation";
+
+test("Command+Shift moves items between the active sidebar and calendar surfaces", () => {
+  const shortcut = (
+    activeSurface: "calendar" | "sidebar",
+    key: string,
+    overrides: Partial<Parameters<typeof crossSurfaceMoveShortcut>[0]> = {},
+  ) => crossSurfaceMoveShortcut({
+    activeSurface,
+    altKey: false,
+    editable: false,
+    key,
+    metaKey: true,
+    modalOpen: false,
+    shiftKey: true,
+    ...overrides,
+  });
+
+  assert.equal(shortcut("sidebar", "ArrowLeft"), "schedule-sidebar-task");
+  assert.equal(shortcut("calendar", "ArrowRight"), "triage-calendar-events");
+  assert.equal(shortcut("sidebar", "ArrowRight"), null);
+  assert.equal(shortcut("calendar", "ArrowLeft"), null);
+  assert.equal(shortcut("sidebar", "ArrowLeft", { editable: true }), null);
+  assert.equal(shortcut("calendar", "ArrowRight", { modalOpen: true }), null);
+});
+
+test("keyboard event moves only return to origin when both deltas are cleared", () => {
+  assert.equal(isEventMoveAtOrigin({ dayDelta: 0, minuteDelta: 0 }), true);
+  assert.equal(isEventMoveAtOrigin({ dayDelta: 1, minuteDelta: 0 }), false);
+  assert.equal(isEventMoveAtOrigin({ dayDelta: 0, minuteDelta: -15 }), false);
+  assert.equal(isEventMoveAtOrigin({ dayDelta: 1, minuteDelta: -24 * 60 }), false);
+});
+
+test("Option+arrows resolve to calendar event moves", () => {
+  const shortcut = (
+    key: string,
+    overrides: Partial<Parameters<typeof eventMoveShortcut>[0]> = {},
+  ) => eventMoveShortcut({
+    activeCalendar: true,
+    altKey: true,
+    ctrlKey: false,
+    editable: false,
+    includesAllDay: false,
+    key,
+    metaKey: false,
+    modalOpen: false,
+    repeat: false,
+    selectedCount: 1,
+    shiftKey: false,
+    ...overrides,
+  });
+
+  assert.deepEqual(shortcut("ArrowLeft"), { dayDelta: -1, minuteDelta: 0 });
+  assert.deepEqual(shortcut("ArrowRight"), { dayDelta: 1, minuteDelta: 0 });
+  assert.deepEqual(shortcut("ArrowUp"), { dayDelta: 0, minuteDelta: -15 });
+  assert.deepEqual(shortcut("ArrowDown"), { dayDelta: 0, minuteDelta: 15 });
+  assert.equal(shortcut("ArrowLeft", { activeCalendar: false }), null);
+  assert.equal(shortcut("ArrowLeft", { editable: true }), null);
+  assert.equal(shortcut("ArrowLeft", { altKey: false }), null);
+  assert.equal(shortcut("ArrowLeft", { metaKey: true }), null);
+  assert.equal(shortcut("ArrowLeft", { modalOpen: true }), null);
+  assert.deepEqual(shortcut("ArrowDown", { repeat: true }), {
+    dayDelta: 0,
+    minuteDelta: 15,
+  });
+  assert.equal(shortcut("ArrowLeft", { selectedCount: 0 }), null);
+  assert.equal(shortcut("ArrowLeft", { shiftKey: true }), null);
+});
+
+test("minute shortcuts do not move all-day selections", () => {
+  const shortcut = (key: string) => eventMoveShortcut({
+    activeCalendar: true,
+    altKey: true,
+    ctrlKey: false,
+    editable: false,
+    includesAllDay: true,
+    key,
+    metaKey: false,
+    modalOpen: false,
+    repeat: false,
+    selectedCount: 2,
+    shiftKey: false,
+  });
+
+  assert.equal(shortcut("ArrowUp"), null);
+  assert.equal(shortcut("ArrowDown"), null);
+  assert.deepEqual(shortcut("ArrowLeft"), { dayDelta: -1, minuteDelta: 0 });
+});
 
 test("C opens the calendar picker for any event selection", () => {
   const shortcut = (overrides: Partial<Parameters<typeof isEventCalendarPickerShortcut>[0]> = {}) =>
@@ -34,7 +125,31 @@ test("C opens the calendar picker for any event selection", () => {
   assert.equal(shortcut({ modalOpen: true }), false);
 });
 
-test("sidebar horizontal arrows only return left to the calendar", () => {
+test("Enter focuses the title whenever a selected calendar event has focus", () => {
+  const shortcut = (overrides: Partial<Parameters<typeof isEventTitleFocusShortcut>[0]> = {}) =>
+    isEventTitleFocusShortcut({
+      altKey: false,
+      calendarEventFocused: true,
+      key: "Enter",
+      modalOpen: false,
+      modifier: false,
+      selectedCount: 1,
+      shiftKey: false,
+      ...overrides,
+    });
+
+  assert.equal(shortcut(), true);
+  assert.equal(shortcut({ selectedCount: 2 }), true);
+  assert.equal(shortcut({ calendarEventFocused: false }), false);
+  assert.equal(shortcut({ key: " " }), false);
+  assert.equal(shortcut({ modifier: true }), false);
+  assert.equal(shortcut({ altKey: true }), false);
+  assert.equal(shortcut({ shiftKey: true }), false);
+  assert.equal(shortcut({ selectedCount: 0 }), false);
+  assert.equal(shortcut({ modalOpen: true }), false);
+});
+
+test("sidebar horizontal arrows are suppressed", () => {
   const key = (value: string, editable = false) => sidebarHorizontalArrowAction({
     altKey: false,
     ctrlKey: false,
@@ -44,7 +159,7 @@ test("sidebar horizontal arrows only return left to the calendar", () => {
     shiftKey: false,
   });
 
-  assert.equal(key("ArrowLeft"), "focus-calendar");
+  assert.equal(key("ArrowLeft"), "suppress");
   assert.equal(key("ArrowRight"), "suppress");
   assert.equal(key("ArrowDown"), null);
   assert.equal(key("ArrowLeft", true), null);

@@ -129,7 +129,35 @@ test("returns only Todoist projects whose relative task order changed", () => {
   ];
 
   assert.deepEqual(changedTodoistProjectOrders(previous, next), [
-    { projectId: "inbox", taskIds: ["b", "a"] },
+    {
+      items: [
+        { childOrder: 1, id: "b" },
+        { childOrder: 2, id: "a" },
+      ],
+      projectId: "inbox",
+    },
+  ]);
+});
+
+test("returns only the contiguous positions affected by a task move", () => {
+  const previous = ["one", "two", "three", "four", "five", "six", "seven", "eight"]
+    .map(task);
+  const next = applyTodoistTaskOrder(
+    previous,
+    ["one", "two", "four", "five", "six", "seven", "three", "eight"],
+  );
+
+  assert.deepEqual(changedTodoistProjectOrders(previous, next), [
+    {
+      items: [
+        { childOrder: 3, id: "four" },
+        { childOrder: 4, id: "five" },
+        { childOrder: 5, id: "six" },
+        { childOrder: 6, id: "seven" },
+        { childOrder: 7, id: "three" },
+      ],
+      projectId: "inbox",
+    },
   ]);
 });
 

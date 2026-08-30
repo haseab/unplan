@@ -76,6 +76,16 @@ export function useTodoistGroupPreferences() {
     });
   }, []);
 
+  const collapseGroup = React.useCallback((group: string) => {
+    setCollapsedGroups((current) => {
+      if (current.has(group)) return current;
+      const next = new Set(current);
+      next.add(group);
+      writeStoredNames(TODOIST_COLLAPSED_GROUPS_STORAGE_KEY, next);
+      return next;
+    });
+  }, []);
+
   const saveGroupOrder = React.useCallback((orderedGroups: string[]) => {
     console.debug("[BUG:FOLDER-REORDER]", "preferences:save-order", {
       orderedGroups,
@@ -146,6 +156,7 @@ export function useTodoistGroupPreferences() {
   }, []);
 
   return {
+    collapseGroup,
     collapsedGroups,
     expandGroup,
     groupOrder,

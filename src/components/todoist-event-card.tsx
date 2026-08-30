@@ -33,6 +33,7 @@ type TodoistEventCardProps = {
   onDragEnd: (event: React.DragEvent<HTMLButtonElement>) => void;
   onDragStart: (event: React.DragEvent<HTMLButtonElement>) => void;
   onMove: (direction: -1 | 1) => void;
+  onMoveToFolder: (direction: "down" | "left" | "right" | "up") => void;
   onNavigate: (direction: "next" | "previous", extendSelection: boolean) => void;
   onNavigateToGroupEdge: (edge: "end" | "start") => void;
   onRename: (title: string) => Promise<void>;
@@ -58,6 +59,7 @@ export function TodoistEventCard({
   onDragEnd,
   onDragStart,
   onMove,
+  onMoveToFolder,
   onNavigate,
   onNavigateToGroupEdge,
   onRename,
@@ -73,10 +75,12 @@ export function TodoistEventCard({
 }: TodoistEventCardProps) {
   const [editing, setEditing] = React.useState(false);
   const [renameValue, setRenameValue] = React.useState(title);
+  const [renameFieldHeight, setRenameFieldHeight] = React.useState(24);
   const [saving, setSaving] = React.useState(false);
   const [resizePreview, setResizePreview] = React.useState<number | null>(null);
   const resizeRef = React.useRef<{ startDuration: number; startY: number } | null>(null);
   const eventButtonRef = React.useRef<HTMLButtonElement>(null);
+  const renameFieldRef = React.useRef<HTMLTextAreaElement>(null);
   const renameCommitRef = React.useRef(false);
   const renameCancelRef = React.useRef(false);
 
@@ -139,10 +143,27 @@ export function TodoistEventCard({
 
   const controlsVisible = !editing && showActions;
   const eventHeight = editing
-    ? Math.max(renderedHeight, 34)
+    ? Math.max(renderedHeight, renameFieldHeight + 4)
     : controlsVisible
       ? Math.max(renderedHeight, 28)
       : renderedHeight;
+
+  React.useLayoutEffect(() => {
+    if (!editing) return;
+    const field = renameFieldRef.current;
+    if (!field) return;
+
+    const fitFieldToContent = () => {
+      field.style.height = "0px";
+      const nextHeight = Math.max(24, field.scrollHeight);
+      field.style.height = `${nextHeight}px`;
+      setRenameFieldHeight(nextHeight);
+    };
+
+    fitFieldToContent();
+    window.addEventListener("resize", fitFieldToContent);
+    return () => window.removeEventListener("resize", fitFieldToContent);
+  }, [editing, renameValue]);
 
   const commitResize = async (nextDuration: number) => {
     const normalized = todoistDurationFromResize(nextDuration, 0, 1);
@@ -214,12 +235,25 @@ export function TodoistEventCard({
             beginRename();
             return;
           }
+          if (
+            event.altKey
+            && event.shiftKey
+            && !modifier
+            && ["ArrowDown", "ArrowLeft", "ArrowRight", "ArrowUp"].includes(event.key)
+          ) {
+            event.preventDefault();
+            event.stopPropagation();
+            onActivate();
+            onMoveToFolder(event.key.slice(5).toLowerCase() as
+              "down" | "left" | "right" | "up");
+            return;
+          }
           const moveDirection = event.key === "ArrowDown"
             ? 1
             : event.key === "ArrowUp"
               ? -1
               : null;
-          if (moveDirection && event.altKey && !modifier) {
+          if (moveDirection && event.altKey && !event.shiftKey && !modifier) {
             event.preventDefault();
             event.stopPropagation();
             onActivate();
@@ -273,19 +307,29 @@ export function TodoistEventCard({
           }}
           style={{ ...style, height: eventHeight }}
         >
-          <input
+          <textarea
+            ref={renameFieldRef}
             aria-label={`Rename ${title}`}
             autoFocus
             disabled={saving}
             onChange={(event) => setRenameValue(event.target.value)}
             onBlur={() => void commitRename()}
             onKeyDown={(event) => {
-              if (event.key !== "Escape") return;
-              event.preventDefault();
-              renameCancelRef.current = true;
-              setEditing(false);
-              setRenameValue(title);
+              if (event.key === "Enter" && !event.nativeEvent.isComposing) {
+                event.preventDefault();
+                event.currentTarget.form?.requestSubmit();
+                return;
+              }
+              if (event.key === "Escape") {
+                event.preventDefault();
+                event.stopPropagation();
+                renameCancelRef.current = true;
+                setEditing(false);
+                setRenameValue(title);
+                restoreEventButtonFocus();
+              }
             }}
+            rows={1}
             value={renameValue}
           />
         </form>

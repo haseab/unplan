@@ -10,8 +10,10 @@
     "build": "node scripts/run-with-debug-log.mjs next build --webpack",
     "start": "node scripts/run-with-debug-log.mjs next start",
     "lint": "node scripts/run-with-debug-log.mjs eslint",
+    "test:calendar-date-command": "tsc src/lib/calendar-date-command.ts src/lib/calendar-date-command.test.ts --outDir /tmp/unplan-calendar-date-command-tests --module commonjs --target es2022 --esModuleInterop --skipLibCheck && NODE_PATH=./node_modules node --test /tmp/unplan-calendar-date-command-tests/calendar-date-command.test.js",
     "test:event-layout": "tsc src/lib/event-layout.ts src/lib/event-layout.test.ts --outDir /tmp/unplan-event-layout-tests --module commonjs --target es2022 --esModuleInterop --skipLibCheck && node --test /tmp/unplan-event-layout-tests/event-layout.test.js",
     "test:event-creation": "tsc src/lib/calendar-utils.ts src/lib/event-creation.ts src/lib/event-creation.test.ts --outDir /tmp/unplan-event-creation-tests --module commonjs --target es2022 --esModuleInterop --skipLibCheck && NODE_PATH=./node_modules node --test /tmp/unplan-event-creation-tests/event-creation.test.js",
+    "test:natural-language-event-time": "tsc src/lib/natural-language-event-time.ts src/lib/natural-language-event-time.test.ts --outDir /tmp/unplan-natural-language-event-time-tests --module commonjs --target es2022 --esModuleInterop --skipLibCheck && NODE_PATH=./node_modules node --test /tmp/unplan-natural-language-event-time-tests/natural-language-event-time.test.js",
     "test:event-visual-density": "tsc src/lib/event-visual-density.ts src/lib/event-visual-density.test.ts --outDir /tmp/unplan-event-visual-density-tests --module commonjs --target es2022 --esModuleInterop --skipLibCheck && node --test /tmp/unplan-event-visual-density-tests/event-visual-density.test.js",
     "test:event-participants": "tsc src/lib/calendar-types.ts src/lib/event-participants.ts src/lib/event-participants.test.ts --outDir /tmp/unplan-event-participants-tests --module commonjs --target es2022 --esModuleInterop --skipLibCheck && node --test /tmp/unplan-event-participants-tests/event-participants.test.js",
     "test:multi-event-selection": "tsc src/lib/calendar-types.ts src/lib/multi-event-selection.ts src/lib/multi-event-selection.test.ts --outDir /tmp/unplan-multi-event-selection-tests --module commonjs --target es2022 --esModuleInterop --skipLibCheck && NODE_PATH=./node_modules node --test /tmp/unplan-multi-event-selection-tests/multi-event-selection.test.js",
@@ -25,6 +27,7 @@
     "test:todoist": "tsc src/lib/calendar-types.ts src/lib/todoist.ts src/lib/todoist.test.ts src/lib/todoist-buckets.ts src/lib/todoist-buckets.test.ts src/lib/todoist-calendar.ts src/lib/todoist-calendar.test.ts src/lib/todoist-staged-task-coordinator.ts src/lib/todoist-staged-task-coordinator.test.ts src/lib/task-extraction.ts src/lib/task-extraction.test.ts --outDir /tmp/unplan-todoist-tests --module commonjs --target es2022 --esModuleInterop --skipLibCheck && node --test /tmp/unplan-todoist-tests/todoist.test.js /tmp/unplan-todoist-tests/todoist-buckets.test.js /tmp/unplan-todoist-tests/todoist-calendar.test.js /tmp/unplan-todoist-tests/todoist-staged-task-coordinator.test.js /tmp/unplan-todoist-tests/task-extraction.test.js"
   },
   "dependencies": {
+    "chrono-node": "^2.10.1",
     "date-fns": "^4.4.0",
     "lucide-react": "^1.28.0",
     "next": "16.3.2",

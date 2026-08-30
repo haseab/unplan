@@ -1,40 +1,49 @@
 "use client";
 
-import { Sparkles } from "lucide-react";
+import { FolderInput, Sparkles } from "lucide-react";
 import * as React from "react";
-import { todoistEventRenderedHeight } from "@/lib/todoist-calendar";
 
 type TaskTriageCardProps = {
-  count: number;
-  onOpen: () => void;
-  pixelsPerMinute: number;
+  extractedCount: number;
+  normalCount: number;
+  onOpenExtracted: () => void;
+  onOpenNormal: () => void;
 };
 
-const TRIAGE_TASK_DURATION_MINUTES = 45;
-
 export function TaskTriageCard({
-  count,
-  onOpen,
-  pixelsPerMinute,
+  extractedCount,
+  normalCount,
+  onOpenExtracted,
+  onOpenNormal,
 }: TaskTriageCardProps) {
-  if (count <= 0) return null;
-
-  const height = todoistEventRenderedHeight(
-    TRIAGE_TASK_DURATION_MINUTES,
-    pixelsPerMinute,
-  );
+  if (extractedCount <= 0 && normalCount <= 0) return null;
 
   return (
-    <button
-      aria-label={`Triage tasks, ${count} to triage`}
-      className="task-triage-card-trigger"
-      onClick={onOpen}
-      style={{ height }}
-      type="button"
-    >
-      <span>{count}</span>
-      <Sparkles aria-hidden="true" size={14} />
-      <strong>Triage tasks</strong>
-    </button>
+    <div className="task-triage-card-triggers">
+      {extractedCount > 0 && (
+        <button
+          aria-label={`Review extracted tasks, ${extractedCount} remaining`}
+          className="task-triage-card-trigger"
+          onClick={onOpenExtracted}
+          type="button"
+        >
+          <span>{extractedCount}</span>
+          <Sparkles aria-hidden="true" size={14} />
+          <strong>Review extracted</strong>
+        </button>
+      )}
+      {normalCount > 0 && (
+        <button
+          aria-label={`File tasks, ${normalCount} remaining`}
+          className="task-triage-card-trigger task-triage-card-trigger-normal"
+          onClick={onOpenNormal}
+          type="button"
+        >
+          <span>{normalCount}</span>
+          <FolderInput aria-hidden="true" size={14} />
+          <strong>File tasks</strong>
+        </button>
+      )}
+    </div>
   );
 }

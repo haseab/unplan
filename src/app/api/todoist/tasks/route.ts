@@ -47,27 +47,45 @@ export async function POST(request: NextRequest) {
     projectId?: string;
     sectionId?: string;
     taskId?: string;
-    taskIds?: string[];
+    items?: Array<{ childOrder?: number; id?: string }>;
   } | null;
   if (!body) return Response.json({ error: "Invalid Todoist request" }, { status: 400 });
 
   if (body.action === "reorder") {
-    const taskIds = body.taskIds?.filter(
-      (taskId): taskId is string => typeof taskId === "string" && Boolean(taskId.trim()),
-    );
+    const items = body.items;
     if (
-      !taskIds?.length ||
-      taskIds.length > 500 ||
-      new Set(taskIds).size !== taskIds.length
+      !items?.length ||
+      items.length > 500 ||
+      items.some(({ childOrder, id }) =>
+        typeof id !== "string" ||
+        !id.trim() ||
+        !Number.isInteger(childOrder) ||
+        Number(childOrder) < 1
+      ) ||
+      new Set(items.map(({ id }) => id)).size !== items.length ||
+      new Set(items.map(({ childOrder }) => childOrder)).size !== items.length
     ) {
       return Response.json({ error: "A valid Todoist task order is required" }, { status: 400 });
     }
+    const childOrders = items.map(({ childOrder }) => Number(childOrder));
+    const reorderDetails = {
+      firstChildOrder: Math.min(...childOrders),
+      itemCount: items.length,
+      items: items.map(({ childOrder, id }) => ({ childOrder, id })),
+      lastChildOrder: Math.max(...childOrders),
+    };
+    const reorderStartedAt = Date.now();
+    console.debug(
+      "[BUG:TODOIST-REORDER-RANGE]",
+      "[TODOIST:REORDER] provider request",
+      reorderDetails,
+    );
     const commandId = crypto.randomUUID();
     const commands = [{
       type: "item_reorder",
       uuid: commandId,
       args: {
-        items: taskIds.map((id, index) => ({ id, child_order: index + 1 })),
+        items: items.map(({ childOrder, id }) => ({ id, child_order: childOrder })),
       },
     }];
     const response = todoistProviderFetch(request, "/sync", {
@@ -89,10 +107,30 @@ export async function POST(request: NextRequest) {
           status: 502,
         });
       }
+      console.info(
+        "[BUG:TODOIST-REORDER-RANGE]",
+        "[TODOIST:REORDER] provider success",
+        {
+          elapsedMs: Date.now() - reorderStartedAt,
+          firstChildOrder: reorderDetails.firstChildOrder,
+          itemCount: reorderDetails.itemCount,
+          lastChildOrder: reorderDetails.lastChildOrder,
+        },
+      );
       return Response.json({ ok: true });
     } catch (caught) {
       const error = caught as Error & { retryAfterMs?: number; status?: number };
-      console.warn("[TODOIST:API] Task reorder failed", { status: error.status });
+      console.warn(
+        "[BUG:TODOIST-REORDER-RANGE]",
+        "[TODOIST:API] Task reorder failed",
+        {
+          elapsedMs: Date.now() - reorderStartedAt,
+          firstChildOrder: reorderDetails.firstChildOrder,
+          itemCount: reorderDetails.itemCount,
+          lastChildOrder: reorderDetails.lastChildOrder,
+          status: error.status,
+        },
+      );
       return Response.json(
         { error: error.message },
         {

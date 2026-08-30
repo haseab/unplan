@@ -1,4 +1,5 @@
 import type { CalendarEvent } from "./calendar-types";
+import { matchesSearchKeywords, searchKeywords } from "./keyword-search";
 
 export type EventSearchTimeRange = "all" | "future" | "past";
 
@@ -13,11 +14,8 @@ const searchableEventText = (event: CalendarEvent) => [
   .replace(/\s+/g, " ")
   .toLocaleLowerCase();
 
-const normalizeSearchQuery = (query: string) =>
-  query.trim().replace(/\s+/g, " ").toLocaleLowerCase();
-
 export const providerEventSearchQuery = (query: string) => {
-  const terms = normalizeSearchQuery(query).split(" ").filter(Boolean);
+  const terms = searchKeywords(query);
   return terms.length > 1 ? terms.slice(0, -1).join(" ") : terms[0] ?? "";
 };
 
@@ -49,12 +47,11 @@ export const searchLoadedEvents = (
   now: Date,
   timeRange: EventSearchTimeRange = "all",
 ) => {
-  const normalizedQuery = normalizeSearchQuery(query);
-  if (!normalizedQuery) return [];
+  if (!searchKeywords(query).length) return [];
   return sortEventSearchResults(
     events.filter((event) =>
       matchesTimeRange(event, now, timeRange)
-      && searchableEventText(event).includes(normalizedQuery),
+      && matchesSearchKeywords(searchableEventText(event), query),
     ),
     now,
   );

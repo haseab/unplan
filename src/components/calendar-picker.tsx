@@ -5,6 +5,7 @@ import * as React from "react";
 import type { CalendarSource } from "@/lib/calendar-types";
 
 type CalendarPickerProps = {
+  ariaLabel?: string;
   calendars: CalendarSource[];
   forcedOpen?: boolean;
   onChange: (calendarId: string) => void;
@@ -14,6 +15,7 @@ type CalendarPickerProps = {
 };
 
 export function CalendarPicker({
+  ariaLabel,
   calendars,
   forcedOpen = false,
   onChange,
@@ -128,6 +130,7 @@ export function CalendarPicker({
   return (
     <div className="calendar-picker" ref={rootRef}>
       <button
+        aria-label={ariaLabel}
         aria-controls={open ? listboxId : undefined}
         aria-expanded={open}
         aria-haspopup="listbox"

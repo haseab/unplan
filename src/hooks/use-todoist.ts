@@ -48,7 +48,7 @@ type PendingBucketSelection = {
 };
 
 type TodoistOrderSave = {
-  projectIds: Set<string>;
+  previousTasks: TodoistTask[] | null;
   tasks: TodoistTask[];
 };
 
@@ -102,7 +102,7 @@ export function useTodoist() {
       debounceMs: 350,
       maxAttempts: 3,
       mergePending: (pending, next) => ({
-        projectIds: new Set([...pending.projectIds, ...next.projectIds]),
+        previousTasks: pending.previousTasks,
         tasks: next.tasks,
       }),
       retryDelayMs: todoistOrderRetryDelay,
@@ -640,18 +640,25 @@ export function useTodoist() {
   }, [token]);
 
   const saveTaskOrderByProject = React.useCallback(async ({
-    projectIds,
+    previousTasks,
     tasks: orderedTasks,
   }: TodoistOrderSave) => {
-    const taskIdsByProject = new Map<string, string[]>();
-    orderedTasks.forEach((task) => {
-      if (task.optimistic || !projectIds.has(task.projectId)) return;
-      const projectTaskIds = taskIdsByProject.get(task.projectId) ?? [];
-      projectTaskIds.push(task.id);
-      taskIdsByProject.set(task.projectId, projectTaskIds);
+    const changedOrders = changedTodoistProjectOrders(
+      previousTasks ?? [],
+      orderedTasks,
+    );
+    console.debug("[BUG:TODOIST-REORDER-RANGE]", "[TODOIST:REORDER] computed diff", {
+      projects: changedOrders.map(({ items, projectId }) => ({
+        firstChildOrder: items[0]?.childOrder ?? null,
+        itemCount: items.length,
+        items,
+        lastChildOrder: items.at(-1)?.childOrder ?? null,
+        projectId,
+      })),
+      totalItemCount: changedOrders.reduce((total, { items }) => total + items.length, 0),
     });
     await Promise.all(
-      [...taskIdsByProject.values()].map((taskIds) => saveTodoistTaskOrder(token, taskIds)),
+      changedOrders.map(({ items }) => saveTodoistTaskOrder(token, items)),
     );
   }, [token]);
   saveTaskOrderRef.current = saveTaskOrderByProject;
@@ -672,7 +679,7 @@ export function useTodoist() {
       const changedOrders = changedTodoistProjectOrders(previousTasks, reorderedTasks);
       if (changedOrders.length) {
         await taskOrderQueueRef.current!.enqueue({
-          projectIds: new Set(changedOrders.map(({ projectId }) => projectId)),
+          previousTasks,
           tasks: reorderedTasks,
         });
       }
@@ -697,10 +704,19 @@ export function useTodoist() {
     }
   }, [token]);
 
-  const persistTaskOrder = React.useCallback(async () => {
+  const reorderLocalTasks = React.useCallback((orderedTaskIds: string[]) => {
+    const reorderedTasks = applyTodoistTaskOrder(tasksRef.current, orderedTaskIds);
+    tasksRef.current = reorderedTasks;
+    setTasks(reorderedTasks);
+  }, []);
+
+  const persistTaskOrder = React.useCallback(async (previousTaskIds?: string[]) => {
     if (!token) throw new Error("Connect Todoist in Settings first");
+    const previousTasks = previousTaskIds
+      ? applyTodoistTaskOrder(tasksRef.current, previousTaskIds)
+      : null;
     await taskOrderQueueRef.current!.enqueue({
-      projectIds: new Set(tasksRef.current.map(({ projectId }) => projectId)),
+      previousTasks,
       tasks: tasksRef.current,
     });
   }, [token]);
@@ -739,6 +755,7 @@ export function useTodoist() {
     refresh,
     removeLocalTasks,
     replaceLocalTask,
+    reorderLocalTasks,
     reorderTasks,
     persistTaskOrder,
     saveToken,

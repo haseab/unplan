@@ -71,7 +71,7 @@ test("progressively typing the final term keeps the provider candidate query sta
   assert.equal(providerEventSearchQuery("call mom"), "call");
 });
 
-test("exact substring matching narrows monotonically as the query grows", () => {
+test("partial keyword matching narrows monotonically as the query grows", () => {
   const callMom = event(
     "call-mom",
     "Call Mom",
@@ -95,6 +95,21 @@ test("exact substring matching narrows monotonically as the query grows", () => 
       .map(({ id }) => id),
     ["call-mom"],
   );
+});
+
+test("keyword matching allows partial terms separated by other words", () => {
+  const optimization = event(
+    "cost-optimization",
+    "Optimizing to make costs cheaper",
+    "2026-08-23T17:00:00.000Z",
+    "2026-08-23T18:00:00.000Z",
+  );
+
+  assert.deepEqual(
+    searchLoadedEvents([optimization], "optimiz costs", now).map(({ id }) => id),
+    ["cost-optimization"],
+  );
+  assert.deepEqual(searchLoadedEvents([optimization], "optimiz revenue", now), []);
 });
 
 test("calendar search includes loaded future events before recent history", () => {

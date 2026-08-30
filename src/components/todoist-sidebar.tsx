@@ -40,6 +40,8 @@ import {
   groupTodoistTasks,
   isTodoistGroupDescendant,
   reorderTodoistGroupNames,
+  shouldCollapseTodoistTaskMoveSource,
+  TODOIST_ROOT_GROUP,
   todoistEventRenderedHeight,
   todoistFolderFirstRowOrder,
   todoistGroupDropEdgeAtPointer,
@@ -47,6 +49,9 @@ import {
   todoistGroupAncestors,
   todoistGroupParent,
   todoistGroupPath,
+  todoistTaskFolderMoveOrder,
+  todoistTaskFolderMoveTarget,
+  type TodoistTaskFolderMoveDirection,
 } from "@/lib/todoist-calendar";
 
 export const TODOIST_DRAG_TYPE = "application/x-unplan-todoist-task";
@@ -207,24 +212,35 @@ type TodoistSidebarProps = {
   connected: boolean;
   customGroups: string[];
   error: string | null;
+  focusTaskId: string | null;
   loading: boolean;
   onCreateGroup: (group: string) => void;
   onDeleteTasks: (tasks: TodoistTask[]) => Promise<void>;
   onDuplicateTask: (task: TodoistTask) => Promise<void>;
+  onFocusTaskHandled: () => void;
   onDeleteGroup: (group: string) => void;
   onCalendarDragEnd: () => void;
   onCalendarDragStart: (tasks: TodoistTask[]) => void;
   onMoveTaskToGroup: (task: TodoistTask, group: string) => Promise<void>;
+  onQueueTaskKeyboardMove: (
+    task: TodoistTask,
+    group: string | null,
+    orderedTaskIds: string[],
+    previousOrderedTaskIds: string[],
+    onUndo: () => void,
+  ) => void;
   onOpenSettings: () => void;
   onRefresh: () => Promise<unknown>;
   onRenameTask: (task: TodoistTask, title: string) => Promise<void>;
   onRenameGroup: (group: string, nextGroup: string) => Promise<void>;
   onReorderTasks: (orderedTaskIds: string[]) => Promise<void>;
   onResizeTask: (task: TodoistTask, durationMinutes: number) => Promise<void>;
-  onOpenTriage: () => void;
+  onOpenExtractedTriage: () => void;
+  onOpenNormalTriage: () => void;
   pixelsPerMinute: number;
   tasks: TodoistTask[];
-  triageCount: number;
+  extractedTriageCount: number;
+  normalTriageCount: number;
 };
 
 const setTodoistDragImage = (event: React.DragEvent<HTMLButtonElement>) => {
@@ -262,25 +278,31 @@ export function TodoistSidebar({
   connected,
   customGroups,
   error,
+  focusTaskId,
   loading,
   onCalendarDragEnd,
   onCalendarDragStart,
   onCreateGroup,
   onDeleteTasks,
   onDuplicateTask,
+  onFocusTaskHandled,
   onDeleteGroup,
   onMoveTaskToGroup,
+  onQueueTaskKeyboardMove,
   onOpenSettings,
   onRefresh,
   onRenameTask,
   onRenameGroup,
   onReorderTasks,
   onResizeTask,
-  onOpenTriage,
+  onOpenExtractedTriage,
+  onOpenNormalTriage,
   pixelsPerMinute,
   tasks,
-  triageCount,
+  extractedTriageCount,
+  normalTriageCount,
 }: TodoistSidebarProps) {
+  const triageCount = extractedTriageCount + normalTriageCount;
   const [creatingGroup, setCreatingGroup] = React.useState(false);
   const [dragOverGroup, setDragOverGroup] = React.useState<string | null>(null);
   const [draggedGroup, setDraggedGroup] = React.useState<string | null>(null);
@@ -319,8 +341,12 @@ export function TodoistSidebar({
   const skipNextTaskLayoutAnimationRef = React.useRef(false);
   const taskPositionsRef = React.useRef<Map<string, number>>(new Map());
   const selectionAnchorRef = React.useRef<string | null>(null);
-  const pendingKeyboardRevealTaskIdRef = React.useRef<string | null>(null);
+  const pendingKeyboardRevealRef = React.useRef<{
+    align: "nearest" | "start";
+    taskId: string;
+  } | null>(null);
   const {
+    collapseGroup,
     collapsedGroups,
     expandGroup,
     groupOrder,
@@ -446,11 +472,26 @@ export function TodoistSidebar({
     setDragOverGroup(null);
   }, [cancelGroupHoverExpand]);
   const unorderedTaskGroups = React.useMemo(
-    () => groupTodoistTasks(tasks, customGroups),
+    () => {
+      const grouped = groupTodoistTasks(tasks, customGroups);
+      return grouped.some(([group]) => group === TODOIST_ROOT_GROUP)
+        ? grouped
+        : [...grouped, [TODOIST_ROOT_GROUP, []] as typeof grouped[number]];
+    },
     [customGroups, tasks],
   );
   const taskGroups = React.useMemo(
-    () => flattenTodoistGroupTree(unorderedTaskGroups, groupOrder, groupParents),
+    () => {
+      const flattened = flattenTodoistGroupTree(
+        unorderedTaskGroups,
+        groupOrder,
+        groupParents,
+      );
+      return [
+        ...flattened.filter(([group]) => group !== TODOIST_ROOT_GROUP),
+        ...flattened.filter(([group]) => group === TODOIST_ROOT_GROUP),
+      ];
+    },
     [groupOrder, groupParents, unorderedTaskGroups],
   );
   const visibleTaskGroups = React.useMemo(
@@ -478,14 +519,23 @@ export function TodoistSidebar({
     [orderedVisibleTasks],
   );
   const sidebarNavigation = React.useMemo(
-    () => sidebarNavigationItems(
-      taskGroups.map(([group, items]) => ({
-        group,
-        taskIds: items.map(({ task }) => task.id),
-      })),
-      groupParents,
-      collapsedGroups,
-    ),
+    () => [
+      ...sidebarNavigationItems(
+        taskGroups
+          .filter(([group]) => group !== TODOIST_ROOT_GROUP)
+          .map(([group, items]) => ({
+            group,
+            taskIds: items.map(({ task }) => task.id),
+          })),
+        groupParents,
+        collapsedGroups,
+      ),
+      ...(taskGroups.find(([group]) => group === TODOIST_ROOT_GROUP)?.[1] ?? [])
+        .map(({ task }) => ({
+          id: sidebarTaskNavigationId(task.id),
+          kind: "task" as const,
+        })),
+    ],
     [collapsedGroups, groupParents, taskGroups],
   );
   const { beginMarquee, marqueeStyle } = useListMarqueeSelection({
@@ -508,6 +558,21 @@ export function TodoistSidebar({
       target?.scrollIntoView({ behavior: "auto", block: "nearest" });
     });
   }, [activateTask]);
+
+  React.useEffect(() => {
+    if (!focusTaskId) return;
+    const group = taskGroups.find(([, items]) =>
+      items.some(({ task }) => task.id === focusTaskId)
+    )?.[0];
+    if (!group) return;
+    const frame = window.requestAnimationFrame(() => {
+      [...todoistGroupAncestors(group, groupParents), group].forEach(expandGroup);
+      pendingKeyboardRevealRef.current = { align: "nearest", taskId: focusTaskId };
+      activateTask(focusTaskId);
+      onFocusTaskHandled();
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [activateTask, expandGroup, focusTaskId, groupParents, onFocusTaskHandled, taskGroups]);
   const navigateSidebarItem = React.useCallback((
     navigationId: string,
     direction: "next" | "previous",
@@ -559,14 +624,17 @@ export function TodoistSidebar({
     const reorderedGroupTasks = moveTask(groupTasks, currentIndex, nextIndex);
     const groupTaskIds = new Set(groupTasks.map(({ id }) => id));
     let groupIndex = 0;
-    const orderedTaskIds = taskGroups
-      .flatMap(([, items]) => items.map(({ task: candidate }) => candidate.id))
-      .map((taskId) => groupTaskIds.has(taskId)
+    const displayedTaskIds = taskGroups.flatMap(([, items]) =>
+      items.map(({ task: candidate }) => candidate.id)
+    );
+    const orderedTaskIds = displayedTaskIds.map((taskId) => groupTaskIds.has(taskId)
         ? reorderedGroupTasks[groupIndex++]!.id
         : taskId);
-    pendingKeyboardRevealTaskIdRef.current = task.id;
-    void onReorderTasks(orderedTaskIds).catch(() => undefined);
-  }, [onReorderTasks, taskGroups]);
+    pendingKeyboardRevealRef.current = { align: "nearest", taskId: task.id };
+    onQueueTaskKeyboardMove(task, null, orderedTaskIds, displayedTaskIds, () => {
+      pendingKeyboardRevealRef.current = { align: "nearest", taskId: task.id };
+    });
+  }, [onQueueTaskKeyboardMove, taskGroups]);
 
   const deleteSelectedTasks = React.useCallback(() => {
     const selectedTasks = orderedVisibleTasks.filter(({ id }) => selectedTaskIds.has(id));
@@ -601,7 +669,11 @@ export function TodoistSidebar({
     if (selectedTaskIds.size === 0) return;
     const dismissSelection = (event: KeyboardEvent | PointerEvent) => {
       if (event instanceof KeyboardEvent) {
-        if (event.key !== "Escape") return;
+        const nativeFocusNavigation = event.key === "Tab"
+          && !event.altKey
+          && !event.ctrlKey
+          && !event.metaKey;
+        if (event.key !== "Escape" && !nativeFocusNavigation) return;
       } else if (
         event.target instanceof Element
         && event.target.closest(".todo-event-block-shell")
@@ -697,15 +769,15 @@ export function TodoistSidebar({
       });
     }
     taskPositionsRef.current = nextPositions;
-    const revealTaskId = pendingKeyboardRevealTaskIdRef.current;
-    if (revealTaskId) {
+    const reveal = pendingKeyboardRevealRef.current;
+    if (reveal) {
       const element = container.querySelector<HTMLElement>(
-        `[data-marquee-task-id="${CSS.escape(revealTaskId)}"]`,
+        `[data-marquee-task-id="${CSS.escape(reveal.taskId)}"]`,
       );
       if (element) {
         const shell = element.closest<HTMLElement>("[data-task-shell-id]");
         if (!shell) return;
-        pendingKeyboardRevealTaskIdRef.current = null;
+        pendingKeyboardRevealRef.current = null;
         element.focus({ preventScroll: true });
         const taskScrollContainer = element.closest<HTMLElement>(
           ".todo-event-group-blocks",
@@ -716,6 +788,10 @@ export function TodoistSidebar({
           inline: "nearest",
         });
         if (taskScrollContainer) {
+          if (reveal.align === "start") {
+            taskScrollContainer.scrollTop = 0;
+            return;
+          }
           const taskContentTop = shell.offsetTop;
           const taskContentBottom = taskContentTop + shell.offsetHeight;
           const currentScrollTop = taskScrollContainer.scrollTop;
@@ -950,10 +1026,11 @@ export function TodoistSidebar({
   }, [cancelGroupDrag]);
 
   const moveToGroup = async (task: TodoistTask, group: string) => {
-    if (moving.has(task.id)) return;
+    if (moving.has(task.id)) return false;
     setMoving((current) => new Set(current).add(task.id));
     try {
       await onMoveTaskToGroup(task, group);
+      return true;
     } finally {
       setMoving((current) => {
         const next = new Set(current);
@@ -961,6 +1038,51 @@ export function TodoistSidebar({
         return next;
       });
     }
+  };
+
+  const moveTaskToFolderByKeyboard = (
+    task: TodoistTask,
+    direction: TodoistTaskFolderMoveDirection,
+  ) => {
+    const currentGroup = taskGroups.find(([, items]) =>
+      items.some(({ task: candidate }) => candidate.id === task.id)
+    )?.[0];
+    if (!currentGroup) return;
+    const targetGroup = todoistTaskFolderMoveTarget({
+      currentGroup,
+      direction,
+      orderedGroups: taskGroups.map(([group]) => group),
+      parents: groupParents,
+      visibleGroups: visibleTaskGroups.map(([group]) => group),
+    });
+    if (!targetGroup || targetGroup === currentGroup) return;
+    const displayedTaskIds = taskGroups.flatMap(([, items]) =>
+      items.map(({ task: candidate }) => candidate.id)
+    );
+    const targetGroupEntry = taskGroups.find(([group]) => group === targetGroup);
+    const targetTaskIds = targetGroupEntry?.[1]
+      .map(({ task: candidate }) => candidate.id) ?? [];
+    const orderedTaskIds = todoistTaskFolderMoveOrder({
+      orderedTaskIds: displayedTaskIds,
+      taskId: task.id,
+      targetTaskIds,
+    });
+    const collapseSource = currentGroup !== TODOIST_ROOT_GROUP
+      && shouldCollapseTodoistTaskMoveSource(direction);
+    const targetWasCollapsed = targetGroup !== TODOIST_ROOT_GROUP
+      && collapsedGroups.has(targetGroup);
+    expandGroup(targetGroup);
+    if (collapseSource) collapseGroup(currentGroup);
+    pendingKeyboardRevealRef.current = { align: "start", taskId: task.id };
+    onQueueTaskKeyboardMove(task, targetGroup, orderedTaskIds, displayedTaskIds, () => {
+      pendingKeyboardRevealRef.current = { align: "start", taskId: task.id };
+      if (targetWasCollapsed) {
+        collapseGroup(targetGroup);
+      }
+      if (collapseSource) {
+        expandGroup(currentGroup);
+      }
+    });
   };
 
   const reorderAtTask = async (
@@ -1084,14 +1206,16 @@ export function TodoistSidebar({
           ref={groupsRef}
         >
           <TaskTriageCard
-            count={triageCount}
-            onOpen={onOpenTriage}
-            pixelsPerMinute={pixelsPerMinute}
+            extractedCount={extractedTriageCount}
+            normalCount={normalTriageCount}
+            onOpenExtracted={onOpenExtractedTriage}
+            onOpenNormal={onOpenNormalTriage}
           />
           {visibleTaskGroups.map(([group, items]) => {
-            const collapsed = collapsedGroups.has(group);
+            const isRoot = group === TODOIST_ROOT_GROUP;
+            const collapsed = !isRoot && collapsedGroups.has(group);
             const groupPath = todoistGroupPath(group);
-            const groupLabel = groupPath.at(-1) ?? group;
+            const groupLabel = isRoot ? "Root" : groupPath.at(-1) ?? group;
             const groupAncestors = todoistGroupAncestors(group, groupParents);
             const descendantGroups = taskGroups.filter(([candidate]) =>
               isTodoistGroupDescendant(candidate, group, groupParents),
@@ -1116,7 +1240,7 @@ export function TodoistSidebar({
               ),
               Math.max(0, items.length - 1) * 5,
             );
-            const groupScrollable = groupContentHeight > groupScrollHeight;
+            const groupScrollable = !isRoot && groupContentHeight > groupScrollHeight;
             const externalProjection = calendarDropProjection?.group === group
               ? calendarDropProjection
               : null;
@@ -1133,7 +1257,7 @@ export function TodoistSidebar({
             return (
             <React.Fragment key={group}>
             <section
-              className="todo-event-group"
+              className={`todo-event-group${isRoot ? " todo-event-root" : ""}`}
               data-collapsed={collapsed ? "true" : undefined}
               data-has-children={descendantGroups.length > 0 ? "true" : undefined}
               data-has-direct-items={items.length > 0 ? "true" : undefined}
@@ -1176,6 +1300,13 @@ export function TodoistSidebar({
                   event.stopPropagation();
                   event.dataTransfer.dropEffect = "move";
                   const sourceGroup = draggedGroupRef.current;
+                  if (isRoot) {
+                    cancelGroupHoverExpand();
+                    updateGroupDropTarget(sourceGroup
+                      ? { edge: "inside", group: TODOIST_ROOT_GROUP }
+                      : null);
+                    return;
+                  }
                   if (!sourceGroup
                     || sourceGroup === group
                     || isTodoistGroupDescendant(group, sourceGroup, groupParents)
@@ -1204,7 +1335,8 @@ export function TodoistSidebar({
                   if (currentTarget && currentTarget.group !== group) {
                     const candidateGroups = visibleTaskGroups
                       .map(([candidate]) => candidate)
-                      .filter((candidate) => candidate !== sourceGroup
+                      .filter((candidate) => candidate !== TODOIST_ROOT_GROUP
+                        && candidate !== sourceGroup
                         && !isTodoistGroupDescendant(candidate, sourceGroup, groupParents));
                     if (todoistGroupDropTargetsShareBoundary({
                       currentEdge: currentTarget.edge,
@@ -1325,10 +1457,17 @@ export function TodoistSidebar({
                         sourceGroup,
                         targetGroup: target.group,
                       });
-                      setGroupParent(sourceGroup, target.group);
-                      if (collapsedGroups.has(target.group)) toggleGroup(target.group);
+                      const nextParent = target.group === TODOIST_ROOT_GROUP
+                        ? null
+                        : target.group;
+                      setGroupParent(sourceGroup, nextParent);
+                      if (nextParent && collapsedGroups.has(nextParent)) {
+                        toggleGroup(nextParent);
+                      }
                     } else {
-                      const displayedOrder = taskGroups.map(([name]) => name);
+                      const displayedOrder = taskGroups
+                        .map(([name]) => name)
+                        .filter((name) => name !== TODOIST_ROOT_GROUP);
                       const nextParent = todoistGroupParent(target.group, groupParents);
                       const nextOrder = reorderTodoistGroupNames(
                         displayedOrder,
@@ -1391,7 +1530,7 @@ export function TodoistSidebar({
                   } else {
                     settleDroppedTask(
                       task.id,
-                      moveToGroup(task, group),
+                      moveToGroup(task, group).then(() => undefined),
                       { fallback: "empty-group", group },
                     );
                   }
@@ -1401,13 +1540,13 @@ export function TodoistSidebar({
                 }
               }}
             >
-              {showGroupProjectionBefore && (
+              {!isRoot && showGroupProjectionBefore && (
                 <div
                   className="todo-event-group-drop-projection"
                   style={{ order: folderRowOrder - 1 }}
                 />
               )}
-              <div
+              {!isRoot && <div
                 className="todo-event-group-heading"
                 data-dragged={draggedGroup === group ? "true" : undefined}
                 data-group-heading={group}
@@ -1534,8 +1673,8 @@ export function TodoistSidebar({
                     <Trash2 aria-hidden="true" size={11} />
                   </button>
                 )}
-              </div>
-              {creatingChildFor === group && (
+              </div>}
+              {!isRoot && creatingChildFor === group && (
                 <form
                   className="todo-event-child-folder-form"
                   style={{ order: folderRowOrder + 1 }}
@@ -1581,7 +1720,8 @@ export function TodoistSidebar({
                 role={groupScrollable ? "region" : undefined}
                 tabIndex={groupScrollable ? 0 : undefined}
               >
-                {items.length === 0
+                {!isRoot
+                  && items.length === 0
                   && descendantGroups.length === 0
                   && dragOverGroup !== group
                   && !externalProjection && (
@@ -1733,6 +1873,8 @@ export function TodoistSidebar({
                           if (targetTask) focusTask(targetTask.id);
                         }}
                         onMove={(direction) => moveTaskByKeyboard(task, direction)}
+                        onMoveToFolder={(direction) =>
+                          moveTaskToFolderByKeyboard(task, direction)}
                         onRename={(title) => onRenameTask(task, title)}
                         onResize={(minutes) => onResizeTask(task, minutes)}
                         onSelect={(event) => {
@@ -1773,7 +1915,7 @@ export function TodoistSidebar({
                 })}
               </div>
               </div>
-              {showGroupProjectionAfter && (
+              {!isRoot && showGroupProjectionAfter && (
                 <div
                   className="todo-event-group-drop-projection"
                   style={{ order: taskRowOrder + 1 }}

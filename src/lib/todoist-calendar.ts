@@ -1,11 +1,40 @@
 import type { CalendarEvent, CalendarSource } from "./calendar-types";
-import type { CreateTodoistTaskInput, TodoistTask } from "./todoist";
+import { matchesSearchKeywords } from "./keyword-search";
+import {
+  reorderTodoistTaskIds,
+  type CreateTodoistTaskInput,
+  type TodoistTask,
+} from "./todoist";
 
 const UNPLAN_METADATA_TOKEN = /\[\[unplan:v1;([^\]]+)\]\]/;
 const UNPLAN_METADATA_TOKENS = /\[\[unplan:v1;[^\]]+\]\]/g;
 const EVENT_VERTICAL_INSET_PX = 2;
 const TODOIST_EVENT_DURATION_STEP_MINUTES = 15;
 const TODOIST_EVENT_MAX_DURATION_MINUTES = 24 * 60;
+export const TODOIST_ROOT_GROUP = "__unplan_root__";
+
+export const todoistGroupDisplayName = (group: string) =>
+  group === TODOIST_ROOT_GROUP ? "Root" : group;
+
+const todoistTaskGroupFromContent = (content: string) =>
+  calendarEventDetailsFromTodoistContent(content).group?.trim() || "Ungrouped";
+
+export const todoistKeyboardTaskMoveChanges = ({
+  latestContent,
+  nextTaskIds,
+  originalContent,
+  originalTaskIds,
+}: {
+  latestContent: string;
+  nextTaskIds: string[];
+  originalContent: string;
+  originalTaskIds: string[];
+}) => ({
+  folderChanged: todoistTaskGroupFromContent(latestContent)
+    !== todoistTaskGroupFromContent(originalContent),
+  orderChanged: nextTaskIds.length !== originalTaskIds.length
+    || nextTaskIds.some((taskId, index) => taskId !== originalTaskIds[index]),
+});
 
 export const todoistEventRenderedHeight = (
   durationMinutes: number,
@@ -233,6 +262,30 @@ export const groupTodoistTasks = (
   return [...grouped.entries()];
 };
 
+export type TodoistTaskSearchResult = {
+  group: string;
+  task: TodoistTask;
+  title: string;
+};
+
+export const searchTodoistTasks = (
+  tasks: TodoistTask[],
+  query: string,
+): TodoistTaskSearchResult[] => {
+  return tasks.flatMap((task) => {
+    const details = calendarEventDetailsFromTodoistContent(task.content);
+    const storedGroup = details.group?.trim() || "Ungrouped";
+    const group = todoistGroupDisplayName(storedGroup);
+    const title = details.title || task.content;
+    const searchableText = [title, task.description, group]
+      .filter(Boolean)
+      .join(" ");
+    return matchesSearchKeywords(searchableText, query)
+      ? [{ group, task, title }]
+      : [];
+  });
+};
+
 export const applyTodoistGroupOrder = <T>(
   groups: Array<[string, T]>,
   orderedGroupNames: string[],
@@ -277,6 +330,71 @@ export const isTodoistGroupDescendant = (
   parent: string,
   parents: TodoistGroupParents,
 ) => todoistGroupAncestors(candidate, parents).includes(parent);
+
+export type TodoistTaskFolderMoveDirection = "down" | "left" | "right" | "up";
+
+export const shouldCollapseTodoistTaskMoveSource = (
+  direction: TodoistTaskFolderMoveDirection,
+) => direction !== "right";
+
+export const todoistTaskFolderMoveOrder = ({
+  orderedTaskIds,
+  taskId,
+  targetTaskIds,
+}: {
+  orderedTaskIds: string[];
+  taskId: string;
+  targetTaskIds: string[];
+}) => {
+  const firstTargetTaskId = targetTaskIds.find((candidate) => candidate !== taskId);
+  return firstTargetTaskId
+    ? reorderTodoistTaskIds(orderedTaskIds, taskId, firstTargetTaskId, "before")
+    : orderedTaskIds;
+};
+
+export const todoistTaskFolderMoveTarget = ({
+  currentGroup,
+  direction,
+  orderedGroups,
+  parents,
+  visibleGroups,
+}: {
+  currentGroup: string;
+  direction: TodoistTaskFolderMoveDirection;
+  orderedGroups: string[];
+  parents: TodoistGroupParents;
+  visibleGroups: string[];
+}) => {
+  if (direction === "left") {
+    if (currentGroup === TODOIST_ROOT_GROUP) return null;
+    return todoistGroupParent(currentGroup, parents) ?? TODOIST_ROOT_GROUP;
+  }
+  if (direction === "right") {
+    if (currentGroup === TODOIST_ROOT_GROUP) {
+      return orderedGroups.find(
+        (group) => group !== TODOIST_ROOT_GROUP
+          && todoistGroupParent(group, parents) === null,
+      ) ?? null;
+    }
+    return orderedGroups.find(
+      (group) => todoistGroupParent(group, parents) === currentGroup,
+    ) ?? null;
+  }
+
+  if (currentGroup === TODOIST_ROOT_GROUP) {
+    return null;
+  }
+
+  const currentParent = todoistGroupParent(currentGroup, parents);
+  const siblingGroups = visibleGroups.filter(
+    (group) => group !== TODOIST_ROOT_GROUP
+      && todoistGroupParent(group, parents) === currentParent,
+  );
+  const currentIndex = siblingGroups.indexOf(currentGroup);
+  if (currentIndex < 0) return null;
+  const targetIndex = currentIndex + (direction === "up" ? -1 : 1);
+  return siblingGroups[targetIndex] ?? null;
+};
 
 export const flattenTodoistGroupTree = <T>(
   groups: Array<[string, T]>,

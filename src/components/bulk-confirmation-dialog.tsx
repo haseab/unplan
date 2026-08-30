@@ -1,6 +1,6 @@
 "use client";
 
-import { CalendarRange, CopyPlus, Pencil, Trash2 } from "lucide-react";
+import { CalendarRange, CopyPlus, Pencil, RotateCcw, Trash2 } from "lucide-react";
 import * as React from "react";
 import type { BulkConfirmationRequest } from "@/hooks/use-bulk-confirmation";
 
@@ -12,22 +12,22 @@ type BulkConfirmationDialogProps = {
 
 const actionCopy = {
   create: {
-    description: "New events will be added to Google Calendar. You can still undo before they are saved.",
+    description: (count: number) => `${count} new events will be added to Google Calendar.`,
     Icon: CopyPlus,
     label: "Create",
   },
   delete: {
-    description: "These events will be removed from Google Calendar. You can still undo before they are deleted.",
+    description: (count: number) => `All ${count} selected events will be removed from Google Calendar.`,
     Icon: Trash2,
     label: "Delete",
   },
   move: {
-    description: "All selected events will move together. You can still undo before the changes are saved.",
+    description: (count: number) => `The move will apply to all ${count} selected events.`,
     Icon: CalendarRange,
     label: "Move",
   },
   update: {
-    description: "The shared changes will be applied to every selected event. You can still undo before they are saved.",
+    description: (count: number) => `The changes will apply to all ${count} selected events.`,
     Icon: Pencil,
     label: "Update",
   },
@@ -61,10 +61,11 @@ export function BulkConfirmationDialog({
   const copy = actionCopy[request.action];
   const Icon = copy.Icon;
   const subject = request.subject ?? "events";
-  const title = request.title ?? `${copy.label} ${request.count} ${subject}?`;
+  const title = request.title ?? `${copy.label} ${request.count} selected ${subject}?`;
   const description = request.description ?? (subject === "tasks" && request.action === "delete"
-    ? "These tasks will be permanently removed from Todoist. You can still undo before they are deleted."
-    : copy.description);
+    ? `All ${request.count} selected tasks will be permanently removed from Todoist.`
+    : copy.description(request.count));
+  const undoDestination = subject === "tasks" ? "Todoist" : "Google Calendar";
 
   return (
     <div className="modal-backdrop confirmation-backdrop" onMouseDown={onCancel}>
@@ -83,6 +84,10 @@ export function BulkConfirmationDialog({
           <div className="confirmation-copy">
             <strong id="bulk-confirmation-title">{title}</strong>
             <p id="bulk-confirmation-description">{description}</p>
+            <div className="confirmation-undo-note">
+              <RotateCcw aria-hidden="true" size={14} strokeWidth={1.8} />
+              <span>You’ll have a few seconds to undo before {undoDestination} is updated.</span>
+            </div>
           </div>
         </div>
         <div className="confirmation-actions">
@@ -92,7 +97,7 @@ export function BulkConfirmationDialog({
             aria-keyshortcuts="Meta+Enter"
             onClick={onConfirm}
           >
-            {request.confirmLabel ?? `${copy.label} ${request.count}`}
+            {request.confirmLabel ?? `${copy.label} all ${request.count}`}
           </button>
         </div>
       </section>
