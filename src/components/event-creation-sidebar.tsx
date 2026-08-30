@@ -21,6 +21,7 @@ import * as React from "react";
 import { toast } from "sonner";
 import { addDays, differenceInMinutes, format, setHours, startOfDay } from "date-fns";
 import { EventParticipantsEditor } from "@/components/event-participants-editor";
+import { EventDescriptionEditor } from "@/components/event-description-editor";
 import { EventColorPicker } from "@/components/event-color-picker";
 import { EventTitleEditor } from "@/components/event-title-editor";
 import { CalendarPicker } from "@/components/calendar-picker";
@@ -504,7 +505,7 @@ function EventDetailsEditor({
           )}
         </div>}
         {showNotes ? (
-          <label className="event-editor-description"><AlignLeft size={15} /><textarea aria-label="Notes" autoFocus={focusedOptionalField === "notes"} rows={2} placeholder="Add notes" value={edited.description ?? ""} onChange={(input) => change({ description: input.target.value })} /></label>
+          <div className="event-editor-description"><AlignLeft size={15} /><EventDescriptionEditor autoFocus={focusedOptionalField === "notes"} value={edited.description ?? ""} onChange={(description) => change({ description })} onSubmit={flushUpdate} /></div>
         ) : (
           <button className="event-editor-optional-trigger" onClick={() => { setFocusedOptionalField("notes"); setShowNotes(true); }} type="button"><AlignLeft size={15} />Add notes</button>
         )}

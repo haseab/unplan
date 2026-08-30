@@ -35,6 +35,74 @@ export type EventResizeShortcut = {
 
 export type EventGapFillDirection = "down" | "up";
 
+export const KEYBOARD_MOVE_GUEST_PROMPT_DELAY_MS = 500;
+
+export const restartKeyboardMoveGuestPromptTimer = <TimerHandle>({
+  cancelTimer,
+  currentTimer,
+  onIdle,
+  scheduleTimer,
+}: {
+  cancelTimer: (timer: TimerHandle) => void;
+  currentTimer: TimerHandle | null;
+  onIdle: () => void;
+  scheduleTimer: (callback: () => void, delay: number) => TimerHandle;
+}) => {
+  if (currentTimer !== null) cancelTimer(currentTimer);
+  return scheduleTimer(onIdle, KEYBOARD_MOVE_GUEST_PROMPT_DELAY_MS);
+};
+
+export const isLeftSidebarToggleShortcut = ({
+  altKey,
+  code,
+  ctrlKey,
+  key,
+  metaKey,
+  modalOpen,
+  repeat,
+  shiftKey,
+}: {
+  altKey: boolean;
+  code: string;
+  ctrlKey: boolean;
+  key: string;
+  metaKey: boolean;
+  modalOpen: boolean;
+  repeat: boolean;
+  shiftKey: boolean;
+}) => (
+  (metaKey || ctrlKey)
+  && !altKey
+  && !shiftKey
+  && !modalOpen
+  && !repeat
+  && (key === "\\" || code === "Backslash")
+);
+
+export const isSettingsShortcut = ({
+  altKey,
+  code,
+  ctrlKey,
+  key,
+  metaKey,
+  repeat,
+  shiftKey,
+}: {
+  altKey: boolean;
+  code: string;
+  ctrlKey: boolean;
+  key: string;
+  metaKey: boolean;
+  repeat: boolean;
+  shiftKey: boolean;
+}) => (
+  (metaKey || ctrlKey)
+  && !altKey
+  && !shiftKey
+  && !repeat
+  && (key === "," || code === "Comma")
+);
+
 export const eventGapFillShortcut = ({
   activeCalendar,
   altKey,
@@ -161,6 +229,7 @@ export const eventMoveShortcut = ({
   key,
   metaKey,
   modalOpen,
+  repeat,
   selectedCount,
   shiftKey,
 }: {
@@ -190,8 +259,9 @@ export const eventMoveShortcut = ({
   if (key === "ArrowLeft") return { dayDelta: -1, minuteDelta: 0 };
   if (key === "ArrowRight") return { dayDelta: 1, minuteDelta: 0 };
   if (includesAllDay) return null;
-  if (key === "ArrowUp") return { dayDelta: 0, minuteDelta: -15 };
-  if (key === "ArrowDown") return { dayDelta: 0, minuteDelta: 15 };
+  const minuteDelta = repeat ? 30 : 15;
+  if (key === "ArrowUp") return { dayDelta: 0, minuteDelta: -minuteDelta };
+  if (key === "ArrowDown") return { dayDelta: 0, minuteDelta };
   return null;
 };
 

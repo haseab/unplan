@@ -64,7 +64,7 @@ export function EventSearchDialog({
   const [query, setQuery] = React.useState("");
   const [results, setResults] = React.useState<UnifiedSearchResult[]>([]);
   const [status, setStatus] = React.useState<SearchStatus>("idle");
-  const [timeRange, setTimeRange] = React.useState<EventSearchTimeRange>("all");
+  const [timeRange, setTimeRange] = React.useState<EventSearchTimeRange>("past");
   const dialogRef = React.useRef<HTMLElement>(null);
   const inputRef = React.useRef<HTMLInputElement>(null);
   const activeResultKeyRef = React.useRef<string | null>(null);

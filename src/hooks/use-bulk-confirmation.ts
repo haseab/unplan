@@ -16,9 +16,11 @@ export type BulkConfirmationRequest = {
 };
 
 export const requiresBulkConfirmation = ({
+  action,
   count,
   threshold = BULK_CONFIRMATION_THRESHOLD,
-}: Pick<BulkConfirmationRequest, "count" | "threshold">) => count >= threshold;
+}: Pick<BulkConfirmationRequest, "action" | "count" | "threshold">) =>
+  action !== "move" && count >= threshold;
 
 export function useBulkConfirmation() {
   const [request, setRequest] = React.useState<BulkConfirmationRequest | null>(null);

@@ -58,6 +58,7 @@ import {
   type TaskTriageMode,
 } from "@/components/task-triage-dialog";
 import { TodoistBucketPickerDialog } from "@/components/todoist-bucket-picker-dialog";
+import { VisibleEventFinder } from "@/components/visible-event-finder";
 import {
   type CalendarTaskDropProjection,
   TODOIST_DRAG_TYPE,
@@ -175,6 +176,9 @@ import {
   isEventMoveToPresentShortcut,
   isEventTitleFocusShortcut,
   isHorizontalEventNavigationCandidate,
+  isLeftSidebarToggleShortcut,
+  isSettingsShortcut,
+  restartKeyboardMoveGuestPromptTimer,
   resolveCalendarFocusTargetKey,
   resolveEventNavigationAnchorKey,
   shouldConsumeEventNavigationKey,
@@ -207,6 +211,7 @@ import {
   startOfCalendarWeek,
   weekLabel,
 } from "@/lib/calendar-utils";
+import { intersectsCalendarViewport } from "@/lib/visible-event-search";
 import { demoCalendars, makeDemoEvents } from "@/lib/demo-data";
 import {
   createGoogleCompatibleEventId,
@@ -369,7 +374,9 @@ const hours = Array.from({ length: 24 }, (_, index) => index);
 const DEFAULT_CALENDAR_STORAGE_KEY = "unplan:default-event-calendar";
 const EVENT_CREATION_DRAG_THRESHOLD = 5;
 const CROSS_SERVICE_DRAG_THRESHOLD = 12;
-const KEYBOARD_MOVE_TOAST_DEBOUNCE_MS = 350;
+const TODOIST_KEYBOARD_MOVE_TOAST_DEBOUNCE_MS = 350;
+const KEYBOARD_MOVE_REPEAT_DELAY_MS = 180;
+const KEYBOARD_MOVE_REPEAT_INTERVAL_MS = 95;
 const EVENT_SEARCH_CACHE_TTL_MS = 5 * 60 * 1000;
 const EVENT_INLINE_START_INSET_PX = 3;
 const EVENT_INLINE_END_INSET_PX = 12;
@@ -486,6 +493,9 @@ export function CalendarApp() {
   );
   const [sidebarOpen, setSidebarOpen] = React.useState(true);
   const [showEventSearch, setShowEventSearch] = React.useState(false);
+  const [showVisibleEventFinder, setShowVisibleEventFinder] = React.useState(false);
+  const [visibleEventFindMatchKeys, setVisibleEventFindMatchKeys] =
+    React.useState<ReadonlySet<string>>(() => new Set());
   const [pendingTodoistSearchTaskId, setPendingTodoistSearchTaskId] =
     React.useState<string | null>(null);
   const [showShortcuts, setShowShortcuts] = React.useState(false);
@@ -628,7 +638,7 @@ export function CalendarApp() {
     selectionKey: string;
     sendUpdates: GoogleSendUpdates | null;
     targetStart: Date | null;
-    toastTimer: ReturnType<typeof setTimeout> | null;
+    guestPromptTimer: ReturnType<typeof setTimeout> | null;
   } | null>(null);
   const keyboardTaskGroupMoveSessionRef = React.useRef<{
     action: ReturnType<typeof queueActionToast> | null;
@@ -950,11 +960,21 @@ export function CalendarApp() {
   }, [clearEventSearchCache]);
 
   const openEventSearch = React.useCallback(() => {
+    setShowVisibleEventFinder(false);
     setShowDateCommandDialog(false);
     setShowSettings(false);
     setShowShortcuts(false);
     setShowEventSearch(true);
   }, []);
+
+  const openVisibleEventFinder = React.useCallback(() => {
+    setEventSearchOpen(false);
+    clearEventSelection();
+    setShowDateCommandDialog(false);
+    setShowSettings(false);
+    setShowShortcuts(false);
+    setShowVisibleEventFinder(true);
+  }, [clearEventSelection, setEventSearchOpen]);
 
   const transitionDateCommandDialog = React.useCallback((open: boolean) => {
     const update = () => setShowDateCommandDialog(open);
@@ -977,6 +997,7 @@ export function CalendarApp() {
 
   const openDateCommand = React.useCallback(() => {
     setEventSearchOpen(false);
+    setShowVisibleEventFinder(false);
     setShowSettings(false);
     setShowShortcuts(false);
     setSidebarOpen(true);
@@ -2343,6 +2364,15 @@ export function CalendarApp() {
 
   const beginEventDrag = (pointer: React.PointerEvent, event: CalendarEvent) => {
     if (pointer.button !== 0) return;
+    if (
+      showVisibleEventFinder
+      && visibleEventFindMatchKeys.has(calendarEventKey(event.calendarId, event.id))
+    ) {
+      pointer.preventDefault();
+      pointer.stopPropagation();
+      commitVisibleEventFinderSelection(event);
+      return;
+    }
     // Event blocks are buttons for keyboard access, but pointer selection and
     // dragging should not leave a hidden button focus ring behind. Otherwise
     // Escape clears selection and the next modifier key makes that ring appear
@@ -2799,6 +2829,53 @@ export function CalendarApp() {
     return true;
   }, [renderedEventElements]);
 
+  const viewportEventCandidates = React.useCallback(() => {
+    const scrollContainer = scrollRef.current;
+    if (!scrollContainer) return [];
+    const viewport = scrollContainer.getBoundingClientRect();
+    const timedViewportTop = Math.max(
+      viewport.top,
+      document.querySelector<HTMLElement>(".all-day-row")
+        ?.getBoundingClientRect().bottom ?? viewport.top,
+    );
+    const eventsByKey = new Map(eventsRef.current.map((event) => [
+      calendarEventKey(event.calendarId, event.id),
+      event,
+    ]));
+    const candidates = new Map<string, CalendarEvent>();
+    renderedEventElements().forEach((element) => {
+      const eventKey = element.dataset.eventKey;
+      if (!eventKey || candidates.has(eventKey)) return;
+      const rect = element.getBoundingClientRect();
+      const visibleTop = element.classList.contains("all-day-event")
+        ? viewport.top
+        : timedViewportTop;
+      if (!intersectsCalendarViewport(rect, viewport, visibleTop)) return;
+      const event = eventsByKey.get(eventKey);
+      if (event) candidates.set(eventKey, event);
+    });
+    return [...candidates.values()];
+  }, [renderedEventElements]);
+
+  const navigateToVisibleEvent = React.useCallback((event: CalendarEvent) => {
+    const eventKey = calendarEventKey(event.calendarId, event.id);
+    selectionAnchorRef.current = eventKey;
+    dismissCreationDraft();
+    setSelected(new Set([event.id]));
+  }, [dismissCreationDraft]);
+
+  const cancelVisibleEventFinder = React.useCallback(() => {
+    setShowVisibleEventFinder(false);
+    clearEventSelection();
+  }, [clearEventSelection]);
+
+  const commitVisibleEventFinderSelection = React.useCallback((event: CalendarEvent) => {
+    const eventKey = calendarEventKey(event.calendarId, event.id);
+    navigateToVisibleEvent(event);
+    setShowVisibleEventFinder(false);
+    window.requestAnimationFrame(() => focusRenderedEvent(eventKey, false));
+  }, [focusRenderedEvent, navigateToVisibleEvent]);
+
   React.useLayoutEffect(() => {
     const pending = pendingKeyboardMovedEventScrollRef.current;
     if (!pending || !events.some(({ id }) => id === pending.eventId)) return;
@@ -3129,11 +3206,20 @@ export function CalendarApp() {
         }
         return;
       }
-      if (modifier && event.shiftKey && event.key === ",") {
+      if (isSettingsShortcut({
+        altKey: event.altKey,
+        code: event.code,
+        ctrlKey: event.ctrlKey,
+        key: event.key,
+        metaKey: event.metaKey,
+        repeat: event.repeat,
+        shiftKey: event.shiftKey,
+      })) {
         event.preventDefault();
         event.stopPropagation();
         setShowDateCommandDialog(false);
         setEventSearchOpen(false);
+        setShowVisibleEventFinder(false);
         setShowShortcuts(false);
         setShowSettings(true);
       }
@@ -3145,6 +3231,11 @@ export function CalendarApp() {
 
   React.useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && showVisibleEventFinder) {
+        event.preventDefault();
+        cancelVisibleEventFinder();
+        return;
+      }
       if (event.key === "Escape" && showDateCommandDialog) {
         event.preventDefault();
         closeDateCommand();
@@ -3175,14 +3266,38 @@ export function CalendarApp() {
         return;
       }
       const modifier = event.metaKey || event.ctrlKey;
+      if (isLeftSidebarToggleShortcut({
+        altKey: event.altKey,
+        code: event.code,
+        ctrlKey: event.ctrlKey,
+        key: event.key,
+        metaKey: event.metaKey,
+        modalOpen: Boolean(document.querySelector(".modal-backdrop")),
+        repeat: event.repeat,
+        shiftKey: event.shiftKey,
+      })) {
+        event.preventDefault();
+        setSidebarOpen((open) => !open);
+        return;
+      }
       if (
         modifier
         && !event.shiftKey
         && !event.altKey
-        && ["f", "k"].includes(event.key.toLowerCase())
+        && event.key.toLowerCase() === "k"
       ) {
         event.preventDefault();
         openEventSearch();
+        return;
+      }
+      if (
+        modifier
+        && !event.shiftKey
+        && !event.altKey
+        && event.key.toLowerCase() === "f"
+      ) {
+        event.preventDefault();
+        openVisibleEventFinder();
         return;
       }
       if (
@@ -3397,7 +3512,7 @@ export function CalendarApp() {
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [activeSelectionSurface, cancelActiveInteraction, changeDayCount, clearEventSelection, closeDateCommand, copySelection, createAdjacentEvent, creationDraft, dayCount, deleteEvents, dismissCreationDraft, duplicateEvents, extractedTasks.length, focusCalendarSurface, focusRenderedEvent, focusSidebarSurface, google.connected, loadGoogleEvents, navigateBetweenEvents, navigateDays, openDateCommand, openEventSearch, rightSidebarTab, selected, setEventSearchOpen, showDateCommandDialog, showEventSearch, showSettings, showShortcuts, syncing]);
+  }, [activeSelectionSurface, cancelActiveInteraction, cancelVisibleEventFinder, changeDayCount, clearEventSelection, closeDateCommand, copySelection, createAdjacentEvent, creationDraft, dayCount, deleteEvents, dismissCreationDraft, duplicateEvents, extractedTasks.length, focusCalendarSurface, focusRenderedEvent, focusSidebarSurface, google.connected, loadGoogleEvents, navigateBetweenEvents, navigateDays, openDateCommand, openEventSearch, openVisibleEventFinder, rightSidebarTab, selected, setEventSearchOpen, showDateCommandDialog, showEventSearch, showSettings, showShortcuts, showVisibleEventFinder, syncing]);
 
   const toggleCalendar = (calendarId: string) => {
     const calendar = calendars.find((candidate) => candidate.id === calendarId);
@@ -4366,8 +4481,8 @@ export function CalendarApp() {
 
     const cancelKeyboardMoveAtOrigin = (session: KeyboardMoveSession) => {
       if (!keyboardTransformIsAtOrigin(session)) return false;
-      if (session.toastTimer !== null) clearTimeout(session.toastTimer);
-      session.toastTimer = null;
+      if (session.guestPromptTimer !== null) clearTimeout(session.guestPromptTimer);
+      session.guestPromptTimer = null;
       session.action?.cancel();
       session.action = null;
       restoreEvents(session.originals);
@@ -4375,19 +4490,6 @@ export function CalendarApp() {
         keyboardMoveSessionRef.current = null;
       }
       return true;
-    };
-
-    const scheduleKeyboardMoveToast = (session: KeyboardMoveSession) => {
-      if (
-        keyboardMoveSessionRef.current !== session
-        || cancelKeyboardMoveAtOrigin(session)
-      ) return;
-      if (session.toastTimer !== null) clearTimeout(session.toastTimer);
-      session.toastTimer = setTimeout(() => {
-        session.toastTimer = null;
-        if (cancelKeyboardMoveAtOrigin(session)) return;
-        queueKeyboardMoveToast(session);
-      }, KEYBOARD_MOVE_TOAST_DEBOUNCE_MS);
     };
 
     const initializeKeyboardMove = async (session: KeyboardMoveSession) => {
@@ -4409,10 +4511,41 @@ export function CalendarApp() {
         || cancelKeyboardMoveAtOrigin(session)
       ) return;
       session.sendUpdates = sendUpdates;
-      scheduleKeyboardMoveToast(session);
+      queueKeyboardMoveToast(session);
     };
 
-    const moveSelectedEventsWithKeyboard = (keyboardEvent: KeyboardEvent) => {
+    const scheduleKeyboardMoveGuestPrompt = (session: KeyboardMoveSession) => {
+      if (
+        keyboardMoveSessionRef.current !== session
+        || cancelKeyboardMoveAtOrigin(session)
+      ) return;
+      session.guestPromptTimer = restartKeyboardMoveGuestPromptTimer({
+        cancelTimer: clearTimeout,
+        currentTimer: session.guestPromptTimer,
+        onIdle: () => {
+          session.guestPromptTimer = null;
+          void initializeKeyboardMove(session);
+        },
+        scheduleTimer: setTimeout,
+      });
+    };
+
+    let repeatDelayTimer: number | null = null;
+    let repeatIntervalTimer: number | null = null;
+    let repeatedKey: string | null = null;
+
+    const stopKeyboardMoveRepeat = () => {
+      if (repeatDelayTimer !== null) window.clearTimeout(repeatDelayTimer);
+      if (repeatIntervalTimer !== null) window.clearInterval(repeatIntervalTimer);
+      repeatDelayTimer = null;
+      repeatIntervalTimer = null;
+      repeatedKey = null;
+    };
+
+    const moveSelectedEventsWithKeyboard = (
+      keyboardEvent: KeyboardEvent,
+      repeatOverride?: boolean,
+    ) => {
       const selection = eventsRef.current.filter((event) => selected.has(event.id));
       const shortcutContext = {
         activeCalendar: activeSelectionSurface === "calendar",
@@ -4423,7 +4556,7 @@ export function CalendarApp() {
         key: keyboardEvent.key,
         metaKey: keyboardEvent.metaKey,
         modalOpen: Boolean(document.querySelector(".modal-backdrop")),
-        repeat: keyboardEvent.repeat,
+        repeat: repeatOverride ?? keyboardEvent.repeat,
         selectedCount: selection.length,
         shiftKey: keyboardEvent.shiftKey,
       };
@@ -4431,7 +4564,7 @@ export function CalendarApp() {
       const resizeShortcut = eventResizeShortcut(shortcutContext);
       const moveToPresent = isEventMoveToPresentShortcut(shortcutContext);
       const gapFillDirection = eventGapFillShortcut(shortcutContext);
-      if (!moveShortcut && !resizeShortcut && !moveToPresent && !gapFillDirection) return;
+      if (!moveShortcut && !resizeShortcut && !moveToPresent && !gapFillDirection) return false;
 
       keyboardEvent.preventDefault();
       keyboardEvent.stopPropagation();
@@ -4444,7 +4577,7 @@ export function CalendarApp() {
           gapFillDirection,
         );
         if (filled) void updateEventDetails(filled);
-        return;
+        return true;
       }
 
       const selectionKey = selection
@@ -4466,7 +4599,7 @@ export function CalendarApp() {
           selectionKey,
           sendUpdates: null,
           targetStart: moveToPresent ? latestQuarterHour(new Date()) : null,
-          toastTimer: null,
+          guestPromptTimer: null,
         };
         keyboardMoveSessionRef.current = session;
         sessionStarted = true;
@@ -4507,18 +4640,65 @@ export function CalendarApp() {
         }
       }
       setEvents((current) => current.map((event) => movedById.get(event.id) ?? event));
-      if (cancelKeyboardMoveAtOrigin(session)) return;
+      if (cancelKeyboardMoveAtOrigin(session)) return true;
       if (sessionStarted) {
-        void initializeKeyboardMove(session);
+        scheduleKeyboardMoveGuestPrompt(session);
+        return true;
+      }
+      if (session.sendUpdates === null) {
+        scheduleKeyboardMoveGuestPrompt(session);
+      } else if (session.action === null) {
+        queueKeyboardMoveToast(session);
+      }
+      return true;
+    };
+
+    const handleKeyboardMoveKeyDown = (keyboardEvent: KeyboardEvent) => {
+      const isRepeatableVerticalMove = keyboardEvent.altKey
+        && !keyboardEvent.ctrlKey
+        && !keyboardEvent.metaKey
+        && !keyboardEvent.shiftKey
+        && (keyboardEvent.key === "ArrowUp" || keyboardEvent.key === "ArrowDown");
+      if (keyboardEvent.repeat && repeatedKey === keyboardEvent.key) {
+        keyboardEvent.preventDefault();
+        keyboardEvent.stopPropagation();
         return;
       }
-      if (session.sendUpdates !== null && session.action === null) {
-        scheduleKeyboardMoveToast(session);
+
+      const handled = moveSelectedEventsWithKeyboard(keyboardEvent);
+      if (!handled || !isRepeatableVerticalMove || keyboardEvent.repeat) return;
+
+      stopKeyboardMoveRepeat();
+      repeatedKey = keyboardEvent.key;
+      repeatDelayTimer = window.setTimeout(() => {
+        repeatDelayTimer = null;
+        if (!moveSelectedEventsWithKeyboard(keyboardEvent, true)) {
+          stopKeyboardMoveRepeat();
+          return;
+        }
+        repeatIntervalTimer = window.setInterval(() => {
+          if (!moveSelectedEventsWithKeyboard(keyboardEvent, true)) {
+            stopKeyboardMoveRepeat();
+          }
+        }, KEYBOARD_MOVE_REPEAT_INTERVAL_MS);
+      }, KEYBOARD_MOVE_REPEAT_DELAY_MS);
+    };
+
+    const handleKeyboardMoveKeyUp = (keyboardEvent: KeyboardEvent) => {
+      if (keyboardEvent.key === repeatedKey || keyboardEvent.key === "Alt") {
+        stopKeyboardMoveRepeat();
       }
     };
 
-    window.addEventListener("keydown", moveSelectedEventsWithKeyboard);
-    return () => window.removeEventListener("keydown", moveSelectedEventsWithKeyboard);
+    window.addEventListener("keydown", handleKeyboardMoveKeyDown);
+    window.addEventListener("keyup", handleKeyboardMoveKeyUp);
+    window.addEventListener("blur", stopKeyboardMoveRepeat);
+    return () => {
+      stopKeyboardMoveRepeat();
+      window.removeEventListener("keydown", handleKeyboardMoveKeyDown);
+      window.removeEventListener("keyup", handleKeyboardMoveKeyUp);
+      window.removeEventListener("blur", stopKeyboardMoveRepeat);
+    };
   }, [activeSelectionSurface, chooseGuestNotifications, persistMovedEvents, renderedDays, selected, toastDuration, updateEventDetails]);
 
   const updateSidebarTodoistTask = React.useCallback(async (
@@ -4767,7 +4947,7 @@ export function CalendarApp() {
           )}
 
           <div className="topbar-right">
-            <button className="topbar-search-button" onClick={openEventSearch} aria-label="Search events and tasks"><Search size={14} /><span>Search</span><kbd>⌘ F</kbd></button>
+            <button className="topbar-search-button" onClick={openEventSearch} aria-label="Search all events and tasks"><Search size={14} /><span>Search</span><kbd>⌘ K</kbd></button>
             <button className="icon-button" onClick={() => void loadGoogleEvents()} aria-label="Refresh" disabled={!google.connected}><RefreshCw size={15} /></button>
             <DayCountPicker dayCount={dayCount} onChange={changeDayCount} />
             <button className="icon-button" onClick={() => setShowShortcuts(true)} aria-label="Keyboard shortcuts"><CircleHelp size={16} /></button>
@@ -4778,7 +4958,12 @@ export function CalendarApp() {
           <div className="setup-banner"><Sparkles size={15} /><span>Demo mode is ready. Add a Google OAuth client ID to import your real calendars.</span><a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noreferrer">Set up Google <ExternalLink size={12} /></a></div>
         )}
 
-        <div className="calendar-scroll" ref={scrollRef} onScroll={handleCalendarScroll}>
+        <div
+          className="calendar-scroll"
+          data-visible-find-active={visibleEventFindMatchKeys.size > 0 ? "true" : undefined}
+          ref={scrollRef}
+          onScroll={handleCalendarScroll}
+        >
           <div className="calendar-canvas" style={calendarCanvasStyle}>
             <div className="calendar-header">
               <div className="timezone-cell">PDT</div>
@@ -4817,7 +5002,7 @@ export function CalendarApp() {
                     )}
                     <button
                       aria-label={`${event.title}, all day${unsyncedEventIds.has(event.id) ? ", unsynced" : ""}`}
-                      className={`all-day-event ${selected.has(event.id) ? "event-selected" : ""} ${selected.has(event.id) && selected.size === 1 ? "event-selected-raised" : ""} ${isDragSource ? "event-drag-source" : ""}`}
+                      className={`all-day-event ${visibleEventFindMatchKeys.has(eventKey) ? "event-visible-find-match" : ""} ${selected.has(event.id) ? "event-selected" : ""} ${selected.has(event.id) && selected.size === 1 ? "event-selected-raised" : ""} ${isDragSource ? "event-drag-source" : ""}`}
                       data-attendance={isEventUnaccepted(event) ? "unaccepted" : undefined}
                       data-calendar-event-id={event.id}
                       data-calendar-id={event.calendarId}
@@ -5010,7 +5195,7 @@ export function CalendarApp() {
               return (
                   <button
                     key={key}
-                    className={`calendar-event event-density-${visualDensity} ${isCompact ? "event-compact" : ""} ${isCondensed ? "event-condensed" : ""} ${isSelected ? "event-selected" : ""} ${isSelected && selected.size === 1 ? "event-selected-raised" : ""} ${isDragSource ? "event-drag-source" : ""}`}
+                    className={`calendar-event event-density-${visualDensity} ${isCompact ? "event-compact" : ""} ${isCondensed ? "event-condensed" : ""} ${visibleEventFindMatchKeys.has(calendarEventKey(event.calendarId, event.id)) ? "event-visible-find-match" : ""} ${isSelected ? "event-selected" : ""} ${isSelected && selected.size === 1 ? "event-selected-raised" : ""} ${isDragSource ? "event-drag-source" : ""}`}
                     data-attendance={isEventUnaccepted(event) ? "unaccepted" : undefined}
                     data-calendar-event-id={event.id}
                     data-calendar-id={event.calendarId}
@@ -5154,10 +5339,15 @@ export function CalendarApp() {
               <span>Move task to adjacent folder</span><span><kbd>⌥ ⇧ ↑</kbd> <kbd>⌥ ⇧ ↓</kbd></span>
               <span>Move task to parent / first child</span><span><kbd>⌥ ⇧ ←</kbd> <kbd>⌥ ⇧ →</kbd></span>
               <span>Focus calendar / sidebar</span><span><kbd>⌘ ←</kbd> <kbd>⌘ →</kbd></span>
+              <span>Toggle left sidebar</span><kbd>⌘ \\</kbd>
               <span>Schedule sidebar task now</span><kbd>⌘ ⇧ ←</kbd>
               <span>Move calendar event to Triage</span><kbd>⌘ ⇧ →</kbd>
               <span>Go to any date</span><kbd>⌘ G</kbd>
-              <span>Search events and tasks</span><span><kbd>⌘ F</kbd> <kbd>⌘ K</kbd></span>
+              <span>Find visible calendar events</span><kbd>⌘ F</kbd>
+              <span>Next / previous visible search result</span><span><kbd>↵</kbd> <kbd>⇧ ↵</kbd></span>
+              <span>Select visible search result</span><kbd>⌘ ↵</kbd>
+              <span>Search all events and tasks</span><kbd>⌘ K</kbd>
+              <span>Open settings</span><kbd>⌘ ,</kbd>
               <span>Review extracted tasks</span><kbd>⌘ E</kbd>
               <span>Change selected events’ calendar</span><kbd>C</kbd>
               <span>Duplicate selected events</span><kbd>⌘ D</kbd>
@@ -5175,6 +5365,15 @@ export function CalendarApp() {
             </div>
           </section>
         </div>
+      )}
+      {showVisibleEventFinder && (
+        <VisibleEventFinder
+          getViewportEvents={viewportEventCandidates}
+          onCancel={cancelVisibleEventFinder}
+          onCommit={commitVisibleEventFinderSelection}
+          onMatchesChange={setVisibleEventFindMatchKeys}
+          onNavigate={navigateToVisibleEvent}
+        />
       )}
       {showNewTimeEntry && (
         <NewTimeEntryDialog
@@ -5519,7 +5718,7 @@ export function CalendarApp() {
                       : "Saving task position…",
                   },
                 );
-              }, KEYBOARD_MOVE_TOAST_DEBOUNCE_MS);
+              }, TODOIST_KEYBOARD_MOVE_TOAST_DEBOUNCE_MS);
             }}
             onRefresh={() => refreshTodoist()}
             onOpenExtractedTriage={() => {

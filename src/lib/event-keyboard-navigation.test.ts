@@ -14,6 +14,10 @@ import {
   isEventMoveAtOrigin,
   isEventMoveToPresentShortcut,
   isEventTitleFocusShortcut,
+  isLeftSidebarToggleShortcut,
+  isSettingsShortcut,
+  KEYBOARD_MOVE_GUEST_PROMPT_DELAY_MS,
+  restartKeyboardMoveGuestPromptTimer,
   resolveCalendarFocusTargetKey,
   resolveEventNavigationAnchorKey,
   shouldConsumeEventNavigationKey,
@@ -21,6 +25,83 @@ import {
   type EventNavigationTransition,
   type EventNavigationRect,
 } from "./event-keyboard-navigation";
+
+test("keyboard moves restart a 500ms guest prompt debounce", () => {
+  const cancelled: number[] = [];
+  const scheduled: Array<{ callback: () => void; delay: number; timer: number }> = [];
+  const scheduleTimer = (callback: () => void, delay: number) => {
+    const timer = scheduled.length + 1;
+    scheduled.push({ callback, delay, timer });
+    return timer;
+  };
+  let prompted = 0;
+
+  const firstTimer = restartKeyboardMoveGuestPromptTimer({
+    cancelTimer: (timer: number) => cancelled.push(timer),
+    currentTimer: null,
+    onIdle: () => { prompted += 1; },
+    scheduleTimer,
+  });
+  const secondTimer = restartKeyboardMoveGuestPromptTimer({
+    cancelTimer: (timer: number) => cancelled.push(timer),
+    currentTimer: firstTimer,
+    onIdle: () => { prompted += 1; },
+    scheduleTimer,
+  });
+
+  assert.equal(KEYBOARD_MOVE_GUEST_PROMPT_DELAY_MS, 500);
+  assert.deepEqual(cancelled, [firstTimer]);
+  assert.equal(scheduled[0].delay, 500);
+  assert.equal(scheduled[1].delay, 500);
+  scheduled.find(({ timer }) => timer === secondTimer)?.callback();
+  assert.equal(prompted, 1);
+});
+
+test("Command or Control + backslash toggles the left sidebar", () => {
+  const shortcut = (
+    overrides: Partial<Parameters<typeof isLeftSidebarToggleShortcut>[0]> = {},
+  ) => isLeftSidebarToggleShortcut({
+    altKey: false,
+    code: "Backslash",
+    ctrlKey: false,
+    key: "\\",
+    metaKey: true,
+    modalOpen: false,
+    repeat: false,
+    shiftKey: false,
+    ...overrides,
+  });
+
+  assert.equal(shortcut(), true);
+  assert.equal(shortcut({ ctrlKey: true, metaKey: false }), true);
+  assert.equal(shortcut({ code: "", key: "x" }), false);
+  assert.equal(shortcut({ altKey: true }), false);
+  assert.equal(shortcut({ modalOpen: true }), false);
+  assert.equal(shortcut({ repeat: true }), false);
+  assert.equal(shortcut({ shiftKey: true }), false);
+});
+
+test("Command or Control + comma opens settings", () => {
+  const shortcut = (
+    overrides: Partial<Parameters<typeof isSettingsShortcut>[0]> = {},
+  ) => isSettingsShortcut({
+    altKey: false,
+    code: "Comma",
+    ctrlKey: false,
+    key: ",",
+    metaKey: true,
+    repeat: false,
+    shiftKey: false,
+    ...overrides,
+  });
+
+  assert.equal(shortcut(), true);
+  assert.equal(shortcut({ ctrlKey: true, metaKey: false }), true);
+  assert.equal(shortcut({ code: "", key: "." }), false);
+  assert.equal(shortcut({ altKey: true }), false);
+  assert.equal(shortcut({ repeat: true }), false);
+  assert.equal(shortcut({ shiftKey: true }), false);
+});
 
 test("Command+Shift moves items between the active sidebar and calendar surfaces", () => {
   const shortcut = (
@@ -81,9 +162,13 @@ test("Option+arrows resolve to calendar event moves", () => {
   assert.equal(shortcut("ArrowLeft", { altKey: false }), null);
   assert.equal(shortcut("ArrowLeft", { metaKey: true }), null);
   assert.equal(shortcut("ArrowLeft", { modalOpen: true }), null);
+  assert.deepEqual(shortcut("ArrowUp", { repeat: true }), {
+    dayDelta: 0,
+    minuteDelta: -30,
+  });
   assert.deepEqual(shortcut("ArrowDown", { repeat: true }), {
     dayDelta: 0,
-    minuteDelta: 15,
+    minuteDelta: 30,
   });
   assert.equal(shortcut("ArrowLeft", { selectedCount: 0 }), null);
   assert.equal(shortcut("ArrowLeft", { shiftKey: true }), null);

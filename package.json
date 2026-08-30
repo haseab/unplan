@@ -28,6 +28,11 @@
     "test:todoist": "tsc src/lib/calendar-types.ts src/lib/todoist.ts src/lib/todoist.test.ts src/lib/todoist-buckets.ts src/lib/todoist-buckets.test.ts src/lib/todoist-calendar.ts src/lib/todoist-calendar.test.ts src/lib/todoist-staged-task-coordinator.ts src/lib/todoist-staged-task-coordinator.test.ts src/lib/task-extraction.ts src/lib/task-extraction.test.ts --outDir /tmp/unplan-todoist-tests --module commonjs --target es2022 --esModuleInterop --skipLibCheck && node --test /tmp/unplan-todoist-tests/todoist.test.js /tmp/unplan-todoist-tests/todoist-buckets.test.js /tmp/unplan-todoist-tests/todoist-calendar.test.js /tmp/unplan-todoist-tests/todoist-staged-task-coordinator.test.js /tmp/unplan-todoist-tests/task-extraction.test.js"
   },
   "dependencies": {
+    "@tiptap/extension-placeholder": "^3.30.5",
+    "@tiptap/markdown": "^3.30.5",
+    "@tiptap/pm": "^3.30.5",
+    "@tiptap/react": "^3.30.5",
+    "@tiptap/starter-kit": "^3.30.5",
     "chrono-node": "^2.10.1",
     "date-fns": "^4.4.0",
     "lucide-react": "^1.28.0",
