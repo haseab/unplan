@@ -38,6 +38,7 @@ import {
   recentEventEditDurationMinutes,
   type RecentEventTitle,
 } from "@/lib/recent-event-titles";
+import { buildTimeZoneGroups, timeZoneDisplayName } from "@/lib/time-zones";
 
 export type EventCreationDraft = {
   allDay?: boolean;
@@ -197,6 +198,7 @@ function EventDetailsEditor({
   const start = new Date(edited.start);
   const end = new Date(edited.end);
   const zone = edited.timeZone || Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const timeZoneGroups = React.useMemo(() => buildTimeZoneGroups(zone), [zone]);
   const recurrence = recurrenceValue(edited);
   const recurrenceLabel = recurrence === "none"
     ? ""
@@ -473,7 +475,15 @@ function EventDetailsEditor({
           <div className="event-editor-inline-options">
             <label><input type="checkbox" checked={Boolean(edited.allDay)} onChange={(input) => toggleAllDay(input.target.checked)} /> All-day</label>
             <select aria-label="Time zone" value={zone} onChange={(input) => change({ timeZone: input.target.value })}>
-              {[zone, "America/Los_Angeles", "America/New_York", "Europe/London", "UTC"].filter((item, index, list) => list.indexOf(item) === index).map((item) => <option key={item}>{item}</option>)}
+              {timeZoneGroups.map((group) => (
+                <optgroup key={group.label} label={group.label}>
+                  {group.zones.map((timeZone) => (
+                    <option key={timeZone} value={timeZone}>
+                      {timeZoneDisplayName(timeZone)}
+                    </option>
+                  ))}
+                </optgroup>
+              ))}
             </select>
             <label><Repeat2 size={13} /><select aria-label="Repeat" value={recurrence} disabled={Boolean(edited.recurringEventId)} onChange={(input) => change({ recurrence: recurrenceRule(input.target.value) })}><option value="none">Does not repeat</option><option value="daily">Daily</option><option value="weekly">Weekly</option><option value="monthly">Monthly</option><option value="yearly">Yearly</option></select></label>
           </div>
