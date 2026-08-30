@@ -20,7 +20,7 @@ const normalizeEventDraft = (candidate: CalendarEvent): CalendarEvent => {
 };
 
 export function useDebouncedEventUpdate({
-  delay = 500,
+  delay = 1_000,
   event,
   onPreview,
   onUpdate,
@@ -78,6 +78,15 @@ export function useDebouncedEventUpdate({
     return saved;
   }, []);
 
+  const schedulePersist = React.useCallback((candidate: CalendarEvent, version: number) => {
+    if (timerRef.current !== null) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => {
+      timerRef.current = null;
+      pendingRef.current = null;
+      void persist(candidate, version);
+    }, delay);
+  }, [delay, persist]);
+
   const updateDraft = React.useCallback((updater: EventDraftUpdater) => {
     const candidate = typeof updater === "function" ? updater(draftRef.current) : updater;
     const version = versionRef.current + 1;
@@ -87,14 +96,14 @@ export function useDebouncedEventUpdate({
     pendingRef.current = { candidate, version };
     setDraft(candidate);
     onPreviewRef.current(candidate);
+    schedulePersist(candidate, version);
+  }, [schedulePersist]);
 
-    if (timerRef.current !== null) clearTimeout(timerRef.current);
-    timerRef.current = setTimeout(() => {
-      timerRef.current = null;
-      pendingRef.current = null;
-      void persist(candidate, version);
-    }, delay);
-  }, [delay, persist]);
+  const deferUpdate = React.useCallback(() => {
+    const pending = pendingRef.current;
+    if (!pending) return;
+    schedulePersist(pending.candidate, pending.version);
+  }, [schedulePersist]);
 
   const updateLocalDraft = React.useCallback((updater: EventDraftUpdater) => {
     const candidate = typeof updater === "function" ? updater(draftRef.current) : updater;
@@ -119,5 +128,5 @@ export function useDebouncedEventUpdate({
     if (pending) void onUpdateRef.current(normalizeEventDraft(pending.candidate));
   }, []);
 
-  return { draft, flushUpdate, updateDraft, updateLocalDraft };
+  return { deferUpdate, draft, flushUpdate, updateDraft, updateLocalDraft };
 }

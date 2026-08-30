@@ -84,10 +84,13 @@ const latestPendingAction = () => {
   return latest;
 };
 
+const oldestPendingAction = () => pendingActions.values().next().value ?? null;
+
 /**
  * Shows an optimistic action immediately while delaying its durable mutation.
- * Undo and submit are mutually exclusive, and keyboard commands target the
- * most recently queued action.
+ * Undo and submit are mutually exclusive. Keyboard undo targets the newest
+ * action, while keyboard submit targets the oldest so dependent mutations are
+ * committed in the same order they were queued.
  */
 export function queueActionToast(
   message: string,
@@ -297,7 +300,7 @@ export const refreshActionToast = (
 export const triggerToastUndo = () => latestPendingAction()?.undo() ?? false;
 
 export const triggerToastSubmit = () =>
-  latestPendingAction()?.submit() ?? false;
+  oldestPendingAction()?.submit() ?? false;
 
 export const hasPendingActionToast = () => pendingActions.size > 0;
 
