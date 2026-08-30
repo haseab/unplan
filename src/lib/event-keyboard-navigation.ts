@@ -6,6 +6,14 @@ export type EventNavigationTransition = {
   toEventKey: string;
 };
 
+export const eventNavigationRangeKeys = (
+  anchorEventKey: string,
+  transitions: EventNavigationTransition[],
+) => new Set([
+  anchorEventKey,
+  ...transitions.map(({ toEventKey }) => toEventKey),
+]);
+
 export type EventNavigationRect = {
   bottom: number;
   dayIndex: number;

@@ -4,6 +4,7 @@ import {
   crossSurfaceMoveShortcut,
   eventGapFillShortcut,
   eventMoveShortcut,
+  eventNavigationRangeKeys,
   eventResizeShortcut,
   findClosestEventKey,
   findEventNavigationBacktrackKey,
@@ -55,6 +56,34 @@ test("keyboard moves restart a 500ms guest prompt debounce", () => {
   assert.equal(scheduled[1].delay, 500);
   scheduled.find(({ timer }) => timer === secondTimer)?.callback();
   assert.equal(prompted, 1);
+});
+
+test("shift-arrow selection follows a reversible path from its anchor", () => {
+  const transitions: EventNavigationTransition[] = [
+    { direction: "up", fromEventKey: "middle", toEventKey: "above" },
+    { direction: "up", fromEventKey: "above", toEventKey: "top" },
+  ];
+
+  assert.deepEqual(
+    [...eventNavigationRangeKeys("middle", transitions)],
+    ["middle", "above", "top"],
+  );
+  transitions.pop();
+  assert.deepEqual(
+    [...eventNavigationRangeKeys("middle", transitions)],
+    ["middle", "above"],
+  );
+  transitions.pop();
+  assert.deepEqual([...eventNavigationRangeKeys("middle", transitions)], ["middle"]);
+  transitions.push({
+    direction: "down",
+    fromEventKey: "middle",
+    toEventKey: "below",
+  });
+  assert.deepEqual(
+    [...eventNavigationRangeKeys("middle", transitions)],
+    ["middle", "below"],
+  );
 });
 
 test("Command or Control + backslash toggles the left sidebar", () => {

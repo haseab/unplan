@@ -39,6 +39,31 @@ test("range selection includes every visible item from the anchor", () => {
   assert.equal(result.anchorId, "second");
 });
 
+test("keyboard ranges expand, contract to the anchor, then expand past it", () => {
+  let focusId = "third";
+  const anchorId = focusId;
+  let selection = new Set([focusId]);
+  const navigate = (direction: "next" | "previous") => {
+    const itemId = adjacentListItemId(orderedIds, focusId, direction);
+    assert.ok(itemId);
+    focusId = itemId;
+    selection = updateListSelection({
+      anchorId,
+      intent: "range",
+      itemId,
+      orderedIds,
+      selection,
+    }).selection;
+    return [...selection];
+  };
+
+  assert.deepEqual(navigate("previous"), ["second", "third"]);
+  assert.deepEqual(navigate("previous"), ["first", "second", "third"]);
+  assert.deepEqual(navigate("next"), ["second", "third"]);
+  assert.deepEqual(navigate("next"), ["third"]);
+  assert.deepEqual(navigate("next"), ["third", "fourth"]);
+});
+
 test("navigates to adjacent visible list items without wrapping", () => {
   assert.equal(adjacentListItemId(orderedIds, "second", "previous"), "first");
   assert.equal(adjacentListItemId(orderedIds, "second", "next"), "third");

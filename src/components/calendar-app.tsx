@@ -165,6 +165,7 @@ import {
   crossSurfaceMoveShortcut,
   eventGapFillShortcut,
   eventMoveShortcut,
+  eventNavigationRangeKeys,
   eventResizeShortcut,
   findClosestEventKey,
   findEventClosestToTime,
@@ -677,6 +678,11 @@ export function CalendarApp() {
   const clipboardRef = React.useRef<CalendarEvent[]>([]);
   const selectionAnchorRef = React.useRef<string | null>(null);
   const eventNavigationHistoryRef = React.useRef<EventNavigationTransition[]>([]);
+  const eventNavigationRangeRef = React.useRef<{
+    anchorEventId: string;
+    anchorEventKey: string;
+    endpointEventKey: string;
+  } | null>(null);
   const pendingSidebarFocusRef = React.useRef(false);
   const eventSearchCacheRef = React.useRef<Map<string, EventSearchCacheEntry>>(
     new Map(),
@@ -913,6 +919,7 @@ export function CalendarApp() {
 
   const clearEventSelection = React.useCallback(() => {
     selectionAnchorRef.current = null;
+    eventNavigationRangeRef.current = null;
     setEventDetailsPreview(null);
     setSelected(new Set());
     setRightSidebarTab("todos");
@@ -3067,6 +3074,26 @@ export function CalendarApp() {
     );
     if (!anchorElement || !anchorKey) return false;
     const anchorEventId = anchorElement.dataset.calendarEventId;
+    let range = eventNavigationRangeRef.current;
+    if (
+      extendSelection
+      && anchorEventId
+      && (
+        !range
+        || range.endpointEventKey !== anchorKey
+        || !selected.has(range.anchorEventId)
+      )
+    ) {
+      range = {
+        anchorEventId,
+        anchorEventKey: anchorKey,
+        endpointEventKey: anchorKey,
+      };
+      eventNavigationRangeRef.current = range;
+      eventNavigationHistoryRef.current.length = 0;
+    } else if (!extendSelection) {
+      eventNavigationRangeRef.current = null;
+    }
 
     const anchorRect = eventNavigationRectForElement(anchorElement);
     const history = eventNavigationHistoryRef.current;
@@ -3121,13 +3148,24 @@ export function CalendarApp() {
 
     selectionAnchorRef.current = nextKey;
     dismissCreationDraft();
-    setSelected((current) => {
-      if (!extendSelection) return new Set([nextEventId]);
-      const next = new Set(current);
-      if (anchorEventId) next.add(anchorEventId);
-      next.add(nextEventId);
-      return next;
-    });
+    if (extendSelection && range) {
+      const completedRange = { ...range, endpointEventKey: nextKey };
+      eventNavigationRangeRef.current = completedRange;
+      const eventIdsByKey = new Map(elements.flatMap((element) => {
+        const eventKey = element.dataset.eventKey;
+        const eventId = element.dataset.calendarEventId;
+        return eventKey && eventId ? [[eventKey, eventId] as const] : [];
+      }));
+      setSelected(new Set(
+        [...eventNavigationRangeKeys(completedRange.anchorEventKey, history)]
+          .flatMap((eventKey) => {
+            const eventId = eventIdsByKey.get(eventKey);
+            return eventId ? [eventId] : [];
+          }),
+      ));
+    } else {
+      setSelected(new Set([nextEventId]));
+    }
     nextElement.focus({ preventScroll: true });
     nextElement.scrollIntoView({
       behavior: "smooth",
@@ -3135,7 +3173,7 @@ export function CalendarApp() {
       inline: "nearest",
     });
     return true;
-  }, [dismissCreationDraft, renderedEventElements]);
+  }, [dismissCreationDraft, renderedEventElements, selected]);
 
   // Pending action toasts get first refusal on their shortcuts. If there is no
   // matching action, native editor/browser behavior remains untouched.

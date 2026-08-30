@@ -20,7 +20,7 @@ import { useListMarqueeSelection } from "@/hooks/use-list-marquee-selection";
 import { useTodoistGroupPreferences } from "@/hooks/use-todoist-group-preferences";
 import type { CalendarSource } from "@/lib/calendar-types";
 import { getEventPalette } from "@/lib/event-color";
-import { updateListSelection } from "@/lib/list-selection";
+import { adjacentListItemId, updateListSelection } from "@/lib/list-selection";
 import {
   moveTask,
   sidebarFolderNavigationId,
@@ -584,16 +584,23 @@ export function TodoistSidebar({
     extendSelection: boolean,
   ) => {
     const currentIndex = sidebarNavigation.findIndex(({ id }) => id === navigationId);
+    const currentTaskId = navigationId.startsWith("task:")
+      ? navigationId.slice("task:".length)
+      : null;
+    const rangeTargetTaskId = extendSelection && currentTaskId
+      ? adjacentListItemId(orderedVisibleTaskIds, currentTaskId, direction)
+      : null;
+    if (extendSelection && currentTaskId && !rangeTargetTaskId) return;
     const targetIndex = currentIndex + (direction === "next" ? 1 : -1);
-    const targetItem = sidebarNavigation[targetIndex];
+    const targetItem = rangeTargetTaskId
+      ? { id: sidebarTaskNavigationId(rangeTargetTaskId), kind: "task" as const }
+      : sidebarNavigation[targetIndex];
     if (!targetItem) return;
     if (targetItem.kind === "task") {
       const targetTaskId = targetItem.id.slice("task:".length);
-      const currentTaskId = navigationId.startsWith("task:")
-        ? navigationId.slice("task:".length)
-        : targetTaskId;
+      const selectionOriginTaskId = currentTaskId ?? targetTaskId;
       const result = updateListSelection({
-        anchorId: selectionAnchorRef.current ?? currentTaskId,
+        anchorId: selectionAnchorRef.current ?? selectionOriginTaskId,
         intent: extendSelection ? "range" : "replace",
         itemId: targetTaskId,
         orderedIds: orderedVisibleTaskIds,
