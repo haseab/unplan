@@ -5473,6 +5473,9 @@ export function CalendarApp() {
               return next;
             })}
             onSelectedEventCalendarPickerClose={closeSelectedEventCalendarPicker}
+            onSelectedEventCalendarPickerOpen={() => {
+              setOpenSelectedEventCalendarPicker(true);
+            }}
             onSelectedEventTitleAutoFocused={consumeSelectedEventTitleAutoFocus}
             onPreviewEvent={setEventDetailsPreview}
             onRespondToEvent={respondToEventInvitation}

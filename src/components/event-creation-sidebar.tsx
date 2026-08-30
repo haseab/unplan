@@ -58,6 +58,7 @@ type EventCreationSidebarProps = {
   onFocusEvent: (event: CalendarEvent) => void;
   onRemoveSelection: (eventId: string) => void;
   onSelectedEventCalendarPickerClose: () => void;
+  onSelectedEventCalendarPickerOpen: () => void;
   onSelectedEventTitleAutoFocused: () => void;
   onRespondToEvent: (
     event: CalendarEvent,
@@ -117,6 +118,7 @@ function EventDetailsEditor({
   onPreview,
   onRespond,
   onCalendarPickerClose,
+  onCalendarPickerOpen,
   onUpdate,
 }: {
   openCalendarPicker: boolean;
@@ -133,6 +135,7 @@ function EventDetailsEditor({
     responseStatus: CalendarEventRsvpStatus,
   ) => Promise<boolean>;
   onCalendarPickerClose: () => void;
+  onCalendarPickerOpen: () => void;
   onUpdate: (event: CalendarEvent) => Promise<boolean>;
 }) {
   const {
@@ -293,6 +296,17 @@ function EventDetailsEditor({
         value={edited.title}
         onValueChange={(title) => change({ title })}
         onKeyDown={(keyboardEvent) => {
+            if (
+              keyboardEvent.key === "Tab"
+              && !keyboardEvent.shiftKey
+              && !keyboardEvent.metaKey
+              && !keyboardEvent.ctrlKey
+              && !keyboardEvent.altKey
+            ) {
+              keyboardEvent.preventDefault();
+              onCalendarPickerOpen();
+              return;
+            }
             if (keyboardEvent.key !== "Enter" || keyboardEvent.nativeEvent.isComposing) return;
             keyboardEvent.preventDefault();
             console.debug("[BUG:EVENT-TITLE-FOCUS] [TITLE:ENTER] submitting title", {
@@ -311,6 +325,23 @@ function EventDetailsEditor({
             });
         }}
       />
+
+      <section className="event-details-section event-editor-calendar-section">
+        <div className="event-editor-calendar-select event-editor-select-field">
+          <div className="event-editor-calendar-picker">
+            <small>Calendar</small>
+            <CalendarPicker
+              calendars={editableCalendars}
+              forcedOpen={openCalendarPicker}
+              onChange={changeCalendar}
+              onOpenChange={(open) => {
+                if (!open) onCalendarPickerClose();
+              }}
+              value={edited.calendarId}
+            />
+          </div>
+        </div>
+      </section>
 
       <section className="event-details-section event-editor-time">
         <div className="event-details-row event-details-time-row event-editor-summary-row">
@@ -446,20 +477,6 @@ function EventDetailsEditor({
       </section>
 
       <section className="event-details-section event-editor-preferences">
-        <div className="event-editor-calendar-select event-editor-select-field">
-          <div className="event-editor-calendar-picker">
-            <small>Calendar</small>
-            <CalendarPicker
-              calendars={editableCalendars}
-              forcedOpen={openCalendarPicker}
-              onChange={changeCalendar}
-              onOpenChange={(open) => {
-                if (!open) onCalendarPickerClose();
-              }}
-              value={edited.calendarId}
-            />
-          </div>
-        </div>
         <EventColorPicker
           calendarColor={editedCalendar?.backgroundColor ?? edited.calendarColor}
           calendarTextColor={editedCalendar?.foregroundColor ?? "#ffffff"}
@@ -516,6 +533,7 @@ export function EventCreationSidebar({
   onFocusEvent,
   onRemoveSelection,
   onSelectedEventCalendarPickerClose,
+  onSelectedEventCalendarPickerOpen,
   onSelectedEventTitleAutoFocused,
   onPreviewEvent,
   onRespondToEvent,
@@ -589,21 +607,7 @@ export function EventCreationSidebar({
             placeholder="What are you planning?"
             value={title}
           />
-          <section className="event-details-section event-editor-time">
-            <div className="event-details-row event-details-time-row">
-              <Clock3 size={15} />
-              <div>
-                <strong>
-                  {format(draft.start, "h:mm a")}
-                  <span>→</span>
-                  {format(draft.end, "h:mm a")}
-                  <em>{formatDuration(draft.start, draft.end)}</em>
-                </strong>
-                <small>{format(draft.start, "EEEE, MMMM d")}</small>
-              </div>
-            </div>
-          </section>
-          <section className="event-details-section event-editor-preferences">
+          <section className="event-details-section event-editor-calendar-section">
             <div className="event-editor-calendar-select event-editor-select-field">
               <span
                 className="event-details-calendar-color"
@@ -618,6 +622,20 @@ export function EventCreationSidebar({
                   onOpenChange={setCreationCalendarPickerOpen}
                   value={calendarId}
                 />
+              </div>
+            </div>
+          </section>
+          <section className="event-details-section event-editor-time">
+            <div className="event-details-row event-details-time-row">
+              <Clock3 size={15} />
+              <div>
+                <strong>
+                  {format(draft.start, "h:mm a")}
+                  <span>→</span>
+                  {format(draft.end, "h:mm a")}
+                  <em>{formatDuration(draft.start, draft.end)}</em>
+                </strong>
+                <small>{format(draft.start, "EEEE, MMMM d")}</small>
               </div>
             </div>
           </section>
@@ -636,6 +654,7 @@ export function EventCreationSidebar({
           onPreview={onPreviewEvent}
           onRespond={onRespondToEvent}
           onCalendarPickerClose={onSelectedEventCalendarPickerClose}
+          onCalendarPickerOpen={onSelectedEventCalendarPickerOpen}
           onUpdate={onUpdateEvent}
         />
       ) : selectedEvents.length > 1 ? (
