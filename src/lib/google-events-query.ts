@@ -1,4 +1,5 @@
 export type GoogleEventsQueryOptions = {
+  pageToken?: string;
   searchQuery?: string;
   timeMax: string | null;
   timeMin: string | null;
@@ -6,6 +7,7 @@ export type GoogleEventsQueryOptions = {
 
 export const buildGoogleEventsQuery = ({
   searchQuery,
+  pageToken,
   timeMax,
   timeMin,
 }: GoogleEventsQueryOptions) => {
@@ -18,5 +20,6 @@ export const buildGoogleEventsQuery = ({
   if (timeMax) query.set("timeMax", timeMax);
   if (timeMin) query.set("timeMin", timeMin);
   if (searchQuery) query.set("q", searchQuery);
+  if (pageToken) query.set("pageToken", pageToken);
   return query;
 };

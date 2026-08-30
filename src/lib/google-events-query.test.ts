@@ -36,3 +36,13 @@ test("supports future-only queries without an upper bound", () => {
   assert.equal(query.get("timeMin"), "2026-08-24T00:00:00.000Z");
   assert.equal(query.has("timeMax"), false);
 });
+
+test("supports provider pagination tokens", () => {
+  const query = buildGoogleEventsQuery({
+    pageToken: "next-page",
+    timeMax: "2026-08-24T00:00:00.000Z",
+    timeMin: null,
+  });
+
+  assert.equal(query.get("pageToken"), "next-page");
+});

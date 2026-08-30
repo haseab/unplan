@@ -22,7 +22,7 @@ import { toast } from "sonner";
 import { addDays, differenceInMinutes, format, setHours, startOfDay } from "date-fns";
 import { EventParticipantsEditor } from "@/components/event-participants-editor";
 import { EventColorPicker } from "@/components/event-color-picker";
-import { EventTitleField } from "@/components/event-title-field";
+import { EventTitleEditor } from "@/components/event-title-editor";
 import { CalendarPicker } from "@/components/calendar-picker";
 import { MultiEventSidebar } from "@/components/multi-event-sidebar";
 import { useDebouncedEventUpdate } from "@/hooks/use-debounced-event-update";
@@ -33,6 +33,10 @@ import type {
 } from "@/lib/calendar-types";
 import { shouldAutoCreateEventConference } from "@/lib/event-participants";
 import { googleMeetCode } from "@/lib/google-conference-client";
+import {
+  recentEventEditDurationMinutes,
+  type RecentEventTitle,
+} from "@/lib/recent-event-titles";
 
 export type EventCreationDraft = {
   allDay?: boolean;
@@ -41,9 +45,11 @@ export type EventCreationDraft = {
   start: Date;
 };
 
+export type EventTitleFocusMode = "caret-end" | "select-all" | null;
+
 type EventCreationSidebarProps = {
   openSelectedEventCalendarPicker: boolean;
-  autoFocusSelectedEventTitle: boolean;
+  selectedEventTitleFocusMode: EventTitleFocusMode;
   calendarSources: CalendarSource[];
   calendars: CalendarSource[];
   draft: EventCreationDraft | null;
@@ -56,8 +62,11 @@ type EventCreationSidebarProps = {
   onDeleteSelection: () => void | Promise<void>;
   onDuplicateSelection: () => void | Promise<void>;
   onDraftPreviewChange: (preview: { calendarId: string; title: string }) => void;
+  onFocusWithinChange: (focused: boolean) => void;
   onFocusEvent: (event: CalendarEvent) => void;
   onRemoveSelection: (eventId: string) => void;
+  onRecentTitleUsed: (entry: RecentEventTitle) => void;
+  onCreateFromRecent: (entry: RecentEventTitle) => void;
   onSelectedEventCalendarPickerClose: () => void;
   onSelectedEventCalendarPickerOpen: () => void;
   onSelectedEventTitleAutoFocused: () => void;
@@ -68,7 +77,9 @@ type EventCreationSidebarProps = {
   onPreviewEvent: (event: CalendarEvent) => void;
   onUpdateEvent: (event: CalendarEvent) => Promise<boolean>;
   selectedEvents: CalendarEvent[];
-  unsyncedEventIds: ReadonlySet<string>;
+  recentTitles: RecentEventTitle[];
+  selectedEventPendingCreation: boolean;
+  syncPausedEventIds: ReadonlySet<string>;
 };
 
 const formatDuration = (start: Date, end: Date) => {
@@ -109,26 +120,30 @@ function GoogleMeetMark() {
 
 function EventDetailsEditor({
   openCalendarPicker,
-  autoFocusTitle,
+  titleFocusMode,
   calendar,
   calendars,
   event,
   onCreateConference,
   onFocusEvent,
+  onRecentTitleUsed,
   onTitleAutoFocused,
   onPreview,
   onRespond,
   onCalendarPickerClose,
   onCalendarPickerOpen,
   onUpdate,
+  pendingCreation,
+  recentTitles,
 }: {
   openCalendarPicker: boolean;
-  autoFocusTitle: boolean;
+  titleFocusMode: EventTitleFocusMode;
   calendar: CalendarSource | null;
   calendars: CalendarSource[];
   event: CalendarEvent;
   onCreateConference: (event: CalendarEvent) => Promise<string>;
   onFocusEvent: (event: CalendarEvent) => void;
+  onRecentTitleUsed: (entry: RecentEventTitle) => void;
   onTitleAutoFocused: () => void;
   onPreview: (event: CalendarEvent) => void;
   onRespond: (
@@ -138,14 +153,17 @@ function EventDetailsEditor({
   onCalendarPickerClose: () => void;
   onCalendarPickerOpen: () => void;
   onUpdate: (event: CalendarEvent) => Promise<boolean>;
+  pendingCreation: boolean;
+  recentTitles: RecentEventTitle[];
 }) {
   const {
+    deferUpdate,
     draft: edited,
     flushUpdate,
     updateDraft,
     updateLocalDraft,
   } = useDebouncedEventUpdate({
-    delay: 500,
+    delay: 1_000,
     event,
     onPreview,
     onUpdate,
@@ -190,14 +208,18 @@ function EventDetailsEditor({
   );
 
   React.useLayoutEffect(() => {
-    if (!autoFocusTitle) return;
+    if (!titleFocusMode) return;
     const title = titleRef.current;
     if (!title) return;
-    const caretPosition = title.value.length;
     title.focus({ preventScroll: true });
-    title.setSelectionRange(caretPosition, caretPosition);
+    if (titleFocusMode === "select-all") {
+      title.select();
+    } else {
+      const caretPosition = title.value.length;
+      title.setSelectionRange(caretPosition, caretPosition);
+    }
     onTitleAutoFocused();
-  }, [autoFocusTitle, onTitleAutoFocused]);
+  }, [onTitleAutoFocused, titleFocusMode]);
 
   React.useEffect(() => () => {
     if (openCalendarPicker) onCalendarPickerClose();
@@ -227,6 +249,35 @@ function EventDetailsEditor({
       color: current.colorId ? current.color : nextCalendar.backgroundColor,
       textColor: current.colorId ? current.textColor : nextCalendar.foregroundColor,
     }));
+  };
+
+  const applyRecentTitleMetadata = (entry: RecentEventTitle) => {
+    const nextCalendar = calendars.find((item) => item.id === entry.calendarId);
+    updateDraft((current) => {
+      const start = new Date(current.start);
+      const currentDurationMinutes = Math.max(
+        0,
+        Math.round((new Date(current.end).getTime() - start.getTime()) / 60_000),
+      );
+      const durationMinutes = recentEventEditDurationMinutes({
+        allDay: current.allDay === true,
+        currentDurationMinutes,
+        pendingCreation,
+        recentDurationMinutes: entry.durationMinutes,
+      });
+      return {
+        ...current,
+        ...(nextCalendar ? {
+          calendarId: nextCalendar.id,
+          calendarColor: nextCalendar.backgroundColor,
+          color: current.colorId ? current.color : nextCalendar.backgroundColor,
+          textColor: current.colorId ? current.textColor : nextCalendar.foregroundColor,
+        } : {}),
+        end: pendingCreation
+          ? new Date(start.getTime() + durationMinutes * 60_000).toISOString()
+          : current.end,
+      };
+    });
   };
 
   const toggleAllDay = (allDay: boolean) => {
@@ -289,11 +340,19 @@ function EventDetailsEditor({
 
   return (
     <div className="event-details event-editor">
-      <EventTitleField
+      <EventTitleEditor
         ref={titleRef}
         accentColor={edited.color}
         aria-label="Event title"
+        calendars={calendars}
         data-sidebar-primary-focus
+        excludeCurrentTitle
+        onRecentTitleNavigation={deferUpdate}
+        onRecentTitleUsed={(entry) => {
+          applyRecentTitleMetadata(entry);
+          onRecentTitleUsed(entry);
+        }}
+        recentTitles={recentTitles}
         value={edited.title}
         onValueChange={(title) => change({ title })}
         onKeyDown={(keyboardEvent) => {
@@ -519,7 +578,7 @@ function EventDetailsEditor({
 
 export function EventCreationSidebar({
   openSelectedEventCalendarPicker,
-  autoFocusSelectedEventTitle,
+  selectedEventTitleFocusMode,
   calendarSources,
   calendars,
   draft,
@@ -532,16 +591,21 @@ export function EventCreationSidebar({
   onDeleteSelection,
   onDuplicateSelection,
   onDraftPreviewChange,
+  onFocusWithinChange,
   onFocusEvent,
   onRemoveSelection,
   onSelectedEventCalendarPickerClose,
   onSelectedEventCalendarPickerOpen,
   onSelectedEventTitleAutoFocused,
   onPreviewEvent,
+  onCreateFromRecent,
+  onRecentTitleUsed,
   onRespondToEvent,
   onUpdateEvent,
   selectedEvents,
-  unsyncedEventIds,
+  recentTitles,
+  selectedEventPendingCreation,
+  syncPausedEventIds,
 }: EventCreationSidebarProps) {
   const [title, setTitle] = React.useState("");
   const [calendarId, setCalendarId] = React.useState(draft?.calendarId ?? "");
@@ -563,9 +627,16 @@ export function EventCreationSidebar({
       className="event-sidebar-panel"
       aria-label={isShowingSelection ? "Event details" : "Create event"}
       data-event-creation-surface="true"
+      onBlurCapture={(event) => {
+        if (event.relatedTarget instanceof Node && event.currentTarget.contains(event.relatedTarget)) {
+          return;
+        }
+        onFocusWithinChange(false);
+      }}
+      onFocusCapture={() => onFocusWithinChange(true)}
     >
       <div className="event-creation-heading">
-        <div>{isShowingSelection ? <CalendarDays size={17} /> : <CalendarPlus size={17} />}<span><strong>{isShowingMultiSelection ? `${selectedEvents.length} events` : isShowingSelection ? "Event details" : "New event"}</strong>{selectedEvents.some(({ id }) => unsyncedEventIds.has(id)) ? <small className="event-unsynced-label">Unsynced · editing keeps sync paused</small> : !selectedEvent && <small>{isShowingMultiSelection ? "Bulk edit selection" : "Add it to your calendar"}</small>}</span></div>
+        <div>{isShowingSelection ? <CalendarDays size={17} /> : <CalendarPlus size={17} />}<span><strong>{isShowingMultiSelection ? `${selectedEvents.length} events` : isShowingSelection ? "Event details" : "New event"}</strong>{selectedEvents.some(({ id }) => syncPausedEventIds.has(id)) ? <small className="event-unsynced-label">Unsynced · editing keeps sync paused</small> : !selectedEvent && <small>{isShowingMultiSelection ? "Bulk edit selection" : "Add it to your calendar"}</small>}</span></div>
         {(draft || isShowingSelection) && <button className="icon-button" onClick={draft ? onCancel : onClearSelection} aria-label={draft ? "Cancel event creation" : "Close event details"}><X size={16} /></button>}
       </div>
 
@@ -589,10 +660,16 @@ export function EventCreationSidebar({
             submitCreation();
           }}
         >
-          <EventTitleField
+          <EventTitleEditor
             accentColor={creationCalendar?.backgroundColor ?? "#9ba1ad"}
             aria-label="Event name"
             autoFocus
+            calendars={calendars}
+            onRecentTitleUsed={(entry) => {
+              onRecentTitleUsed(entry);
+              onCreateFromRecent(entry);
+            }}
+            recentTitles={recentTitles}
             onKeyDown={(event) => {
               if (
                 event.key !== "Tab"
@@ -652,18 +729,21 @@ export function EventCreationSidebar({
       ) : selectedEvent ? (
         <EventDetailsEditor
           openCalendarPicker={openSelectedEventCalendarPicker}
-          autoFocusTitle={autoFocusSelectedEventTitle}
+          titleFocusMode={selectedEventTitleFocusMode}
           calendar={selectedCalendar}
           calendars={calendars}
           event={selectedEvent}
           onCreateConference={onCreateConference}
           onFocusEvent={onFocusEvent}
+          onRecentTitleUsed={onRecentTitleUsed}
           onTitleAutoFocused={onSelectedEventTitleAutoFocused}
           onPreview={onPreviewEvent}
           onRespond={onRespondToEvent}
           onCalendarPickerClose={onSelectedEventCalendarPickerClose}
           onCalendarPickerOpen={onSelectedEventCalendarPickerOpen}
           onUpdate={onUpdateEvent}
+          pendingCreation={selectedEventPendingCreation}
+          recentTitles={recentTitles}
         />
       ) : selectedEvents.length > 1 ? (
         <MultiEventSidebar

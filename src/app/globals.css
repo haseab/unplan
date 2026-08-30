@@ -1148,6 +1148,24 @@ kbd {
 .event-editor-hero .event-details-color { top: 18px; height: 21px; }
 .event-editor .event-editor-hero textarea { display: block; width: 100%; min-height: 30px; resize: none; overflow: hidden; overflow-wrap: anywhere; padding: 0; border: 0; border-radius: 0; outline: 0; background: transparent; color: var(--ink); font: inherit; font-size: 18px; font-weight: 540; line-height: 1.3; letter-spacing: -0.02em; white-space: pre-wrap; word-break: break-word; }
 .event-editor .event-editor-hero textarea:focus { border-color: transparent; background: transparent; box-shadow: inset 0 -2px 0 var(--blue); }
+.event-title-editor { min-width: 0; }
+.event-title-editor[data-open="true"] .event-editor-hero { padding-bottom: 11px; border-bottom-color: transparent; }
+.recent-event-titles { padding: 0 10px 11px; border-bottom: 1px solid var(--line); animation: recent-event-titles-in 150ms cubic-bezier(0.2, 0.8, 0.2, 1); }
+.recent-event-titles > header { display: flex; height: 26px; align-items: center; gap: 6px; padding: 0 7px; color: var(--text-soft); }
+.recent-event-titles > header span { font-size: 9px; font-weight: 690; text-transform: uppercase; letter-spacing: 0.065em; }
+.recent-event-titles > header small { margin-left: auto; color: var(--text-faint); font-size: 8px; }
+.recent-event-titles > div { display: grid; gap: 2px; }
+.recent-event-title-option { display: grid; width: 100%; min-width: 0; min-height: 44px; grid-template-columns: 4px minmax(0, 1fr) auto; align-items: center; gap: 9px; padding: 5px 8px; border: 0; border-radius: 8px; outline: 0; background: transparent; color: var(--ink); text-align: left; cursor: pointer; transition: background 120ms ease, transform 100ms ease; }
+.recent-event-title-option:hover,
+.recent-event-title-option[aria-selected="true"] { background: var(--hover-strong); }
+.recent-event-title-option:active { transform: scale(0.992); }
+.recent-event-title-option:focus-visible { box-shadow: inset 0 0 0 1px var(--blue-border), 0 0 0 2px var(--blue-soft); }
+.recent-event-title-color { width: 4px; height: 27px; border-radius: 99px; opacity: 0.9; }
+.recent-event-title-copy { display: grid; min-width: 0; gap: 3px; }
+.recent-event-title-copy strong { overflow: hidden; color: var(--ink); font-size: 11.5px; font-weight: 590; letter-spacing: -0.01em; text-overflow: ellipsis; white-space: nowrap; }
+.recent-event-title-copy small { overflow: hidden; color: var(--text-soft); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.recent-event-title-option > em { padding-left: 5px; color: var(--text-faint); font-size: 9px; font-style: normal; font-variant-numeric: tabular-nums; white-space: nowrap; }
+@keyframes recent-event-titles-in { from { opacity: 0; transform: translateY(-4px); } }
 .event-editor-time { gap: 10px; }
 .event-editor-summary-row { grid-template-columns: 17px minmax(0, 1fr) 30px !important; align-items: center; }
 .event-editor-summary-row > button { display: grid; width: 30px; height: 30px; place-items: center; padding: 0; border: 0; border-radius: 7px; background: transparent; color: var(--text-soft); cursor: pointer; transition: background 140ms ease, color 140ms ease; }

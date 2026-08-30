@@ -39,6 +39,7 @@ type GoogleEvent = {
 };
 type GoogleEventsResponse = {
   items?: GoogleEvent[];
+  nextPageToken?: string;
   error?: string | { message?: string };
 };
 type GoogleColor = { background: string; foreground: string };
@@ -125,36 +126,44 @@ const loadGoogleEvents = async (
   timeMax: string | null,
   searchQuery?: string,
 ) => {
-  const query = buildGoogleEventsQuery({
-    searchQuery,
-    timeMax,
-    timeMin,
-  });
-  const response = await googleFetch(
-    request,
-    `/calendars/${encodeURIComponent(providerCalendarId)}/events?${query}`,
-  );
-  const responseText = await response.text();
-  let data: GoogleEventsResponse = {};
-  try {
-    data = responseText ? JSON.parse(responseText) as GoogleEventsResponse : {};
-  } catch {
-    // Preserve the HTTP status below when an upstream proxy returns non-JSON.
-  }
-  if (!response.ok) {
-    const providerMessage = typeof data.error === "string"
-      ? data.error
-      : data.error?.message;
-    const message = providerMessage
-      ?? `Google events request failed (${response.status} ${response.statusText || "Unknown"})`;
-    console.warn("[BUG:GOOGLE-PARTIAL-SYNC] Calendar event import failed", {
-      accountId,
-      message,
-      status: response.status,
+  const events: GoogleEvent[] = [];
+  let pageToken: string | undefined;
+  do {
+    const query = buildGoogleEventsQuery({
+      pageToken,
+      searchQuery,
+      timeMax,
+      timeMin,
     });
-    throw new GoogleProviderError(message, response.status);
-  }
-  return (data.items ?? []).filter((event) => event.status !== "cancelled");
+    const response = await googleFetch(
+      request,
+      `/calendars/${encodeURIComponent(providerCalendarId)}/events?${query}`,
+    );
+    const responseText = await response.text();
+    let data: GoogleEventsResponse = {};
+    try {
+      data = responseText ? JSON.parse(responseText) as GoogleEventsResponse : {};
+    } catch {
+      // Preserve the HTTP status below when an upstream proxy returns non-JSON.
+    }
+    if (!response.ok) {
+      const providerMessage = typeof data.error === "string"
+        ? data.error
+        : data.error?.message;
+      const message = providerMessage
+        ?? `Google events request failed (${response.status} ${response.statusText || "Unknown"})`;
+      console.warn("[BUG:GOOGLE-PARTIAL-SYNC] Calendar event import failed", {
+        accountId,
+        message,
+        status: response.status,
+      });
+      throw new GoogleProviderError(message, response.status);
+    }
+    events.push(...(data.items ?? []));
+    pageToken = data.nextPageToken;
+  } while (pageToken);
+
+  return events.filter((event) => event.status !== "cancelled");
 };
 
 const mapGoogleEvent = (

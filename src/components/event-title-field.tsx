@@ -2,7 +2,7 @@
 
 import * as React from "react";
 
-type EventTitleFieldProps = Omit<
+export type EventTitleFieldProps = Omit<
   React.TextareaHTMLAttributes<HTMLTextAreaElement>,
   "onChange" | "rows" | "value"
 > & {

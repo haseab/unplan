@@ -45,6 +45,7 @@ import { DateCommandField } from "@/components/date-command-field";
 import {
   EventCreationSidebar,
   type EventCreationDraft,
+  type EventTitleFocusMode,
 } from "@/components/event-creation-sidebar";
 import { EventSearchDialog } from "@/components/event-search-dialog";
 import { GuestNotificationDialog } from "@/components/guest-notification-dialog";
@@ -70,6 +71,8 @@ import {
 import { normalizeDayCount, useDayCount } from "@/hooks/use-day-count";
 import { useGuestNotificationConfirmation } from "@/hooks/use-guest-notification-confirmation";
 import { useGoogleCalendarRefresh } from "@/hooks/use-google-calendar-refresh";
+import { useRecentEventHistory } from "@/hooks/use-recent-event-history";
+import { useRecentEventTitles } from "@/hooks/use-recent-event-titles";
 import {
   type DateNavigationDirection,
   useInfiniteCalendarScroll,
@@ -87,7 +90,6 @@ import {
   hasActiveActionToast,
   hasPendingActionToast,
   queueActionToast,
-  refreshActionToast,
   setActionToastResourceHold,
   subscribeActionToastSync,
   triggerToastSubmit,
@@ -111,13 +113,13 @@ import type {
   CalendarSource,
   GoogleSendUpdates,
 } from "@/lib/calendar-types";
+import { recentEventPreviewDurationMinutes } from "@/lib/recent-event-titles";
 import {
   adjacentEventCreationDates,
   eventCreationDates,
   eventCreationAnchorRange,
   eventCreationPoint,
   eventCreationRange,
-  eventCreationRangeFromDates,
   hasEventCreationDuration,
   isEventCreationAnchor,
   type EventCreationRange,
@@ -336,8 +338,6 @@ type PendingEventCreation = {
   action: ReturnType<typeof queueActionToast> | null;
   coalesceKey: string;
   eventIds: Set<string>;
-  kind: "created" | "duplicated";
-  latestById: Map<string, CalendarEvent>;
 };
 type EventSearchCacheEntry = {
   controller: AbortController;
@@ -391,6 +391,9 @@ const calendarEventKey = (calendarId: string, eventId: string) =>
 
 const eventChangeCoalesceKey = (eventIds: Iterable<string>) =>
   `event-change:${[...eventIds].sort().join("|")}`;
+
+const eventCreationCoalesceKey = (eventIds: Iterable<string>) =>
+  `event-create:${[...eventIds].sort().join("|")}`;
 
 const navigationDirection = (
   target: Date,
@@ -450,11 +453,18 @@ export function CalendarApp() {
   );
   const [calendars, setCalendars] = React.useState<CalendarSource[]>(demoCalendars);
   const [events, setEvents] = React.useState<CalendarEvent[]>(() => makeDemoEvents());
+  const {
+    entries: recentEventTitles,
+    recordUse: recordRecentEventTitleUse,
+    rememberEvents: rememberRecentEventTitles,
+  } = useRecentEventTitles(events);
   const [eventDetailsPreview, setEventDetailsPreview] = React.useState<CalendarEvent | null>(null);
   const [visibleCalendars, setVisibleCalendars] = React.useState<Set<string>>(
     () => new Set(demoCalendars.map((calendar) => calendar.id)),
   );
   const [selected, setSelected] = React.useState<Set<string>>(new Set());
+  const [pendingCreationEventIds, setPendingCreationEventIds] =
+    React.useState<Set<string>>(new Set());
   const [google, setGoogle] = React.useState<GoogleStatus>({
     accounts: [],
     configured: false,
@@ -469,6 +479,10 @@ export function CalendarApp() {
   const unsyncedEventIds = React.useMemo(
     () => new Set(actionToastSync.pendingResourceIds),
     [actionToastSync.pendingResourceIds],
+  );
+  const syncPausedEventIds = React.useMemo(
+    () => new Set(actionToastSync.pausedResourceIds),
+    [actionToastSync.pausedResourceIds],
   );
   const [sidebarOpen, setSidebarOpen] = React.useState(true);
   const [showEventSearch, setShowEventSearch] = React.useState(false);
@@ -485,13 +499,15 @@ export function CalendarApp() {
     id: string;
   } | null>(null);
   const [rightSidebarTab, setRightSidebarTab] = React.useState<RightSidebarTab>("todos");
+  const [eventDetailsFocused, setEventDetailsFocused] = React.useState(false);
   const [openSelectedEventCalendarPicker, setOpenSelectedEventCalendarPicker] = React.useState(false);
-  const [autoFocusSelectedEventTitle, setAutoFocusSelectedEventTitle] = React.useState(false);
+  const [selectedEventTitleFocusMode, setSelectedEventTitleFocusMode] =
+    React.useState<EventTitleFocusMode>(null);
   const closeSelectedEventCalendarPicker = React.useCallback(() => {
     setOpenSelectedEventCalendarPicker(false);
   }, []);
   const consumeSelectedEventTitleAutoFocus = React.useCallback(() => {
-    setAutoFocusSelectedEventTitle(false);
+    setSelectedEventTitleFocusMode(null);
   }, []);
   const [todoistCustomGroups, setTodoistCustomGroups] = React.useState<string[]>(() => {
     if (typeof window === "undefined") return [];
@@ -595,11 +611,16 @@ export function CalendarApp() {
   const dateCommandDialogInputRef = React.useRef<HTMLInputElement>(null);
   const scrollRef = React.useRef<HTMLDivElement>(null);
   const eventsRef = React.useRef(events);
+  const createEventRef = React.useRef<((
+    title: string,
+    calendarId: string,
+    draft: EventCreationDraft,
+    options?: { focusTitle?: boolean },
+  ) => void) | null>(null);
   const pendingEventMutationOriginsRef = React.useRef(new Map<string, CalendarEvent>());
   const pendingEventCreationsRef = React.useRef(new Map<string, PendingEventCreation>());
   const keyboardMoveSessionRef = React.useRef<{
     action: ReturnType<typeof queueActionToast> | null;
-    absorbedPendingCreation: boolean;
     dayDelta: number;
     endMinuteDelta: number;
     minuteDelta: number;
@@ -624,6 +645,10 @@ export function CalendarApp() {
     eventKey: string;
   } | null>(null);
   const pendingRenderedEventFocusRef = React.useRef<{
+    eventId: string;
+    eventKey: string;
+  } | null>(null);
+  const pendingKeyboardMovedEventScrollRef = React.useRef<{
     eventId: string;
     eventKey: string;
   } | null>(null);
@@ -699,38 +724,29 @@ export function CalendarApp() {
   }, []);
 
   const clearPendingEventCreation = React.useCallback((creation: PendingEventCreation) => {
+    const clearedIds = new Set<string>();
     creation.eventIds.forEach((eventId) => {
       if (pendingEventCreationsRef.current.get(eventId) === creation) {
         pendingEventCreationsRef.current.delete(eventId);
+        clearedIds.add(eventId);
       }
     });
+    if (clearedIds.size) {
+      setPendingCreationEventIds((current) => new Set(
+        [...current].filter((eventId) => !clearedIds.has(eventId)),
+      ));
+    }
   }, []);
 
   const registerPendingEventCreation = React.useCallback((creation: PendingEventCreation) => {
     creation.eventIds.forEach((eventId) => {
       pendingEventCreationsRef.current.set(eventId, creation);
     });
+    setPendingCreationEventIds((current) => new Set([
+      ...current,
+      ...creation.eventIds,
+    ]));
   }, []);
-
-  const absorbPendingEventChanges = React.useCallback((updatedEvents: CalendarEvent[]) => {
-    const creations = new Set<PendingEventCreation>();
-    for (const event of updatedEvents) {
-      const creation = pendingEventCreationsRef.current.get(event.id);
-      if (!creation) return false;
-      creations.add(creation);
-    }
-    updatedEvents.forEach((event) => {
-      pendingEventCreationsRef.current.get(event.id)?.latestById.set(event.id, event);
-    });
-    creations.forEach((creation) => {
-      const latest = [...creation.latestById.values()];
-      const message = latest.length === 1
-        ? `${creation.kind === "created" ? "Created" : "Duplicated"} ${latest[0].title}`
-        : `Duplicated ${latest.length} events`;
-      refreshActionToast(creation.coalesceKey, message, toastDuration);
-    });
-    return true;
-  }, [toastDuration]);
 
   const cancelPendingEventCreations = React.useCallback((eventIds: ReadonlySet<string>) => {
     const creations = new Set(
@@ -756,10 +772,10 @@ export function CalendarApp() {
   React.useEffect(() => {
     setActionToastResourceHold(
       "event-details",
-      rightSidebarTab === "events" ? selected : [],
+      rightSidebarTab === "events" && eventDetailsFocused ? selected : [],
     );
     return () => clearActionToastResourceHold("event-details");
-  }, [rightSidebarTab, selected]);
+  }, [eventDetailsFocused, rightSidebarTab, selected]);
 
   React.useEffect(() => {
     currentCalendarPositionRef.current = { dayCount, weekStart };
@@ -819,6 +835,17 @@ export function CalendarApp() {
     () => calendars.filter((calendar) => calendar.writable !== false),
     [calendars],
   );
+  const recentHistoryCalendars = React.useMemo(
+    () => writableCalendars.filter((calendar) =>
+      calendar.provider === "google" && visibleCalendars.has(calendar.id)
+    ),
+    [visibleCalendars, writableCalendars],
+  );
+  useRecentEventHistory({
+    calendars: recentHistoryCalendars,
+    enabled: google.connected,
+    onEvents: rememberRecentEventTitles,
+  });
   const defaultCalendar = React.useMemo(
     () => writableCalendars.find((calendar) => calendar.id === preferredCalendarId)
       ?? writableCalendars[0]
@@ -829,17 +856,19 @@ export function CalendarApp() {
     () => findTechnicalitiesCalendar(writableCalendars),
     [writableCalendars],
   );
-  const openAdjacentEventDraft = React.useCallback((edge: "after" | "before") => {
-    if (selectedEvents.length !== 1 || !defaultCalendar) return false;
-
+  const createAdjacentEvent = React.useCallback((edge: "after" | "before") => {
+    if (selectedEvents.length !== 1 || !defaultCalendar || !createEventRef.current) {
+      return false;
+    }
     const dates = adjacentEventCreationDates(selectedEvents[0], edge);
-    setCreationDraft({ calendarId: defaultCalendar.id, ...dates });
-    setCreationCalendarId(defaultCalendar.id);
-    setCreationPreviewTitle("");
-    setCreationRange(eventCreationRangeFromDates(dates.start, dates.end, renderedDays));
-    setRightSidebarTab("events");
+    createEventRef.current(
+      "New event",
+      defaultCalendar.id,
+      { calendarId: defaultCalendar.id, ...dates },
+      { focusTitle: true },
+    );
     return true;
-  }, [defaultCalendar, renderedDays, selectedEvents]);
+  }, [defaultCalendar, selectedEvents]);
   const visibleTodoistTasks = React.useMemo(
     () => todoistTasks.filter((task) =>
       todoistBucketProjectIds.includes(task.projectId)
@@ -1270,6 +1299,7 @@ export function CalendarApp() {
         });
       }
       const loadedIds = new Set(reconciliation.events.map((event) => event.id));
+      rememberRecentEventTitles(reconciliation.events);
       setEvents(reconciliation.events);
       setSelected((current) =>
         new Set([...current].filter((eventId) => loadedIds.has(eventId))),
@@ -1314,7 +1344,7 @@ export function CalendarApp() {
       }
       if (loadVersion === googleEventsLoadVersionRef.current) setSyncing(false);
     }
-  }, [calendars, connectGoogle, google.connected, renderStart, renderedDayCount, visibleCalendars]);
+  }, [calendars, connectGoogle, google.connected, rememberRecentEventTitles, renderStart, renderedDayCount, visibleCalendars]);
 
   React.useEffect(() => () => googleEventsLoadControllerRef.current?.abort(), []);
 
@@ -1851,57 +1881,55 @@ export function CalendarApp() {
               event.id === resized.id ? resized : event,
             ),
           );
-          if (!absorbPendingEventChanges([resized])) {
-            const restoreInteractionOriginal = () =>
-              setEvents((current) =>
-                current.map((event) =>
-                  event.id === resize.original.id ? resize.original : event,
-                ),
-              );
-            const resizeHoldScope = `event-resize:${resized.id}:${Date.now()}`;
-            setActionToastResourceHold(resizeHoldScope, [resized.id]);
-            void (async () => {
-              try {
-                const sendUpdates = await chooseGuestNotifications("update", [resized]);
-                if (!sendUpdates) {
-                  restoreInteractionOriginal();
-                  return;
-                }
-                const [mutationOrigin] = rememberEventMutationOrigins([resize.original]);
-                const restoreMutationOrigin = () =>
-                  setEvents((current) => current.map((event) =>
-                    event.id === mutationOrigin.id ? mutationOrigin : event,
-                  ));
-                queueActionToast(`Resized ${resized.title}`, {
-                  coalesceKey: eventChangeCoalesceKey([resized.id]),
-                  duration: toastDuration,
-                  onSettled: () => clearEventMutationOrigins([resized.id]),
-                  onUndo: restoreMutationOrigin,
-                  onSubmit: async (reportProgress) => {
-                    const failedIds = await persistMovedEvents(
-                      [resized],
-                      reportProgress,
-                      sendUpdates,
-                      [mutationOrigin],
-                    );
-                    if (failedIds.length) throw new Error("Resize could not be saved");
-                  },
-                  onError: (error) => {
-                    restoreMutationOrigin();
-                    toast.error(
-                      error instanceof Error
-                        ? error.message
-                        : "Resize could not be saved",
-                    );
-                  },
-                  resourceIds: [resized.id],
-                  submittingMessage: "Saving event duration…",
-                });
-              } finally {
-                clearActionToastResourceHold(resizeHoldScope);
+          const restoreInteractionOriginal = () =>
+            setEvents((current) =>
+              current.map((event) =>
+                event.id === resize.original.id ? resize.original : event,
+              ),
+            );
+          const resizeHoldScope = `event-resize:${resized.id}:${Date.now()}`;
+          setActionToastResourceHold(resizeHoldScope, [resized.id]);
+          void (async () => {
+            try {
+              const sendUpdates = await chooseGuestNotifications("update", [resized]);
+              if (!sendUpdates) {
+                restoreInteractionOriginal();
+                return;
               }
-            })();
-          }
+              const [mutationOrigin] = rememberEventMutationOrigins([resize.original]);
+              const restoreMutationOrigin = () =>
+                setEvents((current) => current.map((event) =>
+                  event.id === mutationOrigin.id ? mutationOrigin : event,
+                ));
+              queueActionToast(`Resized ${resized.title}`, {
+                coalesceKey: eventChangeCoalesceKey([resized.id]),
+                duration: toastDuration,
+                onSettled: () => clearEventMutationOrigins([resized.id]),
+                onUndo: restoreMutationOrigin,
+                onSubmit: async (reportProgress) => {
+                  const failedIds = await persistMovedEvents(
+                    [resized],
+                    reportProgress,
+                    sendUpdates,
+                    [mutationOrigin],
+                  );
+                  if (failedIds.length) throw new Error("Resize could not be saved");
+                },
+                onError: (error) => {
+                  restoreMutationOrigin();
+                  toast.error(
+                    error instanceof Error
+                      ? error.message
+                      : "Resize could not be saved",
+                  );
+                },
+                resourceIds: [resized.id],
+                submittingMessage: "Saving event duration…",
+              });
+            } finally {
+              clearActionToastResourceHold(resizeHoldScope);
+            }
+          })();
         }
       }
       if (dragRef.current) {
@@ -1944,10 +1972,8 @@ export function CalendarApp() {
             }
             const pendingCreation: PendingEventCreation = {
               action: null,
-              coalesceKey: eventChangeCoalesceKey(copyIds),
+              coalesceKey: eventCreationCoalesceKey(copyIds),
               eventIds: copyIds,
-              kind: "duplicated",
-              latestById: new Map(copies.map((event) => [event.id, event])),
             };
             registerPendingEventCreation(pendingCreation);
             pendingCreation.action = queueActionToast(
@@ -1961,9 +1987,8 @@ export function CalendarApp() {
                   rollbackCopies();
                 },
                 onSubmit: async (reportProgress) => {
-                  const latestCopies = [...pendingCreation.latestById.values()];
                   clearPendingEventCreation(pendingCreation);
-                  const googleCopies = latestCopies.filter(({ provider }) => provider === "google");
+                  const googleCopies = copies.filter(({ provider }) => provider === "google");
                   if (!googleCopies.length) return;
                   setSyncing(true);
                   try {
@@ -2202,74 +2227,69 @@ export function CalendarApp() {
             moveEvent(event, drag.dayDelta, drag.minuteDelta),
           );
           const movedIds = moved.map(({ id }) => id);
-          if (absorbPendingEventChanges(moved)) {
-            const movedMap = new Map(moved.map((event) => [event.id, event]));
-            setEvents((current) => current.map((event) => movedMap.get(event.id) ?? event));
-          } else {
-            const moveHoldScope = `event-move:${moved.map(({ id }) => id).join("|")}:${Date.now()}`;
-            setActionToastResourceHold(moveHoldScope, moved.map(({ id }) => id));
-            void (async () => {
-              try {
-                const restoreInteractionOriginals = () =>
-                  setEvents((current) => restoreEventSnapshots(current, drag.originals));
-                const confirmed = await confirmBulkAction({
-                  action: "move",
-                  count: moved.length,
-                });
-                if (!confirmed) {
-                  restoreInteractionOriginals();
-                  return;
-                }
-                const sendUpdates = await chooseGuestNotifications("update", moved);
-                if (!sendUpdates) {
-                  restoreInteractionOriginals();
-                  return;
-                }
-
-                const mutationOrigins = rememberEventMutationOrigins(drag.originals);
-                const restoreIds = (ids: Set<string>) => {
-                  const originals = mutationOrigins.filter((event) => ids.has(event.id));
-                  setEvents((current) => restoreEventSnapshots(current, originals));
-                };
-                const restoreMutationOrigins = () => restoreIds(new Set(movedIds));
-                const movedMap = new Map(moved.map((event) => [event.id, event]));
-                setEvents((current) => current.map((event) => movedMap.get(event.id) ?? event));
-                queueActionToast(
-                  `Moved ${moved.length === 1 ? moved[0].title : `${moved.length} events`}`,
-                  {
-                    coalesceKey: eventChangeCoalesceKey(movedIds),
-                    duration: toastDuration,
-                    onSettled: () => clearEventMutationOrigins(movedIds),
-                    onUndo: restoreMutationOrigins,
-                    onSubmit: async (reportProgress) => {
-                      const failedIds = await persistMovedEvents(
-                        moved,
-                        reportProgress,
-                        sendUpdates,
-                        mutationOrigins,
-                      );
-                      if (!failedIds.length) return;
-                      restoreIds(new Set(failedIds));
-                      throw new Error(
-                        `${failedIds.length} ${failedIds.length === 1 ? "event" : "events"} could not be moved`,
-                      );
-                    },
-                    onError: (error) => {
-                      toast.error(
-                        error instanceof Error
-                          ? error.message
-                          : "Move could not be saved",
-                      );
-                    },
-                    resourceIds: moved.map(({ id }) => id),
-                    submittingMessage: "Saving event move…",
-                  },
-                );
-              } finally {
-                clearActionToastResourceHold(moveHoldScope);
+          const moveHoldScope = `event-move:${moved.map(({ id }) => id).join("|")}:${Date.now()}`;
+          setActionToastResourceHold(moveHoldScope, moved.map(({ id }) => id));
+          void (async () => {
+            try {
+              const restoreInteractionOriginals = () =>
+                setEvents((current) => restoreEventSnapshots(current, drag.originals));
+              const confirmed = await confirmBulkAction({
+                action: "move",
+                count: moved.length,
+              });
+              if (!confirmed) {
+                restoreInteractionOriginals();
+                return;
               }
-            })();
-          }
+              const sendUpdates = await chooseGuestNotifications("update", moved);
+              if (!sendUpdates) {
+                restoreInteractionOriginals();
+                return;
+              }
+
+              const mutationOrigins = rememberEventMutationOrigins(drag.originals);
+              const restoreIds = (ids: Set<string>) => {
+                const originals = mutationOrigins.filter((event) => ids.has(event.id));
+                setEvents((current) => restoreEventSnapshots(current, originals));
+              };
+              const restoreMutationOrigins = () => restoreIds(new Set(movedIds));
+              const movedMap = new Map(moved.map((event) => [event.id, event]));
+              setEvents((current) => current.map((event) => movedMap.get(event.id) ?? event));
+              queueActionToast(
+                `Moved ${moved.length === 1 ? moved[0].title : `${moved.length} events`}`,
+                {
+                  coalesceKey: eventChangeCoalesceKey(movedIds),
+                  duration: toastDuration,
+                  onSettled: () => clearEventMutationOrigins(movedIds),
+                  onUndo: restoreMutationOrigins,
+                  onSubmit: async (reportProgress) => {
+                    const failedIds = await persistMovedEvents(
+                      moved,
+                      reportProgress,
+                      sendUpdates,
+                      mutationOrigins,
+                    );
+                    if (!failedIds.length) return;
+                    restoreIds(new Set(failedIds));
+                    throw new Error(
+                      `${failedIds.length} ${failedIds.length === 1 ? "event" : "events"} could not be moved`,
+                    );
+                  },
+                  onError: (error) => {
+                    toast.error(
+                      error instanceof Error
+                        ? error.message
+                        : "Move could not be saved",
+                    );
+                  },
+                  resourceIds: moved.map(({ id }) => id),
+                  submittingMessage: "Saving event move…",
+                },
+              );
+            } finally {
+              clearActionToastResourceHold(moveHoldScope);
+            }
+          })();
         }
       }
       if (marqueeRef.current) {
@@ -2319,7 +2339,7 @@ export function CalendarApp() {
       clearTodoistDropFeedback();
       clearActionToastResourceHold("calendar-pointer");
     };
-  }, [absorbPendingEventChanges, calendars, chooseGuestNotifications, clearEventMutationOrigins, clearPendingEventCreation, clearTodoistDropFeedback, commitStagedTodoistTask, confirmBulkAction, gridHeight, persistMovedEvents, persistTodoistTaskOrder, pixelsPerMinute, registerPendingEventCreation, rememberEventMutationOrigins, removeLocalTodoistTasks, renderStart, renderedDayCount, renderedDays, stageTodoistTasks, toastDuration, todoistConnected, updateCalendarTaskDropProjection]);
+  }, [calendars, chooseGuestNotifications, clearEventMutationOrigins, clearPendingEventCreation, clearTodoistDropFeedback, commitStagedTodoistTask, confirmBulkAction, gridHeight, persistMovedEvents, persistTodoistTaskOrder, pixelsPerMinute, registerPendingEventCreation, rememberEventMutationOrigins, removeLocalTodoistTasks, renderStart, renderedDayCount, renderedDays, stageTodoistTasks, toastDuration, todoistConnected, updateCalendarTaskDropProjection]);
 
   const beginEventDrag = (pointer: React.PointerEvent, event: CalendarEvent) => {
     if (pointer.button !== 0) return;
@@ -2498,10 +2518,8 @@ export function CalendarApp() {
 
     const pendingCreation: PendingEventCreation = {
       action: null,
-      coalesceKey: eventChangeCoalesceKey(copyIds),
+      coalesceKey: eventCreationCoalesceKey(copyIds),
       eventIds: copyIds,
-      kind: "duplicated",
-      latestById: new Map(copies.map((event) => [event.id, event])),
     };
     registerPendingEventCreation(pendingCreation);
     pendingCreation.action = queueActionToast(
@@ -2526,9 +2544,8 @@ export function CalendarApp() {
           });
         },
         onSubmit: async (reportProgress) => {
-          const latestCopies = [...pendingCreation.latestById.values()];
           clearPendingEventCreation(pendingCreation);
-          const googleCopies = latestCopies.filter(
+          const googleCopies = copies.filter(
             (copy) => copy.provider === "google",
           );
           if (!googleCopies.length) return;
@@ -2781,6 +2798,21 @@ export function CalendarApp() {
     }
     return true;
   }, [renderedEventElements]);
+
+  React.useLayoutEffect(() => {
+    const pending = pendingKeyboardMovedEventScrollRef.current;
+    if (!pending || !events.some(({ id }) => id === pending.eventId)) return;
+    const element = renderedEventElements().find(
+      (candidate) => candidate.dataset.eventKey === pending.eventKey,
+    );
+    if (!element) return;
+    element.scrollIntoView({
+      behavior: "auto",
+      block: "nearest",
+      inline: "nearest",
+    });
+    pendingKeyboardMovedEventScrollRef.current = null;
+  }, [events, renderedEventElements, weekStart]);
 
   React.useLayoutEffect(() => {
     const pending = pendingRenderedEventFocusRef.current;
@@ -3185,7 +3217,7 @@ export function CalendarApp() {
       })) {
         event.preventDefault();
         event.stopPropagation();
-        setAutoFocusSelectedEventTitle(true);
+        setSelectedEventTitleFocusMode("caret-end");
         setRightSidebarTab("events");
         return;
       }
@@ -3268,7 +3300,7 @@ export function CalendarApp() {
         && (event.key.toLowerCase() === "n" || event.code === "KeyN")
         && !document.querySelector(".modal-backdrop")
       ) {
-        if (openAdjacentEventDraft(event.altKey ? "before" : "after")) {
+        if (createAdjacentEvent(event.altKey ? "before" : "after")) {
           event.preventDefault();
         }
       } else if (
@@ -3365,7 +3397,7 @@ export function CalendarApp() {
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [activeSelectionSurface, cancelActiveInteraction, changeDayCount, clearEventSelection, closeDateCommand, copySelection, creationDraft, dayCount, deleteEvents, dismissCreationDraft, duplicateEvents, extractedTasks.length, focusCalendarSurface, focusRenderedEvent, focusSidebarSurface, google.connected, loadGoogleEvents, navigateBetweenEvents, navigateDays, openAdjacentEventDraft, openDateCommand, openEventSearch, rightSidebarTab, selected, setEventSearchOpen, showDateCommandDialog, showEventSearch, showSettings, showShortcuts, syncing]);
+  }, [activeSelectionSurface, cancelActiveInteraction, changeDayCount, clearEventSelection, closeDateCommand, copySelection, createAdjacentEvent, creationDraft, dayCount, deleteEvents, dismissCreationDraft, duplicateEvents, extractedTasks.length, focusCalendarSurface, focusRenderedEvent, focusSidebarSurface, google.connected, loadGoogleEvents, navigateBetweenEvents, navigateDays, openDateCommand, openEventSearch, rightSidebarTab, selected, setEventSearchOpen, showDateCommandDialog, showEventSearch, showSettings, showShortcuts, syncing]);
 
   const toggleCalendar = (calendarId: string) => {
     const calendar = calendars.find((candidate) => candidate.id === calendarId);
@@ -3452,6 +3484,7 @@ export function CalendarApp() {
     title: string,
     calendarId: string,
     requestedDraft: EventCreationDraft | null = creationDraft,
+    options: { focusTitle?: boolean } = {},
   ) => {
     if (!requestedDraft) return;
     const calendar = writableCalendars.find((candidate) => candidate.id === calendarId);
@@ -3480,6 +3513,19 @@ export function CalendarApp() {
       textColor: calendar.foregroundColor,
       provider: calendar.provider,
     };
+    const rememberCreatedTitle = (event: CalendarEvent) => recordRecentEventTitleUse({
+      calendarColor: event.color,
+      calendarId: event.calendarId,
+      durationMinutes: Math.max(
+        0,
+        Math.round((new Date(event.end).getTime() - new Date(event.start).getTime()) / 60_000),
+      ),
+      historyCount: 0,
+      lastUsedAt: Date.now(),
+      normalizedTitle: event.title.trim().replace(/\s+/g, " ").toLocaleLowerCase(),
+      selectionCount: 0,
+      title: event.title,
+    });
     const removeTemporaryEvent = () => {
       setEvents((current) => current.filter((event) => event.id !== temporaryId));
       setSelected((current) => {
@@ -3491,10 +3537,15 @@ export function CalendarApp() {
 
     const eventKey = calendarEventKey(createdEvent.calendarId, createdEvent.id);
     selectionAnchorRef.current = eventKey;
-    pendingRenderedEventFocusRef.current = {
-      eventId: createdEvent.id,
-      eventKey,
-    };
+    if (options.focusTitle) {
+      setSelectedEventTitleFocusMode("select-all");
+      setRightSidebarTab("events");
+    } else {
+      pendingRenderedEventFocusRef.current = {
+        eventId: createdEvent.id,
+        eventKey,
+      };
+    }
     setEvents((current) => [...current, createdEvent]);
     setVisibleCalendars((current) => new Set(current).add(calendar.id));
     setSelected(new Set([temporaryId]));
@@ -3505,10 +3556,8 @@ export function CalendarApp() {
 
     const pendingCreation: PendingEventCreation = {
       action: null,
-      coalesceKey: eventChangeCoalesceKey([temporaryId]),
+      coalesceKey: eventCreationCoalesceKey([temporaryId]),
       eventIds: new Set([temporaryId]),
-      kind: "created",
-      latestById: new Map([[temporaryId, createdEvent]]),
     };
     registerPendingEventCreation(pendingCreation);
     pendingCreation.action = queueActionToast(`Created ${title}`, {
@@ -3520,18 +3569,21 @@ export function CalendarApp() {
         removeTemporaryEvent();
       },
       onSubmit: async () => {
-        const latestEvent = pendingCreation.latestById.get(temporaryId) ?? createdEvent;
         clearPendingEventCreation(pendingCreation);
-        if (latestEvent.provider !== "google") return;
+        if (createdEvent.provider !== "google") {
+          rememberCreatedTitle(createdEvent);
+          return;
+        }
         setSyncing(true);
         try {
-          const result = await createGoogleEvent(latestEvent);
+          const result = await createGoogleEvent(createdEvent);
           if (!result.id) throw new Error("Google did not return an event ID");
           setEvents((current) => current.map((event) =>
             event.id === temporaryId
               ? { ...event, providerEventId: result.id!, htmlLink: result.htmlLink }
               : event,
           ));
+          rememberCreatedTitle(createdEvent);
         } finally {
           setSyncing(false);
         }
@@ -3545,6 +3597,10 @@ export function CalendarApp() {
       submittingMessage: "Creating event…",
     });
   };
+
+  React.useLayoutEffect(() => {
+    createEventRef.current = createEvent;
+  });
 
   const scheduleTodoistTasks = React.useCallback((
     taskDrafts: Array<{ draft: EventCreationDraft; task: TodoistTask }>,
@@ -4023,14 +4079,7 @@ export function CalendarApp() {
   const updateEventDetails = React.useCallback(async (updated: CalendarEvent) => {
     const original = eventsRef.current.find((event) => event.id === updated.id);
     if (!original) return false;
-    if (pendingEventCreationsRef.current.has(updated.id)) {
-      setEventDetailsPreview(null);
-      setEvents((current) => current.map((event) =>
-        event.id === updated.id ? updated : event,
-      ));
-      setVisibleCalendars((current) => new Set(current).add(updated.calendarId));
-      return absorbPendingEventChanges([updated]);
-    }
+    const followsPendingCreation = pendingEventCreationsRef.current.has(updated.id);
     const sendUpdates = await chooseGuestNotifications("update", [updated]);
     if (!sendUpdates) {
       setEventDetailsPreview(null);
@@ -4044,6 +4093,15 @@ export function CalendarApp() {
       ));
       setVisibleCalendars((current) => new Set(current).add(mutationOrigin.calendarId));
     };
+    const restoreOriginalForUndo = () => {
+      restoreOriginal();
+      if (!followsPendingCreation) return;
+      const eventKey = calendarEventKey(mutationOrigin.calendarId, mutationOrigin.id);
+      selectionAnchorRef.current = eventKey;
+      setSelected(new Set([mutationOrigin.id]));
+      setRightSidebarTab("events");
+      setSelectedEventTitleFocusMode("caret-end");
+    };
 
     setEventDetailsPreview(null);
     setEvents((current) => current.map((event) =>
@@ -4055,7 +4113,7 @@ export function CalendarApp() {
       coalesceKey: eventChangeCoalesceKey([updated.id]),
       duration: toastDuration,
       onSettled: () => clearEventMutationOrigins([updated.id]),
-      onUndo: restoreOriginal,
+      onUndo: restoreOriginalForUndo,
       onSubmit: async () => {
         if (updated.provider !== "google") return;
         setSyncing(true);
@@ -4077,7 +4135,7 @@ export function CalendarApp() {
       submittingMessage: "Saving event changes…",
     });
     return true;
-  }, [absorbPendingEventChanges, chooseGuestNotifications, clearEventMutationOrigins, rememberEventMutationOrigins, toastDuration]);
+  }, [chooseGuestNotifications, clearEventMutationOrigins, rememberEventMutationOrigins, toastDuration]);
 
   const respondToEventInvitation = React.useCallback(async (
     event: CalendarEvent,
@@ -4306,21 +4364,13 @@ export function CalendarApp() {
       );
     };
 
-    const cancelKeyboardMoveAtOrigin = (
-      session: KeyboardMoveSession,
-      latestEvents: CalendarEvent[] = session.originals,
-    ) => {
+    const cancelKeyboardMoveAtOrigin = (session: KeyboardMoveSession) => {
       if (!keyboardTransformIsAtOrigin(session)) return false;
       if (session.toastTimer !== null) clearTimeout(session.toastTimer);
       session.toastTimer = null;
       session.action?.cancel();
       session.action = null;
-      if (session.absorbedPendingCreation) {
-        absorbPendingEventChanges(latestEvents);
-      }
-      restoreEvents(
-        session.absorbedPendingCreation ? latestEvents : session.originals,
-      );
+      restoreEvents(session.originals);
       if (keyboardMoveSessionRef.current === session) {
         keyboardMoveSessionRef.current = null;
       }
@@ -4403,17 +4453,12 @@ export function CalendarApp() {
         .join("|");
       let session = keyboardMoveSessionRef.current;
       let sessionStarted = false;
-      const selectionIsPendingCreation = selection.length > 0 && selection.every(
-        (event) => pendingEventCreationsRef.current.has(event.id),
-      );
       if (
         !session
         || session.selectionKey !== selectionKey
-        || (session.absorbedPendingCreation && !selectionIsPendingCreation)
       ) {
         session = {
           action: null,
-          absorbedPendingCreation: false,
           dayDelta: moveShortcut?.dayDelta ?? 0,
           endMinuteDelta: resizeShortcut?.minuteDelta ?? 0,
           minuteDelta: moveShortcut?.minuteDelta ?? 0,
@@ -4440,12 +4485,29 @@ export function CalendarApp() {
 
       const moved = keyboardEventUpdates(session, selection);
       const movedById = new Map(moved.map((event) => [event.id, event]));
-      setEvents((current) => current.map((event) => movedById.get(event.id) ?? event));
-      if (cancelKeyboardMoveAtOrigin(session, moved)) return;
-      if (absorbPendingEventChanges(moved)) {
-        session.absorbedPendingCreation = true;
-        return;
+      if (moveShortcut || moveToPresent) {
+        const focusedEventKey = keyboardEvent.target instanceof Element
+          ? keyboardEvent.target.closest<HTMLElement>("[data-event-key]")
+            ?.dataset.eventKey ?? null
+          : null;
+        const anchorEventKey = focusedEventKey ?? selectionAnchorRef.current;
+        const movedAnchor = moved.find((event) =>
+          calendarEventKey(event.calendarId, event.id) === anchorEventKey
+        ) ?? moved[0];
+        if (movedAnchor) {
+          const eventKey = calendarEventKey(movedAnchor.calendarId, movedAnchor.id);
+          pendingKeyboardMovedEventScrollRef.current = {
+            eventId: movedAnchor.id,
+            eventKey,
+          };
+          const movedStart = parseISO(movedAnchor.start);
+          if (!renderedDays.some((day) => isSameDay(day, movedStart))) {
+            setWeekStart(startOfCalendarWeek(movedStart));
+          }
+        }
       }
+      setEvents((current) => current.map((event) => movedById.get(event.id) ?? event));
+      if (cancelKeyboardMoveAtOrigin(session)) return;
       if (sessionStarted) {
         void initializeKeyboardMove(session);
         return;
@@ -4457,7 +4519,7 @@ export function CalendarApp() {
 
     window.addEventListener("keydown", moveSelectedEventsWithKeyboard);
     return () => window.removeEventListener("keydown", moveSelectedEventsWithKeyboard);
-  }, [absorbPendingEventChanges, activeSelectionSurface, chooseGuestNotifications, persistMovedEvents, selected, toastDuration, updateEventDetails]);
+  }, [activeSelectionSurface, chooseGuestNotifications, persistMovedEvents, renderedDays, selected, toastDuration, updateEventDetails]);
 
   const updateSidebarTodoistTask = React.useCallback(async (
     task: TodoistTask,
@@ -5284,7 +5346,7 @@ export function CalendarApp() {
         eventCount={selectedEvents.length}
         todoCount={visibleTodoistTasks.length}
         onTabChange={(tab) => {
-          setAutoFocusSelectedEventTitle(tab === "events");
+          setSelectedEventTitleFocusMode(tab === "events" ? "caret-end" : null);
           setRightSidebarTab(tab);
         }}
       >
@@ -5528,9 +5590,9 @@ export function CalendarApp() {
         ) : (
           <EventCreationSidebar
             openSelectedEventCalendarPicker={openSelectedEventCalendarPicker}
-            autoFocusSelectedEventTitle={autoFocusSelectedEventTitle}
+            selectedEventTitleFocusMode={selectedEventTitleFocusMode}
             key={creationDraft
-              ? `${creationDraft.start.toISOString()}-${creationDraft.end.toISOString()}`
+              ? creationDraft.start.toISOString()
               : selectedEvents.length === 1
                 ? `selected-${selectedEvents[0].id}`
                 : `selected-${selectedEvents.length}`}
@@ -5549,6 +5611,7 @@ export function CalendarApp() {
               setCreationCalendarId(calendarId);
               setCreationPreviewTitle(title);
             }}
+            onFocusWithinChange={setEventDetailsFocused}
             onFocusEvent={(event) => {
               const eventKey = calendarEventKey(event.calendarId, event.id);
               console.debug("[BUG:EVENT-TITLE-FOCUS] [FOCUS:REQUEST] scheduling event focus", {
@@ -5584,6 +5647,30 @@ export function CalendarApp() {
               next.delete(eventId);
               return next;
             })}
+            onCreateFromRecent={(entry) => {
+              if (!creationDraft) return;
+              const calendarId = writableCalendars.some(
+                (calendar) => calendar.id === entry.calendarId,
+              ) ? entry.calendarId : creationDraft.calendarId;
+              const currentDurationMinutes = Math.max(
+                0,
+                Math.round(
+                  (creationDraft.end.getTime() - creationDraft.start.getTime()) / 60_000,
+                ),
+              );
+              const durationMinutes = recentEventPreviewDurationMinutes({
+                allDay: creationDraft.allDay === true,
+                currentDurationMinutes,
+                recentDurationMinutes: entry.durationMinutes,
+              });
+              const nextDraft = {
+                ...creationDraft,
+                calendarId,
+                end: new Date(creationDraft.start.getTime() + durationMinutes * 60_000),
+              };
+              createEvent(entry.title, calendarId, nextDraft);
+            }}
+            onRecentTitleUsed={recordRecentEventTitleUse}
             onSelectedEventCalendarPickerClose={closeSelectedEventCalendarPicker}
             onSelectedEventCalendarPickerOpen={() => {
               setOpenSelectedEventCalendarPicker(true);
@@ -5593,7 +5680,10 @@ export function CalendarApp() {
             onRespondToEvent={respondToEventInvitation}
             onUpdateEvent={updateEventDetails}
             selectedEvents={selectedEvents}
-            unsyncedEventIds={unsyncedEventIds}
+            recentTitles={recentEventTitles}
+            selectedEventPendingCreation={selectedEvents.length === 1
+              && pendingCreationEventIds.has(selectedEvents[0].id)}
+            syncPausedEventIds={syncPausedEventIds}
           />
         )}
       </RightSidebar>
