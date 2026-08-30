@@ -462,7 +462,7 @@ kbd {
 .setup-banner span { flex: 1; }
 .setup-banner a { height: 23px; border-color: var(--setup-border); background: var(--surface); color: var(--setup-ink); font-size: 9px; text-decoration: none; }
 
-.calendar-scroll { position: relative; min-height: 0; flex: 1; overflow: auto; scroll-padding-left: 57px; scroll-snap-type: x mandatory; overscroll-behavior: contain; scrollbar-color: var(--line-strong) transparent; scrollbar-width: thin; }
+.calendar-scroll { position: relative; min-height: 0; flex: 1; overflow: auto; scroll-padding: 86px 0 12px 57px; scroll-snap-type: x mandatory; overscroll-behavior: contain; scrollbar-color: var(--line-strong) transparent; scrollbar-width: thin; }
 .calendar-scroll[data-calendar-recentering="true"] { scroll-snap-type: none; }
 .calendar-canvas { position: relative; }
 .calendar-header { position: sticky; z-index: 14; top: 0; display: grid; width: 100%; height: 53px; grid-template-columns: 57px minmax(0, 1fr); border-bottom: 1px solid var(--line); background: var(--paper); }

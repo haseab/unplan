@@ -33,6 +33,51 @@ export type EventResizeShortcut = {
   minuteDelta: number;
 };
 
+export type EventGapFillDirection = "down" | "up";
+
+export const eventGapFillShortcut = ({
+  activeCalendar,
+  altKey,
+  ctrlKey,
+  editable,
+  includesAllDay,
+  key,
+  metaKey,
+  modalOpen,
+  repeat,
+  selectedCount,
+  shiftKey,
+}: {
+  activeCalendar: boolean;
+  altKey: boolean;
+  ctrlKey: boolean;
+  editable: boolean;
+  includesAllDay: boolean;
+  key: string;
+  metaKey: boolean;
+  modalOpen: boolean;
+  repeat: boolean;
+  selectedCount: number;
+  shiftKey: boolean;
+}): EventGapFillDirection | null => {
+  if (
+    !activeCalendar
+    || !altKey
+    || ctrlKey
+    || editable
+    || includesAllDay
+    || !metaKey
+    || modalOpen
+    || repeat
+    || selectedCount !== 1
+    || !shiftKey
+  ) return null;
+
+  if (key === "ArrowUp") return "up";
+  if (key === "ArrowDown") return "down";
+  return null;
+};
+
 export const isEventMoveToPresentShortcut = ({
   activeCalendar,
   altKey,

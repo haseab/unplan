@@ -55,6 +55,7 @@ type EventCreationSidebarProps = {
   onCreateConference: (event: CalendarEvent) => Promise<string>;
   onDeleteSelection: () => void | Promise<void>;
   onDuplicateSelection: () => void | Promise<void>;
+  onDraftPreviewChange: (preview: { calendarId: string; title: string }) => void;
   onFocusEvent: (event: CalendarEvent) => void;
   onRemoveSelection: (eventId: string) => void;
   onSelectedEventCalendarPickerClose: () => void;
@@ -530,6 +531,7 @@ export function EventCreationSidebar({
   onCreateConference,
   onDeleteSelection,
   onDuplicateSelection,
+  onDraftPreviewChange,
   onFocusEvent,
   onRemoveSelection,
   onSelectedEventCalendarPickerClose,
@@ -603,7 +605,10 @@ export function EventCreationSidebar({
               setCreationCalendarPickerOpen(true);
             }}
             onSubmit={submitCreation}
-            onValueChange={setTitle}
+            onValueChange={(nextTitle) => {
+              setTitle(nextTitle);
+              onDraftPreviewChange({ calendarId, title: nextTitle });
+            }}
             placeholder="What are you planning?"
             value={title}
           />
@@ -618,7 +623,10 @@ export function EventCreationSidebar({
                 <CalendarPicker
                   calendars={calendars}
                   forcedOpen={creationCalendarPickerOpen}
-                  onChange={setCalendarId}
+                  onChange={(nextCalendarId) => {
+                    setCalendarId(nextCalendarId);
+                    onDraftPreviewChange({ calendarId: nextCalendarId, title });
+                  }}
                   onOpenChange={setCreationCalendarPickerOpen}
                   value={calendarId}
                 />

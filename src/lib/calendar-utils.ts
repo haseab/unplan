@@ -218,6 +218,51 @@ export const resizeEventEnd = (
   );
 };
 
+export const fillEventGap = (
+  event: CalendarEvent,
+  candidates: CalendarEvent[],
+  direction: "down" | "up",
+) => {
+  if (event.allDay) return null;
+  const start = parseISO(event.start);
+  const end = parseISO(event.end);
+  const eventId = event.id;
+
+  if (direction === "up") {
+    const previousEnd = candidates.reduce<Date | null>((nearest, candidate) => {
+      if (candidate.id === eventId || candidate.allDay) return nearest;
+      const candidateStart = parseISO(candidate.start);
+      const candidateEnd = parseISO(candidate.end);
+      if (
+        candidateStart.getTime() >= start.getTime()
+        || startOfDay(candidateEnd).getTime() !== startOfDay(start).getTime()
+      ) return nearest;
+      return !nearest || candidateEnd.getTime() > nearest.getTime()
+        ? candidateEnd
+        : nearest;
+    }, null);
+    return previousEnd && previousEnd.getTime() < start.getTime()
+      ? { ...event, start: previousEnd.toISOString() }
+      : null;
+  }
+
+  const nextStart = candidates.reduce<Date | null>((nearest, candidate) => {
+    if (candidate.id === eventId || candidate.allDay) return nearest;
+    const candidateStart = parseISO(candidate.start);
+    const candidateEnd = parseISO(candidate.end);
+    if (
+      candidateEnd.getTime() <= end.getTime()
+      || startOfDay(candidateStart).getTime() !== startOfDay(end).getTime()
+    ) return nearest;
+    return !nearest || candidateStart.getTime() < nearest.getTime()
+      ? candidateStart
+      : nearest;
+  }, null);
+  return nextStart && nextStart.getTime() > end.getTime()
+    ? { ...event, end: nextStart.toISOString() }
+    : null;
+};
+
 export const eventTimesMatch = (
   first: Pick<CalendarEvent, "start" | "end">,
   second: Pick<CalendarEvent, "start" | "end">,

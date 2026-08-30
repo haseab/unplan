@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   crossSurfaceMoveShortcut,
+  eventGapFillShortcut,
   eventMoveShortcut,
   eventResizeShortcut,
   findEventNavigationBacktrackKey,
@@ -162,6 +163,35 @@ test("Shift+Option+vertical arrows resize timed events from the bottom", () => {
   assert.equal(shortcut("ArrowDown", { includesAllDay: true }), null);
   assert.equal(shortcut("ArrowDown", { editable: true }), null);
   assert.equal(shortcut("ArrowDown", { selectedCount: 0 }), null);
+});
+
+test("Shift+Option+Command+vertical arrows fill an adjacent event gap", () => {
+  const shortcut = (
+    key: string,
+    overrides: Partial<Parameters<typeof eventGapFillShortcut>[0]> = {},
+  ) => eventGapFillShortcut({
+    activeCalendar: true,
+    altKey: true,
+    ctrlKey: false,
+    editable: false,
+    includesAllDay: false,
+    key,
+    metaKey: true,
+    modalOpen: false,
+    repeat: false,
+    selectedCount: 1,
+    shiftKey: true,
+    ...overrides,
+  });
+
+  assert.equal(shortcut("ArrowUp"), "up");
+  assert.equal(shortcut("ArrowDown"), "down");
+  assert.equal(shortcut("ArrowLeft"), null);
+  assert.equal(shortcut("ArrowUp", { metaKey: false }), null);
+  assert.equal(shortcut("ArrowUp", { shiftKey: false }), null);
+  assert.equal(shortcut("ArrowUp", { selectedCount: 2 }), null);
+  assert.equal(shortcut("ArrowUp", { includesAllDay: true }), null);
+  assert.equal(shortcut("ArrowUp", { repeat: true }), null);
 });
 
 test("C opens the calendar picker for any event selection", () => {

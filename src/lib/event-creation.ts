@@ -1,4 +1,5 @@
-import { addMinutes, startOfDay } from "date-fns";
+import { addMinutes, differenceInMinutes, isSameDay, startOfDay } from "date-fns";
+import type { CalendarEvent } from "./calendar-types";
 import { MINUTES_IN_DAY, SNAP_MINUTES, clamp, snapMinutes } from "./calendar-utils";
 
 export type EventCreationRange = {
@@ -11,6 +12,37 @@ export type EventCreationSession = {
   anchorMinute: number;
   calendarId: string;
   dayIndex: number;
+};
+
+export type AdjacentEventCreationEdge = "after" | "before";
+
+export const adjacentEventCreationDates = (
+  event: Pick<CalendarEvent, "end" | "start">,
+  edge: AdjacentEventCreationEdge,
+  durationMinutes = 30,
+) => {
+  const anchor = new Date(edge === "after" ? event.end : event.start);
+  return edge === "after"
+    ? { start: anchor, end: addMinutes(anchor, durationMinutes) }
+    : { start: addMinutes(anchor, -durationMinutes), end: anchor };
+};
+
+export const eventCreationRangeFromDates = (
+  start: Date,
+  end: Date,
+  renderedDays: Date[],
+): EventCreationRange | null => {
+  const dayIndex = renderedDays.findIndex((day) => isSameDay(day, start));
+  if (dayIndex < 0) return null;
+
+  const day = startOfDay(start);
+  const startMinute = differenceInMinutes(start, day);
+  const endMinute = differenceInMinutes(end, day);
+  if (startMinute < 0 || endMinute <= startMinute || endMinute > MINUTES_IN_DAY) {
+    return null;
+  }
+
+  return { dayIndex, endMinute, startMinute };
 };
 
 export const eventCreationAnchorRange = (

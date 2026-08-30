@@ -6,6 +6,7 @@ import {
   eventSegmentGeometries,
   eventSegmentKey,
   eventTimesMatch,
+  fillEventGap,
   formatEventStartTime,
   formatTimeRange,
   latestQuarterHour,
@@ -101,6 +102,106 @@ test("keyboard end resizing keeps the start fixed and enforces the minimum durat
     ...event,
     end: new Date(originalStart.getTime() + 15 * 60 * 1000).toISOString(),
   });
+});
+
+test("fills the gap to the nearest timed event on the same day", () => {
+  const selected = {
+    ...event,
+    start: new Date(2026, 7, 22, 11).toISOString(),
+    end: new Date(2026, 7, 22, 12).toISOString(),
+  };
+  const candidates: CalendarEvent[] = [
+    {
+      ...event,
+      id: "earlier",
+      start: new Date(2026, 7, 22, 9).toISOString(),
+      end: new Date(2026, 7, 22, 10).toISOString(),
+    },
+    {
+      ...event,
+      id: "next",
+      start: new Date(2026, 7, 22, 13, 30).toISOString(),
+      end: new Date(2026, 7, 22, 14).toISOString(),
+    },
+  ];
+
+  assert.deepEqual(fillEventGap(selected, candidates, "up"), {
+    ...selected,
+    start: new Date(2026, 7, 22, 10).toISOString(),
+  });
+  assert.deepEqual(fillEventGap(selected, candidates, "down"), {
+    ...selected,
+    end: new Date(2026, 7, 22, 13, 30).toISOString(),
+  });
+});
+
+test("gap filling ignores all-day, overlapping, and cross-day events", () => {
+  const selected = {
+    ...event,
+    start: new Date(2026, 7, 22, 11).toISOString(),
+    end: new Date(2026, 7, 22, 12).toISOString(),
+  };
+  const candidates: CalendarEvent[] = [
+    {
+      ...event,
+      allDay: true,
+      id: "all-day",
+      start: new Date(2026, 7, 22).toISOString(),
+      end: new Date(2026, 7, 23).toISOString(),
+    },
+    {
+      ...event,
+      id: "overlap",
+      start: new Date(2026, 7, 22, 11, 30).toISOString(),
+      end: new Date(2026, 7, 22, 12, 30).toISOString(),
+    },
+    {
+      ...event,
+      id: "tomorrow",
+      start: new Date(2026, 7, 23, 9).toISOString(),
+      end: new Date(2026, 7, 23, 10).toISOString(),
+    },
+  ];
+
+  assert.equal(fillEventGap(selected, candidates, "up"), null);
+  assert.equal(fillEventGap(selected, candidates, "down"), null);
+});
+
+test("touching events block gap filling instead of falling through to farther events", () => {
+  const selected = {
+    ...event,
+    start: new Date(2026, 7, 22, 11).toISOString(),
+    end: new Date(2026, 7, 22, 12).toISOString(),
+  };
+  const candidates: CalendarEvent[] = [
+    {
+      ...event,
+      id: "farther-above",
+      start: new Date(2026, 7, 22, 8).toISOString(),
+      end: new Date(2026, 7, 22, 9).toISOString(),
+    },
+    {
+      ...event,
+      id: "touching-above",
+      start: new Date(2026, 7, 22, 10).toISOString(),
+      end: selected.start,
+    },
+    {
+      ...event,
+      id: "touching-below",
+      start: selected.end,
+      end: new Date(2026, 7, 22, 13).toISOString(),
+    },
+    {
+      ...event,
+      id: "farther-below",
+      start: new Date(2026, 7, 22, 14).toISOString(),
+      end: new Date(2026, 7, 22, 15).toISOString(),
+    },
+  ];
+
+  assert.equal(fillEventGap(selected, candidates, "up"), null);
+  assert.equal(fillEventGap(selected, candidates, "down"), null);
 });
 
 test("a zero-delta resize preserves provider timestamps exactly", () => {

@@ -112,10 +112,12 @@ import type {
   GoogleSendUpdates,
 } from "@/lib/calendar-types";
 import {
+  adjacentEventCreationDates,
   eventCreationDates,
   eventCreationAnchorRange,
   eventCreationPoint,
   eventCreationRange,
+  eventCreationRangeFromDates,
   hasEventCreationDuration,
   isEventCreationAnchor,
   type EventCreationRange,
@@ -157,6 +159,7 @@ import {
 } from "@/lib/event-participants";
 import {
   crossSurfaceMoveShortcut,
+  eventGapFillShortcut,
   eventMoveShortcut,
   eventResizeShortcut,
   findEventClosestToTime,
@@ -187,6 +190,7 @@ import {
   eventSegmentGeometries,
   eventSegmentKey,
   eventTimesMatch,
+  fillEventGap,
   formatEventTime,
   formatTimeRange,
   getWeekDays,
@@ -491,11 +495,13 @@ export function CalendarApp() {
   const [marquee, setMarquee] = React.useState<Marquee | null>(null);
   const [creationRange, setCreationRange] = React.useState<EventCreationRange | null>(null);
   const [creationCalendarId, setCreationCalendarId] = React.useState<string | null>(null);
+  const [creationPreviewTitle, setCreationPreviewTitle] = React.useState("");
   const [creationDraft, setCreationDraft] = React.useState<EventCreationDraft | null>(null);
   const dismissCreationDraft = React.useCallback(() => {
     setCreationDraft(null);
     setCreationRange(null);
     setCreationCalendarId(null);
+    setCreationPreviewTitle("");
   }, []);
   const [preferredCalendarId, setPreferredCalendarId] = React.useState<string | null>(() =>
     typeof window === "undefined"
@@ -599,7 +605,7 @@ export function CalendarApp() {
     eventId: string;
     eventKey: string;
   } | null>(null);
-  const pendingDuplicatedEventFocusRef = React.useRef<{
+  const pendingRenderedEventFocusRef = React.useRef<{
     eventId: string;
     eventKey: string;
   } | null>(null);
@@ -805,6 +811,17 @@ export function CalendarApp() {
     () => findTechnicalitiesCalendar(writableCalendars),
     [writableCalendars],
   );
+  const openAdjacentEventDraft = React.useCallback((edge: "after" | "before") => {
+    if (selectedEvents.length !== 1 || !defaultCalendar) return false;
+
+    const dates = adjacentEventCreationDates(selectedEvents[0], edge);
+    setCreationDraft({ calendarId: defaultCalendar.id, ...dates });
+    setCreationCalendarId(defaultCalendar.id);
+    setCreationPreviewTitle("");
+    setCreationRange(eventCreationRangeFromDates(dates.start, dates.end, renderedDays));
+    setRightSidebarTab("events");
+    return true;
+  }, [defaultCalendar, renderedDays, selectedEvents]);
   const visibleTodoistTasks = React.useMemo(
     () => todoistTasks.filter((task) =>
       todoistBucketProjectIds.includes(task.projectId)
@@ -2453,7 +2470,7 @@ export function CalendarApp() {
     if (copies.length === 1 && activeSelectionSurface === "calendar") {
       const eventKey = calendarEventKey(copies[0].calendarId, copies[0].id);
       selectionAnchorRef.current = eventKey;
-      pendingDuplicatedEventFocusRef.current = {
+      pendingRenderedEventFocusRef.current = {
         eventId: copies[0].id,
         eventKey,
       };
@@ -2748,10 +2765,10 @@ export function CalendarApp() {
   }, [renderedEventElements]);
 
   React.useLayoutEffect(() => {
-    const pending = pendingDuplicatedEventFocusRef.current;
+    const pending = pendingRenderedEventFocusRef.current;
     if (!pending || !events.some(({ id }) => id === pending.eventId)) return;
     if (!focusRenderedEvent(pending.eventKey, false)) return;
-    pendingDuplicatedEventFocusRef.current = null;
+    pendingRenderedEventFocusRef.current = null;
   }, [events, focusRenderedEvent]);
 
   React.useEffect(() => {
@@ -3207,15 +3224,25 @@ export function CalendarApp() {
       ) {
         event.preventDefault();
       } else if (
-        !modifier
+        modifier
         && !event.altKey
         && !event.shiftKey
         && !event.repeat
-        && event.key.toLowerCase() === "n"
+        && (event.key.toLowerCase() === "n" || event.code === "KeyN")
         && !document.querySelector(".modal-backdrop")
       ) {
         event.preventDefault();
         setShowNewTimeEntry(true);
+      } else if (
+        !modifier
+        && !event.shiftKey
+        && !event.repeat
+        && (event.key.toLowerCase() === "n" || event.code === "KeyN")
+        && !document.querySelector(".modal-backdrop")
+      ) {
+        if (openAdjacentEventDraft(event.altKey ? "before" : "after")) {
+          event.preventDefault();
+        }
       } else if (
         !modifier
         && !event.altKey
@@ -3303,7 +3330,7 @@ export function CalendarApp() {
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [activeSelectionSurface, cancelActiveInteraction, changeDayCount, clearEventSelection, closeDateCommand, copySelection, creationDraft, dayCount, deleteEvents, dismissCreationDraft, duplicateEvents, focusCalendarSurface, focusRenderedEvent, focusSidebarSurface, google.connected, loadGoogleEvents, navigateBetweenEvents, navigateDays, openDateCommand, openEventSearch, rightSidebarTab, selected, setEventSearchOpen, showDateCommandDialog, showEventSearch, showSettings, showShortcuts, syncing]);
+  }, [activeSelectionSurface, cancelActiveInteraction, changeDayCount, clearEventSelection, closeDateCommand, copySelection, creationDraft, dayCount, deleteEvents, dismissCreationDraft, duplicateEvents, focusCalendarSurface, focusRenderedEvent, focusSidebarSurface, google.connected, loadGoogleEvents, navigateBetweenEvents, navigateDays, openAdjacentEventDraft, openDateCommand, openEventSearch, rightSidebarTab, selected, setEventSearchOpen, showDateCommandDialog, showEventSearch, showSettings, showShortcuts, syncing]);
 
   const toggleCalendar = (calendarId: string) => {
     const calendar = calendars.find((candidate) => candidate.id === calendarId);
@@ -3427,9 +3454,18 @@ export function CalendarApp() {
       });
     };
 
+    const eventKey = calendarEventKey(createdEvent.calendarId, createdEvent.id);
+    selectionAnchorRef.current = eventKey;
+    pendingRenderedEventFocusRef.current = {
+      eventId: createdEvent.id,
+      eventKey,
+    };
     setEvents((current) => [...current, createdEvent]);
     setVisibleCalendars((current) => new Set(current).add(calendar.id));
     setSelected(new Set([temporaryId]));
+    if (!renderedDays.some((day) => isSameDay(day, requestedDraft.start))) {
+      setWeekStart(startOfCalendarWeek(requestedDraft.start));
+    }
     dismissCreationDraft();
 
     const pendingCreation: PendingEventCreation = {
@@ -4286,11 +4322,22 @@ export function CalendarApp() {
       const moveShortcut = eventMoveShortcut(shortcutContext);
       const resizeShortcut = eventResizeShortcut(shortcutContext);
       const moveToPresent = isEventMoveToPresentShortcut(shortcutContext);
-      if (!moveShortcut && !resizeShortcut && !moveToPresent) return;
+      const gapFillDirection = eventGapFillShortcut(shortcutContext);
+      if (!moveShortcut && !resizeShortcut && !moveToPresent && !gapFillDirection) return;
 
       keyboardEvent.preventDefault();
       keyboardEvent.stopPropagation();
       setEventDetailsPreview(null);
+
+      if (gapFillDirection) {
+        const filled = fillEventGap(
+          selection[0],
+          eventsRef.current.filter((event) => visibleRef.current.has(event.calendarId)),
+          gapFillDirection,
+        );
+        if (filled) void updateEventDetails(filled);
+        return;
+      }
 
       const selectionKey = selection
         .map((event) => `${event.calendarId}:${event.id}`)
@@ -4352,7 +4399,7 @@ export function CalendarApp() {
 
     window.addEventListener("keydown", moveSelectedEventsWithKeyboard);
     return () => window.removeEventListener("keydown", moveSelectedEventsWithKeyboard);
-  }, [absorbPendingEventChanges, activeSelectionSurface, chooseGuestNotifications, confirmBulkAction, persistMovedEvents, selected, toastDuration]);
+  }, [absorbPendingEventChanges, activeSelectionSurface, chooseGuestNotifications, confirmBulkAction, persistMovedEvents, selected, toastDuration, updateEventDetails]);
 
   const updateSidebarTodoistTask = React.useCallback(async (
     task: TodoistTask,
@@ -4767,7 +4814,7 @@ export function CalendarApp() {
                         creationPreviewDates.end,
                       )
                     : undefined}
-                  title="New event"
+                  title={creationPreviewTitle.trim() || "New event"}
                 />
               </button>
             )}
@@ -4973,7 +5020,8 @@ export function CalendarApp() {
             <div className="modal-heading"><div><Command size={18} /><span><strong>Keyboard shortcuts</strong><small>Move through your week without breaking focus.</small></span></div><button className="icon-button" onClick={() => setShowShortcuts(false)}><X size={16} /></button></div>
             <div className="shortcut-grid">
               <span>Go to today</span><kbd>T</kbd>
-              <span>New time entry</span><kbd>N</kbd>
+              <span>New time entry</span><kbd>⌘ N</kbd>
+              <span>New event after / before selected event</span><span><kbd>N</kbd> <kbd>⌥ N</kbd></span>
               <span>Sync calendars</span><kbd>R</kbd>
               <span>Previous / next period</span><span><kbd>K</kbd> <kbd>J</kbd></span>
               <span>Navigate between events</span><span><kbd>↑</kbd> <kbd>↓</kbd> <kbd>←</kbd> <kbd>→</kbd></span>
@@ -4982,6 +5030,7 @@ export function CalendarApp() {
               <span>Move selected event to the latest 15-minute block</span><kbd>⌥ ⌘ ↓</kbd>
               <span>Previous / next day</span><span><kbd>⌥ ⇧ ←</kbd> <kbd>⌥ ⇧ →</kbd></span>
               <span>Shorten / lengthen selected events from the bottom</span><span><kbd>⌥ ⇧ ↑</kbd> <kbd>⌥ ⇧ ↓</kbd></span>
+              <span>Fill gap to previous / next event</span><span><kbd>⌥ ⇧ ⌘ ↑</kbd> <kbd>⌥ ⇧ ⌘ ↓</kbd></span>
               <span>Move task to adjacent folder</span><span><kbd>⌥ ⇧ ↑</kbd> <kbd>⌥ ⇧ ↓</kbd></span>
               <span>Move task to parent / first child</span><span><kbd>⌥ ⇧ ←</kbd> <kbd>⌥ ⇧ →</kbd></span>
               <span>Focus calendar / sidebar</span><span><kbd>⌘ ←</kbd> <kbd>⌘ →</kbd></span>
@@ -5437,6 +5486,10 @@ export function CalendarApp() {
             onCreateConference={createEventConference}
             onDeleteSelection={() => deleteEvents(selectedEvents)}
             onDuplicateSelection={() => duplicateEvents(selectedEvents)}
+            onDraftPreviewChange={({ calendarId, title }) => {
+              setCreationCalendarId(calendarId);
+              setCreationPreviewTitle(title);
+            }}
             onFocusEvent={(event) => {
               const eventKey = calendarEventKey(event.calendarId, event.id);
               console.debug("[BUG:EVENT-TITLE-FOCUS] [FOCUS:REQUEST] scheduling event focus", {
