@@ -2940,6 +2940,7 @@ export function CalendarApp() {
   const navigateBetweenEvents = React.useCallback((
     direction: EventNavigationDirection,
     origin: EventTarget | null,
+    extendSelection = false,
   ) => {
     const elements = renderedEventElements();
     const originElement = origin instanceof Element
@@ -2956,6 +2957,7 @@ export function CalendarApp() {
       (element) => element.dataset.eventKey === anchorKey,
     );
     if (!anchorElement || !anchorKey) return false;
+    const anchorEventId = anchorElement.dataset.calendarEventId;
 
     const anchorRect = eventNavigationRectForElement(anchorElement);
     const history = eventNavigationHistoryRef.current;
@@ -2995,7 +2997,8 @@ export function CalendarApp() {
         : undefined;
     }
     if (!nextKey) return false;
-    if (!nextElement?.dataset.calendarEventId) return false;
+    const nextEventId = nextElement?.dataset.calendarEventId;
+    if (!nextElement || !nextEventId) return false;
 
     if (backtrackKey === nextKey) {
       history.pop();
@@ -3009,7 +3012,13 @@ export function CalendarApp() {
 
     selectionAnchorRef.current = nextKey;
     dismissCreationDraft();
-    setSelected(new Set([nextElement.dataset.calendarEventId]));
+    setSelected((current) => {
+      if (!extendSelection) return new Set([nextEventId]);
+      const next = new Set(current);
+      if (anchorEventId) next.add(anchorEventId);
+      next.add(nextEventId);
+      return next;
+    });
     nextElement.focus({ preventScroll: true });
     nextElement.scrollIntoView({
       behavior: "smooth",
@@ -3269,11 +3278,18 @@ export function CalendarApp() {
       ) {
         const direction = event.key.slice(5).toLowerCase() as EventNavigationDirection;
         const origin = event.target instanceof HTMLElement ? event.target : null;
-        const navigated = navigateBetweenEvents(direction, event.target);
+        const extendSelection = event.shiftKey
+          && (direction === "down" || direction === "up");
+        const navigated = navigateBetweenEvents(
+          direction,
+          event.target,
+          extendSelection,
+        );
         console.debug("[BUG:EVENT-TITLE-FOCUS] [KEYBOARD:ARROW] handled arrow key", {
           activeEventKey: (document.activeElement as HTMLElement | null)?.dataset.eventKey ?? null,
           activeTag: document.activeElement?.tagName ?? null,
           direction,
+          extendSelection,
           navigated,
           originClass: origin?.className ?? null,
           originEventKey: origin?.dataset.eventKey ?? null,
@@ -4325,18 +4341,6 @@ export function CalendarApp() {
     };
 
     const initializeKeyboardMove = async (session: KeyboardMoveSession) => {
-      const resizedOnly = keyboardTransformOnlyResizes(session);
-      const confirmed = await confirmBulkAction({
-        action: resizedOnly ? "update" : "move",
-        count: session.originals.length,
-      });
-      if (!confirmed) {
-        restoreEvents(session.originals);
-        if (keyboardMoveSessionRef.current === session) {
-          keyboardMoveSessionRef.current = null;
-        }
-        return;
-      }
       if (
         keyboardMoveSessionRef.current !== session
         || cancelKeyboardMoveAtOrigin(session)
@@ -4453,7 +4457,7 @@ export function CalendarApp() {
 
     window.addEventListener("keydown", moveSelectedEventsWithKeyboard);
     return () => window.removeEventListener("keydown", moveSelectedEventsWithKeyboard);
-  }, [absorbPendingEventChanges, activeSelectionSurface, chooseGuestNotifications, confirmBulkAction, persistMovedEvents, selected, toastDuration, updateEventDetails]);
+  }, [absorbPendingEventChanges, activeSelectionSurface, chooseGuestNotifications, persistMovedEvents, selected, toastDuration, updateEventDetails]);
 
   const updateSidebarTodoistTask = React.useCallback(async (
     task: TodoistTask,
