@@ -380,7 +380,7 @@ const rectangleDistance = (
   return Math.hypot(horizontalGap, verticalGap);
 };
 
-const nearestEventKey = (
+export const findClosestEventKey = (
   anchor: EventNavigationRect,
   candidates: EventNavigationRect[],
 ) => candidates.reduce<{
@@ -476,7 +476,7 @@ export const findDirectionalEventKey = (
     const directionalEvents = available.filter((candidate) =>
       isHorizontalEventNavigationCandidate(anchor, candidate, direction)
     );
-    return nearestEventKey(anchor, directionalEvents);
+    return findClosestEventKey(anchor, directionalEvents);
   }
 
   let best: { eventKey: string; score: number } | null = null;

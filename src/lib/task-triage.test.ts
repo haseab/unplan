@@ -1,6 +1,33 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { taskTriageFolders } from "./task-triage";
+import {
+  isExtractedTaskTriageShortcut,
+  taskTriageFolders,
+} from "./task-triage";
+
+test("Cmd/Ctrl + E opens extracted task triage when tasks are available", () => {
+  const shortcut = (
+    overrides: Partial<Parameters<typeof isExtractedTaskTriageShortcut>[0]> = {},
+  ) => isExtractedTaskTriageShortcut({
+    altKey: false,
+    extractedTaskCount: 2,
+    key: "e",
+    modalOpen: false,
+    modifier: true,
+    repeat: false,
+    shiftKey: false,
+    ...overrides,
+  });
+
+  assert.equal(shortcut(), true);
+  assert.equal(shortcut({ key: "E" }), true);
+  assert.equal(shortcut({ extractedTaskCount: 0 }), false);
+  assert.equal(shortcut({ modalOpen: true }), false);
+  assert.equal(shortcut({ modifier: false }), false);
+  assert.equal(shortcut({ repeat: true }), false);
+  assert.equal(shortcut({ shiftKey: true }), false);
+  assert.equal(shortcut({ altKey: true }), false);
+});
 
 test("task triage folders follow saved hierarchy and order", () => {
   assert.deepEqual(taskTriageFolders({

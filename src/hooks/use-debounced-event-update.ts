@@ -12,7 +12,7 @@ const normalizeEventDraft = (candidate: CalendarEvent): CalendarEvent => {
   const end = new Date(candidate.end);
   return {
     ...candidate,
-    title: candidate.title.trim() || "Untitled event",
+    title: candidate.title.trim(),
     end: end > start
       ? candidate.end
       : addMinutes(start, candidate.allDay ? 24 * 60 : 30).toISOString(),

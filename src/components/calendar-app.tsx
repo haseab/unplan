@@ -157,11 +157,13 @@ import {
   isEventUnaccepted,
   updateSelfParticipantResponse,
 } from "@/lib/event-participants";
+import { isExtractedTaskTriageShortcut } from "@/lib/task-triage";
 import {
   crossSurfaceMoveShortcut,
   eventGapFillShortcut,
   eventMoveShortcut,
   eventResizeShortcut,
+  findClosestEventKey,
   findEventClosestToTime,
   findRenderedEventClosestToPresent,
   findEventNavigationBacktrackKey,
@@ -281,6 +283,22 @@ type DragSession = {
 type PendingEventClick = {
   startX: number;
   startY: number;
+};
+
+const eventNavigationRectForElement = (
+  element: HTMLElement,
+): EventNavigationRect => {
+  const rect = element.getBoundingClientRect();
+  return {
+    bottom: rect.bottom,
+    dayIndex: Number(element.dataset.eventDayIndex),
+    endMinute: Number(element.dataset.eventEndMinute),
+    eventKey: element.dataset.eventKey ?? "",
+    left: rect.left,
+    right: rect.right,
+    startMinute: Number(element.dataset.eventStartMinute),
+    top: rect.top,
+  };
 };
 
 type ResizeSession = {
@@ -2939,20 +2957,7 @@ export function CalendarApp() {
     );
     if (!anchorElement || !anchorKey) return false;
 
-    const asNavigationRect = (element: HTMLElement): EventNavigationRect => {
-      const rect = element.getBoundingClientRect();
-      return {
-        bottom: rect.bottom,
-        dayIndex: Number(element.dataset.eventDayIndex),
-        endMinute: Number(element.dataset.eventEndMinute),
-        eventKey: element.dataset.eventKey ?? "",
-        left: rect.left,
-        right: rect.right,
-        startMinute: Number(element.dataset.eventStartMinute),
-        top: rect.top,
-      };
-    };
-    const anchorRect = asNavigationRect(anchorElement);
+    const anchorRect = eventNavigationRectForElement(anchorElement);
     const history = eventNavigationHistoryRef.current;
     const backtrackKey = findEventNavigationBacktrackKey(
       history,
@@ -2970,7 +2975,7 @@ export function CalendarApp() {
     ) {
       if (!isHorizontalEventNavigationCandidate(
         anchorRect,
-        asNavigationRect(nextElement),
+        eventNavigationRectForElement(nextElement),
         direction,
       )) {
         history.length = 0;
@@ -2982,7 +2987,7 @@ export function CalendarApp() {
       if (history.at(-1)?.toEventKey !== anchorKey) history.length = 0;
       nextKey = findDirectionalEventKey(
         anchorRect,
-        elements.map(asNavigationRect),
+        elements.map(eventNavigationRectForElement),
         direction,
       );
       nextElement = nextKey
@@ -3224,6 +3229,20 @@ export function CalendarApp() {
       ) {
         event.preventDefault();
       } else if (
+        isExtractedTaskTriageShortcut({
+          altKey: event.altKey,
+          extractedTaskCount: extractedTasks.length,
+          key: event.key,
+          modalOpen: Boolean(document.querySelector(".modal-backdrop")),
+          modifier,
+          repeat: event.repeat,
+          shiftKey: event.shiftKey,
+        })
+      ) {
+        event.preventDefault();
+        setTaskTriageMode("extracted");
+        setShowTaskTriage(true);
+      } else if (
         modifier
         && !event.altKey
         && !event.shiftKey
@@ -3330,7 +3349,7 @@ export function CalendarApp() {
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [activeSelectionSurface, cancelActiveInteraction, changeDayCount, clearEventSelection, closeDateCommand, copySelection, creationDraft, dayCount, deleteEvents, dismissCreationDraft, duplicateEvents, focusCalendarSurface, focusRenderedEvent, focusSidebarSurface, google.connected, loadGoogleEvents, navigateBetweenEvents, navigateDays, openAdjacentEventDraft, openDateCommand, openEventSearch, rightSidebarTab, selected, setEventSearchOpen, showDateCommandDialog, showEventSearch, showSettings, showShortcuts, syncing]);
+  }, [activeSelectionSurface, cancelActiveInteraction, changeDayCount, clearEventSelection, closeDateCommand, copySelection, creationDraft, dayCount, deleteEvents, dismissCreationDraft, duplicateEvents, extractedTasks.length, focusCalendarSurface, focusRenderedEvent, focusSidebarSurface, google.connected, loadGoogleEvents, navigateBetweenEvents, navigateDays, openAdjacentEventDraft, openDateCommand, openEventSearch, rightSidebarTab, selected, setEventSearchOpen, showDateCommandDialog, showEventSearch, showSettings, showShortcuts, syncing]);
 
   const toggleCalendar = (calendarId: string) => {
     const calendar = calendars.find((candidate) => candidate.id === calendarId);
@@ -3718,6 +3737,7 @@ export function CalendarApp() {
 
   const moveCalendarEventsToTriage = React.useCallback(async (
     requestedEvents: CalendarEvent[],
+    keyboardAnchorKey: string | null,
   ) => {
     const candidates = partitionCalendarEventsForTodoist(requestedEvents, calendars);
     if (!candidates.eligible.length) {
@@ -3743,6 +3763,21 @@ export function CalendarApp() {
     }));
     const stagedTaskIds = stagedMoves.map(({ task }) => task.id);
     const eventIds = new Set(stagedMoves.map(({ event }) => event.id));
+    const renderedElements = renderedEventElements();
+    const keyboardAnchor = renderedElements.find(
+      (element) => element.dataset.eventKey === keyboardAnchorKey,
+    );
+    const keyboardFocusKey = keyboardAnchor
+      ? findClosestEventKey(
+          eventNavigationRectForElement(keyboardAnchor),
+          renderedElements
+            .filter((element) => !eventIds.has(element.dataset.calendarEventId ?? ""))
+            .map(eventNavigationRectForElement),
+        )
+      : null;
+    const keyboardFocusElement = keyboardFocusKey
+      ? renderedElements.find((element) => element.dataset.eventKey === keyboardFocusKey)
+      : null;
     const deleted = stagedMoves.map(({ event }) => ({
       event,
       index: eventsRef.current.findIndex(({ id }) => id === event.id),
@@ -3759,14 +3794,25 @@ export function CalendarApp() {
       pendingTodoistCalendarRemovalIdsRef.current.add(eventId);
     });
     setEvents((current) => current.filter(({ id }) => !eventIds.has(id)));
-    setSelected(new Set());
+    if (keyboardFocusKey && keyboardFocusElement?.dataset.calendarEventId) {
+      const keyboardFocusEventId = keyboardFocusElement.dataset.calendarEventId;
+      pendingRenderedEventFocusRef.current = {
+        eventId: keyboardFocusEventId,
+        eventKey: keyboardFocusKey,
+      };
+      selectionAnchorRef.current = keyboardFocusKey;
+      eventNavigationHistoryRef.current.length = 0;
+      setSelected(new Set([keyboardFocusEventId]));
+    } else {
+      setSelected(new Set());
+    }
     setRightSidebarTab("todos");
-    window.requestAnimationFrame(() => {
+    if (!keyboardFocusKey) {
       window.requestAnimationFrame(() => {
-        document.querySelector<HTMLElement>(".task-triage-card-trigger")
+        document.querySelector<HTMLElement>(".calendar-workspace")
           ?.focus({ preventScroll: true });
       });
-    });
+    }
 
     if (candidates.blocked.length) {
       toast.warning(
@@ -3851,7 +3897,7 @@ export function CalendarApp() {
         submittingMessage: "Creating Todoist task…",
       },
     );
-  }, [calendars, chooseGuestNotifications, commitStagedTodoistTask, removeLocalTodoistTasks, stageTodoistTasks, toastDuration, todoistConnected]);
+  }, [calendars, chooseGuestNotifications, commitStagedTodoistTask, removeLocalTodoistTasks, renderedEventElements, stageTodoistTasks, toastDuration, todoistConnected]);
 
   React.useEffect(() => {
     const handleCrossSurfaceMove = (event: KeyboardEvent) => {
@@ -3922,11 +3968,19 @@ export function CalendarApp() {
       if (!requestedEvents.length) return;
       event.preventDefault();
       event.stopPropagation();
-      void moveCalendarEventsToTriage(requestedEvents);
+      const keyboardAnchorKey = target
+        ?.closest<HTMLElement>("[data-event-key]")
+        ?.dataset.eventKey
+        ?? selectionAnchorRef.current
+        ?? renderedEventElements().find((element) =>
+          requestedEvents.some(({ id }) => id === element.dataset.calendarEventId)
+        )?.dataset.eventKey
+        ?? null;
+      void moveCalendarEventsToTriage(requestedEvents, keyboardAnchorKey);
     };
     document.addEventListener("keydown", handleCrossSurfaceMove, true);
     return () => document.removeEventListener("keydown", handleCrossSurfaceMove, true);
-  }, [activeSelectionSurface, defaultCalendar?.id, moveCalendarEventsToTriage, renderedDays, scheduleTodoistTasks, selected, visibleTodoistTasks]);
+  }, [activeSelectionSurface, defaultCalendar?.id, moveCalendarEventsToTriage, renderedDays, renderedEventElements, scheduleTodoistTasks, selected, visibleTodoistTasks]);
 
   React.useLayoutEffect(() => {
     const pending = pendingKeyboardScheduledEventRef.current;
@@ -5038,6 +5092,7 @@ export function CalendarApp() {
               <span>Move calendar event to Triage</span><kbd>⌘ ⇧ →</kbd>
               <span>Go to any date</span><kbd>⌘ G</kbd>
               <span>Search events and tasks</span><span><kbd>⌘ F</kbd> <kbd>⌘ K</kbd></span>
+              <span>Review extracted tasks</span><kbd>⌘ E</kbd>
               <span>Change selected events’ calendar</span><kbd>C</kbd>
               <span>Duplicate selected events</span><kbd>⌘ D</kbd>
               <span>Duplicate and drag an event</span><kbd>⌘ drag</kbd>

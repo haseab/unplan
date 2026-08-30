@@ -81,7 +81,7 @@ const eventTimes = (body: GoogleCalendarEventPayload) => body.allDay
     };
 
 const editableEventFields = (body: GoogleCalendarEventPayload) => ({
-  ...(body.title !== undefined ? { summary: body.title || "Untitled event" } : {}),
+  ...(body.title !== undefined ? { summary: body.title } : {}),
   ...(body.colorId !== undefined ? { colorId: body.colorId } : {}),
   ...(body.description !== undefined ? { description: body.description } : {}),
   ...(body.location !== undefined ? { location: body.location } : {}),
@@ -168,7 +168,7 @@ const mapGoogleEvent = (
     id: `${calendarSourceId}:${event.id}`,
     providerEventId: event.id,
     calendarId: calendarSourceId,
-    title: event.summary || "Untitled event",
+    title: event.summary ?? "",
     start: event.start.dateTime ?? event.start.date!,
     end: event.end.dateTime ?? event.end.date!,
     createdAt: event.created,

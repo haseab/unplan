@@ -68,6 +68,7 @@ access and refresh tokens from the browser.
 | Select a range | Hold `Shift` and drag over events |
 | Toggle an event in the selection | `Command/Ctrl` + click |
 | Change the selected event's calendar | `C` |
+| Review extracted tasks | `Command/Ctrl + E` |
 | Duplicate selected events | `Command/Ctrl + D` |
 | Copy / paste selected events | `Command/Ctrl + C` / `Command/Ctrl + V` |
 | Undo the latest pending action | `Command/Ctrl + Z` |

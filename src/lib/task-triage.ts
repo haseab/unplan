@@ -11,6 +11,32 @@ export type TaskTriageFolder = {
   path: string;
 };
 
+export const isExtractedTaskTriageShortcut = ({
+  altKey,
+  extractedTaskCount,
+  key,
+  modalOpen,
+  modifier,
+  repeat,
+  shiftKey,
+}: {
+  altKey: boolean;
+  extractedTaskCount: number;
+  key: string;
+  modalOpen: boolean;
+  modifier: boolean;
+  repeat: boolean;
+  shiftKey: boolean;
+}) => (
+  modifier
+  && !altKey
+  && extractedTaskCount > 0
+  && key.toLowerCase() === "e"
+  && !modalOpen
+  && !repeat
+  && !shiftKey
+);
+
 const folderLabel = (group: string) =>
   group.split("/").map((part) => part.trim()).filter(Boolean).at(-1) ?? group;
 

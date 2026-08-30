@@ -5,6 +5,7 @@ import {
   eventGapFillShortcut,
   eventMoveShortcut,
   eventResizeShortcut,
+  findClosestEventKey,
   findEventNavigationBacktrackKey,
   findEventClosestToTime,
   findRenderedEventClosestToPresent,
@@ -311,6 +312,18 @@ test("calendar focus restores a rendered event, otherwise it uses the present fa
     resolveCalendarFocusTargetKey("not-rendered", ["present"], "present"),
     "present",
   );
+});
+
+test("post-removal focus chooses the geometrically closest remaining event", () => {
+  const anchor = rect("removed", 1, 100, 100);
+  const candidates = [
+    rect("farther", 1, 100, 400),
+    rect("closest", 1, 100, 210),
+    rect("other-day", 2, 500, 100),
+  ];
+
+  assert.equal(findClosestEventKey(anchor, candidates), "closest");
+  assert.equal(findClosestEventKey(anchor, []), null);
 });
 
 test("selected calendar events consume arrow keys at navigation boundaries", () => {
