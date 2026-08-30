@@ -218,8 +218,23 @@ export const resizeEventEnd = (
   );
 };
 
+const resizeEventStart = (
+  event: CalendarEvent,
+  requestedDelta: number,
+) => {
+  const durationMinutes = differenceInMinutes(
+    parseISO(event.end),
+    parseISO(event.start),
+  );
+  return resizeEvent(
+    event,
+    "start",
+    Math.min(requestedDelta, durationMinutes - SNAP_MINUTES),
+  );
+};
+
 export type KeyboardResizeTransform = {
-  activeEdge: "end" | "start";
+  activeEdge: "end" | "start" | null;
   endMinuteDelta: number;
   startMinuteDelta: number;
 };
@@ -227,54 +242,27 @@ export type KeyboardResizeTransform = {
 export const applyKeyboardResizeTransform = (
   event: CalendarEvent,
   transform: KeyboardResizeTransform,
-) => resizeEvent(
+) => resizeEventStart(
   resizeEventEnd(event, transform.endMinuteDelta),
-  "start",
   transform.startMinuteDelta,
 );
 
 export const advanceKeyboardResizeTransform = (
-  events: CalendarEvent[],
   transform: KeyboardResizeTransform,
   minuteDelta: number,
 ): KeyboardResizeTransform => {
-  const allAtMinimumDuration = events.every((event) => {
-    const resized = applyKeyboardResizeTransform(event, transform);
-    return differenceInMinutes(parseISO(resized.end), parseISO(resized.start))
-      <= SNAP_MINUTES;
-  });
+  const activeEdge = transform.activeEdge
+    ?? (minuteDelta < 0 ? "start" : "end");
 
-  if (
-    transform.activeEdge === "end"
-    && minuteDelta < 0
-    && allAtMinimumDuration
-  ) {
-    return {
-      ...transform,
-      activeEdge: "start",
-      startMinuteDelta: transform.startMinuteDelta + minuteDelta,
-    };
-  }
-
-  if (
-    transform.activeEdge === "start"
-    && minuteDelta > 0
-    && allAtMinimumDuration
-  ) {
-    return {
-      ...transform,
-      activeEdge: "end",
-      endMinuteDelta: transform.endMinuteDelta + minuteDelta,
-    };
-  }
-
-  return transform.activeEdge === "end"
+  return activeEdge === "end"
     ? {
         ...transform,
+        activeEdge,
         endMinuteDelta: transform.endMinuteDelta + minuteDelta,
       }
     : {
         ...transform,
+        activeEdge,
         startMinuteDelta: transform.startMinuteDelta + minuteDelta,
       };
 };

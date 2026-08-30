@@ -634,7 +634,7 @@ export function CalendarApp() {
   const keyboardMoveSessionRef = React.useRef<{
     action: ReturnType<typeof queueActionToast> | null;
     dayDelta: number;
-    resizeActiveEdge: "end" | "start";
+    resizeActiveEdge: "end" | "start" | null;
     endMinuteDelta: number;
     minuteDelta: number;
     originals: CalendarEvent[];
@@ -643,6 +643,10 @@ export function CalendarApp() {
     startMinuteDelta: number;
     targetStart: Date | null;
     guestPromptTimer: ReturnType<typeof setTimeout> | null;
+  } | null>(null);
+  const keyboardResizeEdgeRef = React.useRef<{
+    activeEdge: "end" | "start";
+    selectionKey: string;
   } | null>(null);
   const keyboardTaskGroupMoveSessionRef = React.useRef<{
     action: ReturnType<typeof queueActionToast> | null;
@@ -787,6 +791,10 @@ export function CalendarApp() {
     eventsRef.current = events;
     visibleRef.current = visibleCalendars;
   }, [events, visibleCalendars]);
+
+  React.useEffect(() => {
+    keyboardResizeEdgeRef.current = null;
+  }, [selected]);
 
   React.useEffect(() => {
     setActionToastResourceHold(
@@ -4635,10 +4643,14 @@ export function CalendarApp() {
         !session
         || session.selectionKey !== selectionKey
       ) {
+        const rememberedResizeEdge = keyboardResizeEdgeRef.current?.selectionKey
+          === selectionKey
+          ? keyboardResizeEdgeRef.current.activeEdge
+          : null;
         session = {
           action: null,
           dayDelta: 0,
-          resizeActiveEdge: "end",
+          resizeActiveEdge: rememberedResizeEdge,
           endMinuteDelta: 0,
           minuteDelta: 0,
           originals: selection,
@@ -4662,7 +4674,6 @@ export function CalendarApp() {
       }
       if (resizeShortcut) {
         const nextResize = advanceKeyboardResizeTransform(
-          session.originals,
           {
             activeEdge: session.resizeActiveEdge,
             endMinuteDelta: session.endMinuteDelta,
@@ -4673,6 +4684,12 @@ export function CalendarApp() {
         session.resizeActiveEdge = nextResize.activeEdge;
         session.endMinuteDelta = nextResize.endMinuteDelta;
         session.startMinuteDelta = nextResize.startMinuteDelta;
+        if (nextResize.activeEdge) {
+          keyboardResizeEdgeRef.current = {
+            activeEdge: nextResize.activeEdge,
+            selectionKey,
+          };
+        }
       }
       if (!sessionStarted) {
         if (session.action?.cancel()) session.action = null;
