@@ -14,6 +14,7 @@ type PendingAction = {
   controls: ActionToastController;
   isPaused: () => boolean;
   pause: () => void;
+  refresh: (message: string, duration: number) => void;
   replace: (message: string, options: ActionToastOptions) => void;
   resourceIds: ReadonlySet<string>;
   resume: () => void;
@@ -238,25 +239,30 @@ export function queueActionToast(
     },
   });
   const controls: ActionToastController = { cancel, toastId, submit, undo };
+  const refresh = (nextMessage: string, nextDuration: number) => {
+    if (state !== "pending") return;
+    clearTimer();
+    currentMessage = nextMessage;
+    remainingDuration = Math.max(0, nextDuration);
+    paused = actionIsHeld(action);
+    renderPendingToast();
+    scheduleSubmit();
+    publishSyncSnapshot();
+  };
   const action: PendingAction = {
     coalesceKey: options.coalesceKey,
     controls,
     isPaused: () => paused,
     pause,
+    refresh,
     replace: (nextMessage, nextOptions) => {
       if (state !== "pending") return;
-      clearTimer();
-      currentMessage = nextMessage;
       currentOptions = nextOptions;
-      remainingDuration = Math.max(0, nextOptions.duration);
       resourceIds.clear();
       for (const resourceId of nextOptions.resourceIds ?? []) {
         resourceIds.add(resourceId);
       }
-      paused = actionIsHeld(action);
-      renderPendingToast();
-      scheduleSubmit();
-      publishSyncSnapshot();
+      refresh(nextMessage, nextOptions.duration);
     },
     resourceIds,
     resume,
@@ -276,6 +282,17 @@ export function queueActionToast(
 
   return controls;
 }
+
+export const refreshActionToast = (
+  coalesceKey: string,
+  message: string,
+  duration: number,
+) => {
+  const action = pendingCoalescedActions.get(coalesceKey);
+  if (!action) return false;
+  action.refresh(message, duration);
+  return true;
+};
 
 export const triggerToastUndo = () => latestPendingAction()?.undo() ?? false;
 

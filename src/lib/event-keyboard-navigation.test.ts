@@ -3,13 +3,18 @@ import test from "node:test";
 import {
   crossSurfaceMoveShortcut,
   eventMoveShortcut,
+  eventResizeShortcut,
   findEventNavigationBacktrackKey,
-  findEventClosestToMiddleDayNoon,
+  findEventClosestToTime,
+  findRenderedEventClosestToPresent,
   findDirectionalEventKey,
   isEventCalendarPickerShortcut,
   isEventMoveAtOrigin,
+  isEventMoveToPresentShortcut,
   isEventTitleFocusShortcut,
+  resolveCalendarFocusTargetKey,
   resolveEventNavigationAnchorKey,
+  shouldConsumeEventNavigationKey,
   sidebarHorizontalArrowAction,
   type EventNavigationTransition,
   type EventNavigationRect,
@@ -82,6 +87,35 @@ test("Option+arrows resolve to calendar event moves", () => {
   assert.equal(shortcut("ArrowLeft", { shiftKey: true }), null);
 });
 
+test("Option+Command+Down targets one timed calendar event at the present", () => {
+  const shortcut = (
+    overrides: Partial<Parameters<typeof isEventMoveToPresentShortcut>[0]> = {},
+  ) => isEventMoveToPresentShortcut({
+    activeCalendar: true,
+    altKey: true,
+    ctrlKey: false,
+    editable: false,
+    includesAllDay: false,
+    key: "ArrowDown",
+    metaKey: true,
+    modalOpen: false,
+    repeat: false,
+    selectedCount: 1,
+    shiftKey: false,
+    ...overrides,
+  });
+
+  assert.equal(shortcut(), true);
+  assert.equal(shortcut({ key: "ArrowUp" }), false);
+  assert.equal(shortcut({ metaKey: false }), false);
+  assert.equal(shortcut({ altKey: false }), false);
+  assert.equal(shortcut({ includesAllDay: true }), false);
+  assert.equal(shortcut({ selectedCount: 2 }), false);
+  assert.equal(shortcut({ repeat: true }), false);
+  assert.equal(shortcut({ editable: true }), false);
+  assert.equal(shortcut({ modalOpen: true }), false);
+});
+
 test("minute shortcuts do not move all-day selections", () => {
   const shortcut = (key: string) => eventMoveShortcut({
     activeCalendar: true,
@@ -100,6 +134,34 @@ test("minute shortcuts do not move all-day selections", () => {
   assert.equal(shortcut("ArrowUp"), null);
   assert.equal(shortcut("ArrowDown"), null);
   assert.deepEqual(shortcut("ArrowLeft"), { dayDelta: -1, minuteDelta: 0 });
+});
+
+test("Shift+Option+vertical arrows resize timed events from the bottom", () => {
+  const shortcut = (
+    key: string,
+    overrides: Partial<Parameters<typeof eventResizeShortcut>[0]> = {},
+  ) => eventResizeShortcut({
+    activeCalendar: true,
+    altKey: true,
+    ctrlKey: false,
+    editable: false,
+    includesAllDay: false,
+    key,
+    metaKey: false,
+    modalOpen: false,
+    repeat: false,
+    selectedCount: 1,
+    shiftKey: true,
+    ...overrides,
+  });
+
+  assert.deepEqual(shortcut("ArrowUp"), { minuteDelta: -15 });
+  assert.deepEqual(shortcut("ArrowDown"), { minuteDelta: 15 });
+  assert.equal(shortcut("ArrowLeft"), null);
+  assert.equal(shortcut("ArrowDown", { shiftKey: false }), null);
+  assert.equal(shortcut("ArrowDown", { includesAllDay: true }), null);
+  assert.equal(shortcut("ArrowDown", { editable: true }), null);
+  assert.equal(shortcut("ArrowDown", { selectedCount: 0 }), null);
 });
 
 test("C opens the calendar picker for any event selection", () => {
@@ -128,8 +190,10 @@ test("C opens the calendar picker for any event selection", () => {
 test("Enter focuses the title whenever a selected calendar event has focus", () => {
   const shortcut = (overrides: Partial<Parameters<typeof isEventTitleFocusShortcut>[0]> = {}) =>
     isEventTitleFocusShortcut({
+      activeCalendar: true,
       altKey: false,
       calendarEventFocused: true,
+      focusIsNeutral: false,
       key: "Enter",
       modalOpen: false,
       modifier: false,
@@ -141,6 +205,12 @@ test("Enter focuses the title whenever a selected calendar event has focus", () 
   assert.equal(shortcut(), true);
   assert.equal(shortcut({ selectedCount: 2 }), true);
   assert.equal(shortcut({ calendarEventFocused: false }), false);
+  assert.equal(shortcut({ calendarEventFocused: false, focusIsNeutral: true }), true);
+  assert.equal(shortcut({
+    activeCalendar: false,
+    calendarEventFocused: false,
+    focusIsNeutral: true,
+  }), false);
   assert.equal(shortcut({ key: " " }), false);
   assert.equal(shortcut({ modifier: true }), false);
   assert.equal(shortcut({ altKey: true }), false);
@@ -173,15 +243,67 @@ test("sidebar horizontal arrows are suppressed", () => {
   }), null);
 });
 
-test("calendar focus fallback chooses the event nearest the middle day at noon", () => {
+test("calendar focus fallback chooses the event nearest the present time", () => {
   assert.equal(
-    findEventClosestToMiddleDayNoon([
-      { dayIndex: 6, endMinute: 720, eventKey: "day-before", startMinute: 660 },
-      { dayIndex: 7, endMinute: 780, eventKey: "middle-afternoon", startMinute: 750 },
-      { dayIndex: 7, endMinute: 735, eventKey: "middle-noon", startMinute: 705 },
-    ], 15),
-    "middle-noon",
+    findEventClosestToTime([
+      { dayIndex: 6, endMinute: 720, eventKey: "yesterday", startMinute: 660 },
+      { dayIndex: 7, endMinute: 780, eventKey: "later-today", startMinute: 750 },
+      { dayIndex: 7, endMinute: 735, eventKey: "closest-to-now", startMinute: 705 },
+    ], 7, 11 * 60 + 58),
+    "closest-to-now",
   );
+});
+
+test("calendar focus requests a date jump when today is outside the rendered range", () => {
+  const julyEvents = [
+    { dayIndex: 2, endMinute: 750, eventKey: "july-event", startMinute: 720 },
+  ];
+  assert.equal(
+    findRenderedEventClosestToPresent(julyEvents, 40, 12 * 60, 21),
+    null,
+  );
+  assert.equal(
+    findRenderedEventClosestToPresent(julyEvents, 2, 12 * 60, 21),
+    "july-event",
+  );
+});
+
+test("calendar focus restores a rendered event, otherwise it uses the present fallback", () => {
+  assert.equal(
+    resolveCalendarFocusTargetKey("remembered", ["present", "remembered"], "present"),
+    "remembered",
+  );
+  assert.equal(
+    resolveCalendarFocusTargetKey(null, ["present"], "present"),
+    "present",
+  );
+  assert.equal(
+    resolveCalendarFocusTargetKey("not-rendered", ["present"], "present"),
+    "present",
+  );
+});
+
+test("selected calendar events consume arrow keys at navigation boundaries", () => {
+  assert.equal(shouldConsumeEventNavigationKey({
+    activeCalendar: true,
+    navigated: false,
+    selectedCount: 1,
+  }), true);
+  assert.equal(shouldConsumeEventNavigationKey({
+    activeCalendar: true,
+    navigated: false,
+    selectedCount: 0,
+  }), false);
+  assert.equal(shouldConsumeEventNavigationKey({
+    activeCalendar: false,
+    navigated: false,
+    selectedCount: 1,
+  }), false);
+  assert.equal(shouldConsumeEventNavigationKey({
+    activeCalendar: false,
+    navigated: true,
+    selectedCount: 0,
+  }), true);
 });
 
 const rect = (

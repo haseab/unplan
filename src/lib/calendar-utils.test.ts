@@ -8,7 +8,10 @@ import {
   eventTimesMatch,
   formatEventStartTime,
   formatTimeRange,
+  latestQuarterHour,
+  moveEventToStart,
   resizeEvent,
+  resizeEventEnd,
 } from "./calendar-utils";
 
 const originalStart = new Date(2026, 7, 22, 10);
@@ -31,6 +34,27 @@ test("compact event card time shows only the start time without meridiem", () =>
 
 test("time ranges use the calendar event label format", () => {
   assert.equal(formatTimeRange(originalStart, originalEnd), "10:00–11:00 AM");
+});
+
+test("the latest quarter-hour floors the present time", () => {
+  const present = new Date(2026, 7, 22, 10, 14, 59, 999);
+
+  assert.deepEqual(latestQuarterHour(present), new Date(2026, 7, 22, 10));
+  assert.deepEqual(
+    latestQuarterHour(new Date(2026, 7, 22, 10, 45)),
+    new Date(2026, 7, 22, 10, 45),
+  );
+  assert.equal(present.getMinutes(), 14);
+});
+
+test("moving an event to a requested start preserves its duration", () => {
+  const requestedStart = new Date(2026, 7, 23, 14, 15);
+
+  assert.deepEqual(moveEventToStart(event, requestedStart), {
+    ...event,
+    start: requestedStart.toISOString(),
+    end: new Date(2026, 7, 23, 15, 15).toISOString(),
+  });
 });
 
 test("dragging the start past the end flips the resized interval", () => {
@@ -62,6 +86,21 @@ test("a resize maintains the minimum duration at the crossover point", () => {
       end: originalEnd.toISOString(),
     },
   );
+});
+
+test("keyboard end resizing keeps the start fixed and enforces the minimum duration", () => {
+  assert.deepEqual(resizeEventEnd(event, -15), {
+    ...event,
+    end: new Date(originalEnd.getTime() - 15 * 60 * 1000).toISOString(),
+  });
+  assert.deepEqual(resizeEventEnd(event, 15), {
+    ...event,
+    end: new Date(originalEnd.getTime() + 15 * 60 * 1000).toISOString(),
+  });
+  assert.deepEqual(resizeEventEnd(event, -90), {
+    ...event,
+    end: new Date(originalStart.getTime() + 15 * 60 * 1000).toISOString(),
+  });
 });
 
 test("a zero-delta resize preserves provider timestamps exactly", () => {

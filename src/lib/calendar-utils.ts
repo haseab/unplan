@@ -27,6 +27,16 @@ export const minutesFromStartOfDay = (date: Date) =>
 export const snapMinutes = (minutes: number) =>
   Math.round(minutes / SNAP_MINUTES) * SNAP_MINUTES;
 
+export const latestQuarterHour = (date: Date) => {
+  const latest = new Date(date);
+  latest.setMinutes(
+    Math.floor(latest.getMinutes() / SNAP_MINUTES) * SNAP_MINUTES,
+    0,
+    0,
+  );
+  return latest;
+};
+
 export const clamp = (value: number, min: number, max: number) =>
   Math.min(Math.max(value, min), max);
 
@@ -133,6 +143,22 @@ export const moveEvent = (
   end: addMinutes(addDays(parseISO(event.end), dayDelta), minuteDelta).toISOString(),
 });
 
+export const moveEventToStart = (
+  event: CalendarEvent,
+  requestedStart: Date,
+) => {
+  const start = parseISO(event.start);
+  const end = parseISO(event.end);
+  const requestedEnd = new Date(
+    requestedStart.getTime() + end.getTime() - start.getTime(),
+  );
+  return {
+    ...event,
+    start: requestedStart.toISOString(),
+    end: requestedEnd.toISOString(),
+  };
+};
+
 export const resizeEvent = (
   event: CalendarEvent,
   edge: "start" | "end",
@@ -175,6 +201,21 @@ export const resizeEvent = (
     start: resizedStart.toISOString(),
     end: resizedEnd.toISOString(),
   };
+};
+
+export const resizeEventEnd = (
+  event: CalendarEvent,
+  requestedDelta: number,
+) => {
+  const durationMinutes = differenceInMinutes(
+    parseISO(event.end),
+    parseISO(event.start),
+  );
+  return resizeEvent(
+    event,
+    "end",
+    Math.max(requestedDelta, SNAP_MINUTES - durationMinutes),
+  );
 };
 
 export const eventTimesMatch = (

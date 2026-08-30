@@ -275,20 +275,23 @@ export function TaskTriageDialog({
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         event.preventDefault();
+        event.stopPropagation();
         close();
         return;
       }
       if (phase !== "extracted" || event.metaKey || event.ctrlKey || event.altKey || event.repeat) return;
       if (event.key === "ArrowLeft") {
         event.preventDefault();
+        event.stopPropagation();
         void resolveExtracted("left");
       } else if (event.key === "ArrowRight") {
         event.preventDefault();
+        event.stopPropagation();
         void resolveExtracted("right");
       }
     };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
+    window.addEventListener("keydown", handleKeyDown, true);
+    return () => window.removeEventListener("keydown", handleKeyDown, true);
   }, [close, open, phase, resolveExtracted]);
 
   React.useEffect(() => {

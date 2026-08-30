@@ -29,11 +29,28 @@ export const moveTask = <Task>(
 
 export type SidebarNavigationItem = {
   id: string;
-  kind: "folder" | "task";
+  kind: "action" | "folder" | "task";
 };
 
 export const sidebarFolderNavigationId = (group: string) => `folder:${group}`;
 export const sidebarTaskNavigationId = (taskId: string) => `task:${taskId}`;
+export const sidebarTriageNavigationId = (mode: "extracted" | "normal") =>
+  `triage:${mode}`;
+
+export const sidebarTriageNavigationItems = ({
+  extractedCount,
+  normalCount,
+}: {
+  extractedCount: number;
+  normalCount: number;
+}): SidebarNavigationItem[] => [
+  ...(extractedCount > 0
+    ? [{ id: sidebarTriageNavigationId("extracted"), kind: "action" as const }]
+    : []),
+  ...(normalCount > 0
+    ? [{ id: sidebarTriageNavigationId("normal"), kind: "action" as const }]
+    : []),
+];
 
 export const sidebarNavigationItems = (
   groups: Array<{ group: string; taskIds: string[] }>,

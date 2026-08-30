@@ -230,7 +230,9 @@ kbd {
   color: var(--muted);
   box-shadow: 0 1px 2px rgba(45, 43, 38, 0.03);
   transition: border-color 160ms ease, background 160ms ease, box-shadow 160ms ease;
+  view-transition-name: date-command;
 }
+.date-command-slot { min-height: 67px; flex: 0 0 67px; }
 .date-command:focus-within { border-color: var(--blue-border); background: var(--surface-hover); box-shadow: 0 0 0 3px var(--blue-soft); }
 .date-command[data-invalid="true"] { border-color: color-mix(in oklab, #e75a50 48%, var(--line)); }
 .date-command > svg { align-self: start; margin-top: 3px; color: var(--text-soft); }
@@ -244,6 +246,44 @@ kbd {
 .date-command-submit:hover:not(:disabled) { filter: brightness(1.08); }
 .date-command-submit:active:not(:disabled) { transform: scale(0.92); }
 .date-command-submit:disabled { background: var(--hover-strong); color: var(--text-faint); cursor: default; opacity: 0.7; }
+
+.date-command-backdrop { padding: 16px; backdrop-filter: blur(5px); }
+.date-command-dialog {
+  width: min(390px, calc(100vw - 32px));
+  border-radius: 15px;
+  background: var(--surface-elevated);
+  box-shadow: 0 24px 80px var(--shadow-color);
+  animation: date-command-dialog-in 220ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+.date-command-dialog .date-command {
+  min-height: 64px;
+  margin: 0;
+  padding: 10px 12px;
+  border-color: var(--line-strong);
+  border-radius: 15px;
+  background: var(--surface-elevated);
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, white 4%, transparent);
+}
+.date-command-dialog .date-command:focus-within {
+  background: var(--surface-elevated);
+  box-shadow: inset 0 0 0 1px var(--blue-border), 0 0 0 3px var(--blue-soft);
+}
+.date-command-dialog .date-command input { height: 22px; font-size: 15px; }
+.date-command-dialog .date-command-copy { gap: 4px; }
+.date-command-dialog .date-command-copy small { font-size: 9px; line-height: 12px; }
+@keyframes date-command-dialog-in {
+  from { opacity: 0; transform: translateY(-8px) scale(0.97); }
+}
+
+::view-transition-old(root),
+::view-transition-new(root) { animation: none; }
+::view-transition-group(date-command) {
+  z-index: 101;
+  animation-duration: 260ms;
+  animation-timing-function: cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+::view-transition-old(date-command),
+::view-transition-new(date-command) { mix-blend-mode: normal; }
 
 .mini-month { padding: 0 14px 18px; border-bottom: 1px solid var(--line); }
 .mini-month-heading { height: 28px; justify-content: space-between; }
@@ -706,7 +746,7 @@ kbd {
 .task-triage-card-trigger-normal { border-left-color: var(--line-strong); background: var(--surface-muted); color: var(--muted); }
 .task-triage-card-trigger:hover { background: color-mix(in oklab, var(--blue-soft) 78%, var(--surface-hover)); }
 .task-triage-card-trigger-normal:hover { background: var(--surface-hover); color: var(--ink); }
-.task-triage-card-trigger:focus-visible { outline: 2px solid var(--blue-border); outline-offset: 2px; }
+.task-triage-card-trigger:focus-visible { outline: 2px solid white; outline-offset: 2px; }
 .task-triage-card-trigger strong { overflow: hidden; font-size: 12px; font-weight: 560; letter-spacing: -0.01em; text-overflow: ellipsis; white-space: nowrap; }
 .task-triage-card-trigger > span { display: grid; min-width: 22px; height: 20px; place-items: center; padding: 0 6px; border-radius: 999px; background: var(--surface-translucent); color: var(--ink); font-size: 9px; font-weight: 650; font-variant-numeric: tabular-nums; }
 @keyframes triage-trigger-in { from { opacity: 0; transform: translateY(-5px) scale(0.98); } }

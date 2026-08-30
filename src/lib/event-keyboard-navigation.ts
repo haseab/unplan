@@ -29,6 +29,48 @@ export type EventMoveShortcut = {
   minuteDelta: number;
 };
 
+export type EventResizeShortcut = {
+  minuteDelta: number;
+};
+
+export const isEventMoveToPresentShortcut = ({
+  activeCalendar,
+  altKey,
+  ctrlKey,
+  editable,
+  includesAllDay,
+  key,
+  metaKey,
+  modalOpen,
+  repeat,
+  selectedCount,
+  shiftKey,
+}: {
+  activeCalendar: boolean;
+  altKey: boolean;
+  ctrlKey: boolean;
+  editable: boolean;
+  includesAllDay: boolean;
+  key: string;
+  metaKey: boolean;
+  modalOpen: boolean;
+  repeat: boolean;
+  selectedCount: number;
+  shiftKey: boolean;
+}) => (
+  activeCalendar
+  && altKey
+  && !ctrlKey
+  && !editable
+  && !includesAllDay
+  && key === "ArrowDown"
+  && metaKey
+  && !modalOpen
+  && !repeat
+  && selectedCount === 1
+  && !shiftKey
+);
+
 export type CrossSurfaceMoveAction =
   | "schedule-sidebar-task"
   | "triage-calendar-events";
@@ -108,6 +150,47 @@ export const eventMoveShortcut = ({
   return null;
 };
 
+export const eventResizeShortcut = ({
+  activeCalendar,
+  altKey,
+  ctrlKey,
+  editable,
+  includesAllDay,
+  key,
+  metaKey,
+  modalOpen,
+  selectedCount,
+  shiftKey,
+}: {
+  activeCalendar: boolean;
+  altKey: boolean;
+  ctrlKey: boolean;
+  editable: boolean;
+  includesAllDay: boolean;
+  key: string;
+  metaKey: boolean;
+  modalOpen: boolean;
+  repeat: boolean;
+  selectedCount: number;
+  shiftKey: boolean;
+}): EventResizeShortcut | null => {
+  if (
+    !activeCalendar
+    || !altKey
+    || ctrlKey
+    || editable
+    || includesAllDay
+    || metaKey
+    || modalOpen
+    || selectedCount === 0
+    || !shiftKey
+  ) return null;
+
+  if (key === "ArrowUp") return { minuteDelta: -15 };
+  if (key === "ArrowDown") return { minuteDelta: 15 };
+  return null;
+};
+
 export const isEventCalendarPickerShortcut = ({
   altKey,
   key,
@@ -135,16 +218,20 @@ export const isEventCalendarPickerShortcut = ({
 );
 
 export const isEventTitleFocusShortcut = ({
+  activeCalendar,
   altKey,
   calendarEventFocused,
+  focusIsNeutral,
   key,
   modalOpen,
   modifier,
   selectedCount,
   shiftKey,
 }: {
+  activeCalendar: boolean;
   altKey: boolean;
   calendarEventFocused: boolean;
+  focusIsNeutral: boolean;
   key: string;
   modalOpen: boolean;
   modifier: boolean;
@@ -157,7 +244,7 @@ export const isEventTitleFocusShortcut = ({
   && !shiftKey
   && selectedCount > 0
   && !modalOpen
-  && calendarEventFocused
+  && (calendarEventFocused || (activeCalendar && focusIsNeutral))
 );
 
 export const sidebarHorizontalArrowAction = ({
@@ -182,11 +269,12 @@ export const sidebarHorizontalArrowAction = ({
 
 const center = (start: number, end: number) => start + (end - start) / 2;
 
-export const findEventClosestToMiddleDayNoon = (
+export const findEventClosestToTime = (
   events: EventNavigationTimePoint[],
-  renderedDayCount: number,
+  targetDayIndex: number,
+  targetMinute: number,
 ) => {
-  const target = ((renderedDayCount - 1) / 2) * 24 * 60 + 12 * 60;
+  const target = targetDayIndex * 24 * 60 + targetMinute;
   return events.reduce<{ eventKey: string; score: number } | null>((best, event) => {
     const eventTime = event.dayIndex * 24 * 60
       + center(event.startMinute, event.endMinute);
@@ -194,6 +282,33 @@ export const findEventClosestToMiddleDayNoon = (
     return !best || score < best.score ? { eventKey: event.eventKey, score } : best;
   }, null)?.eventKey ?? null;
 };
+
+export const findRenderedEventClosestToPresent = (
+  events: EventNavigationTimePoint[],
+  presentDayIndex: number,
+  presentMinute: number,
+  renderedDayCount: number,
+) => presentDayIndex >= 0 && presentDayIndex < renderedDayCount
+  ? findEventClosestToTime(events, presentDayIndex, presentMinute)
+  : null;
+
+export const resolveCalendarFocusTargetKey = (
+  rememberedEventKey: string | null,
+  renderedEventKeys: string[],
+  presentEventKey: string | null,
+) => rememberedEventKey && renderedEventKeys.includes(rememberedEventKey)
+  ? rememberedEventKey
+  : presentEventKey;
+
+export const shouldConsumeEventNavigationKey = ({
+  activeCalendar,
+  navigated,
+  selectedCount,
+}: {
+  activeCalendar: boolean;
+  navigated: boolean;
+  selectedCount: number;
+}) => navigated || (activeCalendar && selectedCount > 0);
 
 const centerDistance = (
   anchor: EventNavigationRect,

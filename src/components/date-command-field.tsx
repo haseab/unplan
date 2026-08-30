@@ -7,10 +7,19 @@ import { parseCalendarDateCommand } from "@/lib/calendar-date-command";
 
 type DateCommandFieldProps = {
   inputRef: React.RefObject<HTMLInputElement | null>;
+  onCancel?: () => void;
   onNavigate: (date: Date) => void;
+  surface?: "dialog" | "sidebar";
 };
 
-export function DateCommandField({ inputRef, onNavigate }: DateCommandFieldProps) {
+export function DateCommandField({
+  inputRef,
+  onCancel,
+  onNavigate,
+  surface = "sidebar",
+}: DateCommandFieldProps) {
+  const inputId = React.useId();
+  const feedbackId = React.useId();
   const [query, setQuery] = React.useState("");
   const [submittedInvalidQuery, setSubmittedInvalidQuery] = React.useState(false);
   const parsedDate = React.useMemo(
@@ -33,6 +42,7 @@ export function DateCommandField({ inputRef, onNavigate }: DateCommandFieldProps
   return (
     <form
       className="date-command"
+      data-date-command-surface={surface}
       data-invalid={submittedInvalidQuery || undefined}
       onSubmit={(event) => {
         event.preventDefault();
@@ -40,11 +50,11 @@ export function DateCommandField({ inputRef, onNavigate }: DateCommandFieldProps
       }}
     >
       <CalendarDays size={15} aria-hidden="true" />
-      <label className="sr-only" htmlFor="date-command-input">Go to a date</label>
+      <label className="sr-only" htmlFor={inputId}>Go to a date</label>
       <span className="date-command-copy">
         <input
           ref={inputRef}
-          id="date-command-input"
+          id={inputId}
           value={query}
           onChange={(event) => {
             setQuery(event.target.value);
@@ -58,18 +68,20 @@ export function DateCommandField({ inputRef, onNavigate }: DateCommandFieldProps
             }
             if (event.key === "Escape") {
               event.preventDefault();
+              if (onCancel) event.stopPropagation();
               setQuery("");
               setSubmittedInvalidQuery(false);
               event.currentTarget.blur();
+              onCancel?.();
             }
           }}
           placeholder="Go to any date…"
           autoComplete="off"
           spellCheck={false}
-          aria-describedby="date-command-feedback"
+          aria-describedby={feedbackId}
           aria-invalid={submittedInvalidQuery || undefined}
         />
-        <small id="date-command-feedback" aria-live="polite">
+        <small id={feedbackId} aria-live="polite">
           {parsedDate
             ? parsedLabel
             : submittedInvalidQuery
@@ -86,7 +98,7 @@ export function DateCommandField({ inputRef, onNavigate }: DateCommandFieldProps
         >
           <ArrowRight size={13} strokeWidth={2.5} />
         </button>
-      ) : <kbd>⌘ G</kbd>}
+      ) : <kbd>{surface === "dialog" ? "esc" : "⌘ G"}</kbd>}
     </form>
   );
 }

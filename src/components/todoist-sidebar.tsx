@@ -26,6 +26,7 @@ import {
   sidebarFolderNavigationId,
   sidebarNavigationItems,
   sidebarTaskNavigationId,
+  sidebarTriageNavigationItems,
   taskMoveIndex,
 } from "@/lib/task-sidebar-order";
 import {
@@ -520,6 +521,10 @@ export function TodoistSidebar({
   );
   const sidebarNavigation = React.useMemo(
     () => [
+      ...sidebarTriageNavigationItems({
+        extractedCount: extractedTriageCount,
+        normalCount: normalTriageCount,
+      }),
       ...sidebarNavigationItems(
         taskGroups
           .filter(([group]) => group !== TODOIST_ROOT_GROUP)
@@ -536,7 +541,7 @@ export function TodoistSidebar({
           kind: "task" as const,
         })),
     ],
-    [collapsedGroups, groupParents, taskGroups],
+    [collapsedGroups, extractedTriageCount, groupParents, normalTriageCount, taskGroups],
   );
   const { beginMarquee, marqueeStyle } = useListMarqueeSelection({
     containerRef: groupsRef,
@@ -1210,6 +1215,9 @@ export function TodoistSidebar({
             normalCount={normalTriageCount}
             onOpenExtracted={onOpenExtractedTriage}
             onOpenNormal={onOpenNormalTriage}
+            onNavigate={(navigationId, direction) => {
+              navigateSidebarItem(navigationId, direction, false);
+            }}
           />
           {visibleTaskGroups.map(([group, items]) => {
             const isRoot = group === TODOIST_ROOT_GROUP;

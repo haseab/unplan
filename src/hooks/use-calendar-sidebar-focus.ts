@@ -72,10 +72,11 @@ export const useCalendarSidebarFocus = (
 
   const focusCalendar = React.useCallback(() => {
     const activeElement = document.activeElement;
-    if (
+    const restoringFromSidebar = Boolean(
       activeElement instanceof HTMLElement
       && activeElement.closest(".right-sidebar")
-    ) {
+    );
+    if (restoringFromSidebar && activeElement instanceof HTMLElement) {
       const sidebarItem = activeElement.closest<HTMLElement>(
         "[data-sidebar-navigation-id]",
       );
@@ -86,7 +87,9 @@ export const useCalendarSidebarFocus = (
         sidebarTaskNavigationIdRef.current = sidebarItem.dataset.sidebarNavigationId;
       }
     }
-    return focusCalendarTarget(calendarEventKeyRef.current);
+    return focusCalendarTarget(
+      restoringFromSidebar ? calendarEventKeyRef.current : null,
+    );
   }, [focusCalendarTarget]);
 
   const focusSidebar = React.useCallback(() => {
