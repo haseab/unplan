@@ -218,6 +218,67 @@ export const resizeEventEnd = (
   );
 };
 
+export type KeyboardResizeTransform = {
+  activeEdge: "end" | "start";
+  endMinuteDelta: number;
+  startMinuteDelta: number;
+};
+
+export const applyKeyboardResizeTransform = (
+  event: CalendarEvent,
+  transform: KeyboardResizeTransform,
+) => resizeEvent(
+  resizeEventEnd(event, transform.endMinuteDelta),
+  "start",
+  transform.startMinuteDelta,
+);
+
+export const advanceKeyboardResizeTransform = (
+  events: CalendarEvent[],
+  transform: KeyboardResizeTransform,
+  minuteDelta: number,
+): KeyboardResizeTransform => {
+  const allAtMinimumDuration = events.every((event) => {
+    const resized = applyKeyboardResizeTransform(event, transform);
+    return differenceInMinutes(parseISO(resized.end), parseISO(resized.start))
+      <= SNAP_MINUTES;
+  });
+
+  if (
+    transform.activeEdge === "end"
+    && minuteDelta < 0
+    && allAtMinimumDuration
+  ) {
+    return {
+      ...transform,
+      activeEdge: "start",
+      startMinuteDelta: transform.startMinuteDelta + minuteDelta,
+    };
+  }
+
+  if (
+    transform.activeEdge === "start"
+    && minuteDelta > 0
+    && allAtMinimumDuration
+  ) {
+    return {
+      ...transform,
+      activeEdge: "end",
+      endMinuteDelta: transform.endMinuteDelta + minuteDelta,
+    };
+  }
+
+  return transform.activeEdge === "end"
+    ? {
+        ...transform,
+        endMinuteDelta: transform.endMinuteDelta + minuteDelta,
+      }
+    : {
+        ...transform,
+        startMinuteDelta: transform.startMinuteDelta + minuteDelta,
+      };
+};
+
 export const fillEventGap = (
   event: CalendarEvent,
   candidates: CalendarEvent[],

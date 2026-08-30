@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { CalendarEvent } from "./calendar-types";
 import {
+  advanceKeyboardResizeTransform,
+  applyKeyboardResizeTransform,
   eventGeometry,
   eventSegmentGeometries,
   eventSegmentKey,
@@ -13,6 +15,7 @@ import {
   moveEventToStart,
   resizeEvent,
   resizeEventEnd,
+  type KeyboardResizeTransform,
 } from "./calendar-utils";
 
 const originalStart = new Date(2026, 7, 22, 10);
@@ -101,6 +104,53 @@ test("keyboard end resizing keeps the start fixed and enforces the minimum durat
   assert.deepEqual(resizeEventEnd(event, -90), {
     ...event,
     end: new Date(originalStart.getTime() + 15 * 60 * 1000).toISOString(),
+  });
+});
+
+test("keyboard resizing hands off from the end to the start after reaching 15 minutes", () => {
+  let transform: KeyboardResizeTransform = {
+    activeEdge: "end",
+    endMinuteDelta: 0,
+    startMinuteDelta: 0,
+  };
+
+  transform = advanceKeyboardResizeTransform([event], transform, -15);
+  transform = advanceKeyboardResizeTransform([event], transform, -15);
+  transform = advanceKeyboardResizeTransform([event], transform, -15);
+  assert.deepEqual(applyKeyboardResizeTransform(event, transform), {
+    ...event,
+    end: new Date(2026, 7, 22, 10, 15).toISOString(),
+  });
+
+  transform = advanceKeyboardResizeTransform([event], transform, -15);
+  assert.equal(transform.activeEdge, "start");
+  assert.deepEqual(applyKeyboardResizeTransform(event, transform), {
+    ...event,
+    start: new Date(2026, 7, 22, 9, 45).toISOString(),
+    end: new Date(2026, 7, 22, 10, 15).toISOString(),
+  });
+});
+
+test("keyboard resize boundary handoff reverses with Arrow Down", () => {
+  const minimumTransform = {
+    activeEdge: "start" as const,
+    endMinuteDelta: -45,
+    startMinuteDelta: 0,
+  };
+  const nextTransform = advanceKeyboardResizeTransform(
+    [event],
+    minimumTransform,
+    15,
+  );
+
+  assert.deepEqual(nextTransform, {
+    activeEdge: "end",
+    endMinuteDelta: -30,
+    startMinuteDelta: 0,
+  });
+  assert.deepEqual(applyKeyboardResizeTransform(event, nextTransform), {
+    ...event,
+    end: new Date(2026, 7, 22, 10, 30).toISOString(),
   });
 });
 

@@ -1,18 +1,13 @@
 "use client";
 
-import {
-  CalendarDays,
-  Layers3,
-  PanelRightClose,
-  PanelRightOpen,
-} from "lucide-react";
-import * as React from "react";
+import { CalendarDays, Layers3 } from "lucide-react";
+import type { ReactNode } from "react";
 
 export type RightSidebarTab = "events" | "todos";
 
 type RightSidebarProps = {
   activeTab: RightSidebarTab;
-  children: React.ReactNode;
+  children: ReactNode;
   eventCount: number;
   onTabChange: (tab: RightSidebarTab) => void;
   todoCount: number;
@@ -25,12 +20,9 @@ export function RightSidebar({
   onTabChange,
   todoCount,
 }: RightSidebarProps) {
-  const [collapsed, setCollapsed] = React.useState(false);
-
   return (
     <aside
       className="right-sidebar"
-      data-collapsed={collapsed ? "true" : undefined}
       data-todo-drop-target="true"
       aria-label="Event tasks and event details"
     >
@@ -39,8 +31,6 @@ export function RightSidebar({
           className="right-sidebar-tabs"
           role="tablist"
           aria-label="Right sidebar"
-          aria-hidden={collapsed || undefined}
-          inert={collapsed || undefined}
         >
           <button
             className={activeTab === "todos" ? "right-sidebar-tab-active" : ""}
@@ -61,23 +51,8 @@ export function RightSidebar({
             <CalendarDays size={15} /> Event {eventCount > 0 && <span>{eventCount}</span>}
           </button>
         </div>
-        <button
-          className="right-sidebar-collapse-button"
-          type="button"
-          aria-expanded={!collapsed}
-          aria-label={collapsed ? "Expand right sidebar" : "Collapse right sidebar"}
-          title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-          onClick={() => setCollapsed((current) => !current)}
-        >
-          {collapsed ? <PanelRightOpen size={16} /> : <PanelRightClose size={16} />}
-        </button>
       </div>
-      <div
-        className="right-sidebar-content"
-        role="tabpanel"
-        aria-hidden={collapsed || undefined}
-        inert={collapsed || undefined}
-      >
+      <div className="right-sidebar-content" role="tabpanel">
         {children}
       </div>
     </aside>

@@ -194,6 +194,8 @@ import {
 } from "@/lib/calendar-time-scale";
 import {
   MINUTES_IN_DAY,
+  advanceKeyboardResizeTransform,
+  applyKeyboardResizeTransform,
   clamp,
   eventGeometry,
   eventSegmentGeometries,
@@ -207,7 +209,6 @@ import {
   moveEvent,
   moveEventToStart,
   resizeEvent,
-  resizeEventEnd,
   snapMinutes,
   startOfCalendarWeek,
   weekLabel,
@@ -633,11 +634,13 @@ export function CalendarApp() {
   const keyboardMoveSessionRef = React.useRef<{
     action: ReturnType<typeof queueActionToast> | null;
     dayDelta: number;
+    resizeActiveEdge: "end" | "start";
     endMinuteDelta: number;
     minuteDelta: number;
     originals: CalendarEvent[];
     selectionKey: string;
     sendUpdates: GoogleSendUpdates | null;
+    startMinuteDelta: number;
     targetStart: Date | null;
     guestPromptTimer: ReturnType<typeof setTimeout> | null;
   } | null>(null);
@@ -4451,7 +4454,11 @@ export function CalendarApp() {
           ? moveEventToStart(original, session.targetStart)
           : original;
         const moved = moveEvent(positioned, session.dayDelta, session.minuteDelta);
-        const resized = resizeEventEnd(moved, session.endMinuteDelta);
+        const resized = applyKeyboardResizeTransform(moved, {
+          activeEdge: session.resizeActiveEdge,
+          endMinuteDelta: session.endMinuteDelta,
+          startMinuteDelta: session.startMinuteDelta,
+        });
         return {
           ...latest,
           allDay: resized.allDay,
@@ -4630,27 +4637,44 @@ export function CalendarApp() {
       ) {
         session = {
           action: null,
-          dayDelta: moveShortcut?.dayDelta ?? 0,
-          endMinuteDelta: resizeShortcut?.minuteDelta ?? 0,
-          minuteDelta: moveShortcut?.minuteDelta ?? 0,
+          dayDelta: 0,
+          resizeActiveEdge: "end",
+          endMinuteDelta: 0,
+          minuteDelta: 0,
           originals: selection,
           selectionKey,
           sendUpdates: null,
-          targetStart: moveToPresent ? latestQuarterHour(new Date()) : null,
+          startMinuteDelta: 0,
+          targetStart: null,
           guestPromptTimer: null,
         };
         keyboardMoveSessionRef.current = session;
         sessionStarted = true;
+      }
+
+      if (moveToPresent) {
+        session.dayDelta = 0;
+        session.minuteDelta = 0;
+        session.targetStart = latestQuarterHour(new Date());
       } else {
-        if (moveToPresent) {
-          session.dayDelta = 0;
-          session.minuteDelta = 0;
-          session.targetStart = latestQuarterHour(new Date());
-        } else {
-          session.dayDelta += moveShortcut?.dayDelta ?? 0;
-          session.minuteDelta += moveShortcut?.minuteDelta ?? 0;
-        }
-        session.endMinuteDelta += resizeShortcut?.minuteDelta ?? 0;
+        session.dayDelta += moveShortcut?.dayDelta ?? 0;
+        session.minuteDelta += moveShortcut?.minuteDelta ?? 0;
+      }
+      if (resizeShortcut) {
+        const nextResize = advanceKeyboardResizeTransform(
+          session.originals,
+          {
+            activeEdge: session.resizeActiveEdge,
+            endMinuteDelta: session.endMinuteDelta,
+            startMinuteDelta: session.startMinuteDelta,
+          },
+          resizeShortcut.minuteDelta,
+        );
+        session.resizeActiveEdge = nextResize.activeEdge;
+        session.endMinuteDelta = nextResize.endMinuteDelta;
+        session.startMinuteDelta = nextResize.startMinuteDelta;
+      }
+      if (!sessionStarted) {
         if (session.action?.cancel()) session.action = null;
       }
 
