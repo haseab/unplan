@@ -44,20 +44,23 @@ export type EventResizeShortcut = {
 export type EventGapFillDirection = "down" | "up";
 
 export const KEYBOARD_MOVE_GUEST_PROMPT_DELAY_MS = 500;
+export const KEYBOARD_RESIZE_TOAST_DEBOUNCE_MS = 1_000;
 
-export const restartKeyboardMoveGuestPromptTimer = <TimerHandle>({
+export const restartKeyboardMoveIdleTimer = <TimerHandle>({
   cancelTimer,
   currentTimer,
+  delay = KEYBOARD_MOVE_GUEST_PROMPT_DELAY_MS,
   onIdle,
   scheduleTimer,
 }: {
   cancelTimer: (timer: TimerHandle) => void;
   currentTimer: TimerHandle | null;
+  delay?: number;
   onIdle: () => void;
   scheduleTimer: (callback: () => void, delay: number) => TimerHandle;
 }) => {
   if (currentTimer !== null) cancelTimer(currentTimer);
-  return scheduleTimer(onIdle, KEYBOARD_MOVE_GUEST_PROMPT_DELAY_MS);
+  return scheduleTimer(onIdle, delay);
 };
 
 export const isLeftSidebarToggleShortcut = ({
@@ -370,6 +373,25 @@ export const isEventTitleFocusShortcut = ({
   && (calendarEventFocused || (activeCalendar && focusIsNeutral))
 );
 
+export const isEventDetailsSubmitShortcut = ({
+  altKey,
+  ctrlKey,
+  key,
+  metaKey,
+  shiftKey,
+}: {
+  altKey: boolean;
+  ctrlKey: boolean;
+  key: string;
+  metaKey: boolean;
+  shiftKey: boolean;
+}) => (
+  key === "Enter"
+  && (metaKey || ctrlKey)
+  && !altKey
+  && !shiftKey
+);
+
 export const sidebarHorizontalArrowAction = ({
   altKey,
   ctrlKey,
@@ -542,7 +564,8 @@ export const isHorizontalEventNavigationCandidate = (
 const compareVerticalEventOrder = (
   first: EventNavigationRect,
   second: EventNavigationRect,
-) => first.startMinute - second.startMinute
+) => first.dayIndex - second.dayIndex
+  || first.startMinute - second.startMinute
   || first.left - second.left
   || first.endMinute - second.endMinute
   || first.eventKey.localeCompare(second.eventKey);
@@ -555,8 +578,7 @@ export const findVerticalEventKey = (
   const ordered = [
     anchor,
     ...candidates.filter((candidate) =>
-      candidate.dayIndex === anchor.dayIndex
-      && candidate.eventKey !== anchor.eventKey
+      candidate.eventKey !== anchor.eventKey
     ),
   ].sort(compareVerticalEventOrder);
   const anchorIndex = ordered.findIndex(

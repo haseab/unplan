@@ -133,6 +133,30 @@ export const eventSegmentKey = (
   "yyyy-MM-dd",
 )}`;
 
+export const calendarScrollTopForMinute = ({
+  currentScrollTop,
+  minute,
+  padding = 24,
+  pixelsPerMinute,
+  viewportHeight,
+}: {
+  currentScrollTop: number;
+  minute: number;
+  padding?: number;
+  pixelsPerMinute: number;
+  viewportHeight: number;
+}) => {
+  const viewportPadding = Math.min(padding, viewportHeight / 2);
+  const target = minute * pixelsPerMinute;
+  if (target < currentScrollTop + viewportPadding) {
+    return Math.max(0, target - viewportPadding);
+  }
+  if (target > currentScrollTop + viewportHeight - viewportPadding) {
+    return Math.max(0, target - viewportHeight + viewportPadding);
+  }
+  return currentScrollTop;
+};
+
 export const moveEvent = (
   event: CalendarEvent,
   dayDelta: number,
@@ -207,30 +231,42 @@ export const resizeEventEnd = (
   event: CalendarEvent,
   requestedDelta: number,
 ) => {
+  const start = parseISO(event.start);
+  const end = parseISO(event.end);
   const durationMinutes = differenceInMinutes(
-    parseISO(event.end),
-    parseISO(event.start),
+    end,
+    start,
   );
-  return resizeEvent(
-    event,
-    "end",
-    Math.max(requestedDelta, SNAP_MINUTES - durationMinutes),
+  const minuteDelta = Math.max(
+    requestedDelta,
+    SNAP_MINUTES - durationMinutes,
   );
+  if (minuteDelta === 0) return event;
+  return {
+    ...event,
+    end: addMinutes(end, minuteDelta).toISOString(),
+  };
 };
 
 const resizeEventStart = (
   event: CalendarEvent,
   requestedDelta: number,
 ) => {
+  const start = parseISO(event.start);
+  const end = parseISO(event.end);
   const durationMinutes = differenceInMinutes(
-    parseISO(event.end),
-    parseISO(event.start),
+    end,
+    start,
   );
-  return resizeEvent(
-    event,
-    "start",
-    Math.min(requestedDelta, durationMinutes - SNAP_MINUTES),
+  const minuteDelta = Math.min(
+    requestedDelta,
+    durationMinutes - SNAP_MINUTES,
   );
+  if (minuteDelta === 0) return event;
+  return {
+    ...event,
+    start: addMinutes(start, minuteDelta).toISOString(),
+  };
 };
 
 export type KeyboardResizeTransform = {

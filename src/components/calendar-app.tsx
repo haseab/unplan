@@ -179,7 +179,8 @@ import {
   isHorizontalEventNavigationCandidate,
   isLeftSidebarToggleShortcut,
   isSettingsShortcut,
-  restartKeyboardMoveGuestPromptTimer,
+  KEYBOARD_RESIZE_TOAST_DEBOUNCE_MS,
+  restartKeyboardMoveIdleTimer,
   resolveCalendarFocusTargetKey,
   resolveEventNavigationAnchorKey,
   shouldConsumeEventNavigationKey,
@@ -196,6 +197,7 @@ import {
   MINUTES_IN_DAY,
   advanceKeyboardResizeTransform,
   applyKeyboardResizeTransform,
+  calendarScrollTopForMinute,
   clamp,
   eventGeometry,
   eventSegmentGeometries,
@@ -627,7 +629,7 @@ export function CalendarApp() {
     title: string,
     calendarId: string,
     draft: EventCreationDraft,
-    options?: { focusTitle?: boolean },
+    options?: { focusTitle?: boolean; scrollIntoView?: boolean },
   ) => void) | null>(null);
   const pendingEventMutationOriginsRef = React.useRef(new Map<string, CalendarEvent>());
   const pendingEventCreationsRef = React.useRef(new Map<string, PendingEventCreation>());
@@ -642,7 +644,7 @@ export function CalendarApp() {
     sendUpdates: GoogleSendUpdates | null;
     startMinuteDelta: number;
     targetStart: Date | null;
-    guestPromptTimer: ReturnType<typeof setTimeout> | null;
+    idleTimer: ReturnType<typeof setTimeout> | null;
   } | null>(null);
   const keyboardResizeEdgeRef = React.useRef<{
     activeEdge: "end" | "start";
@@ -666,7 +668,8 @@ export function CalendarApp() {
     eventId: string;
     eventKey: string;
   } | null>(null);
-  const pendingKeyboardMovedEventScrollRef = React.useRef<{
+  const pendingRenderedEventScrollRef = React.useRef<{
+    edge: "end" | "start" | null;
     eventId: string;
     eventKey: string;
   } | null>(null);
@@ -887,7 +890,7 @@ export function CalendarApp() {
       "New event",
       defaultCalendar.id,
       { calendarId: defaultCalendar.id, ...dates },
-      { focusTitle: true },
+      { focusTitle: true, scrollIntoView: true },
     );
     return true;
   }, [defaultCalendar, selectedEvents]);
@@ -2890,19 +2893,42 @@ export function CalendarApp() {
   }, [focusRenderedEvent, navigateToVisibleEvent]);
 
   React.useLayoutEffect(() => {
-    const pending = pendingKeyboardMovedEventScrollRef.current;
+    const pending = pendingRenderedEventScrollRef.current;
     if (!pending || !events.some(({ id }) => id === pending.eventId)) return;
-    const element = renderedEventElements().find(
+    const matchingElements = renderedEventElements().filter(
       (candidate) => candidate.dataset.eventKey === pending.eventKey,
     );
+    const element = pending.edge
+      ? matchingElements.find((candidate) => pending.edge === "end"
+        ? candidate.dataset.eventSegmentEnd === "true"
+        : candidate.dataset.eventSegmentStart === "true")
+      : matchingElements[0];
     if (!element) return;
+    if (pending.edge) {
+      const minute = Number(pending.edge === "end"
+        ? element.dataset.eventEndMinute
+        : element.dataset.eventStartMinute);
+      const scrollContainer = scrollRef.current;
+      if (!scrollContainer || !Number.isFinite(minute)) return;
+      scrollContainer.scrollTo({
+        behavior: "auto",
+        top: calendarScrollTopForMinute({
+          currentScrollTop: scrollContainer.scrollTop,
+          minute,
+          pixelsPerMinute,
+          viewportHeight: scrollContainer.clientHeight,
+        }),
+      });
+      pendingRenderedEventScrollRef.current = null;
+      return;
+    }
     element.scrollIntoView({
       behavior: "auto",
       block: "nearest",
       inline: "nearest",
     });
-    pendingKeyboardMovedEventScrollRef.current = null;
-  }, [events, renderedEventElements, weekStart]);
+    pendingRenderedEventScrollRef.current = null;
+  }, [events, pixelsPerMinute, renderedEventElements, weekStart]);
 
   React.useLayoutEffect(() => {
     const pending = pendingRenderedEventFocusRef.current;
@@ -3643,7 +3669,7 @@ export function CalendarApp() {
     title: string,
     calendarId: string,
     requestedDraft: EventCreationDraft | null = creationDraft,
-    options: { focusTitle?: boolean } = {},
+    options: { focusTitle?: boolean; scrollIntoView?: boolean } = {},
   ) => {
     if (!requestedDraft) return;
     const calendar = writableCalendars.find((candidate) => candidate.id === calendarId);
@@ -3696,6 +3722,13 @@ export function CalendarApp() {
 
     const eventKey = calendarEventKey(createdEvent.calendarId, createdEvent.id);
     selectionAnchorRef.current = eventKey;
+    if (options.scrollIntoView) {
+      pendingRenderedEventScrollRef.current = {
+        edge: null,
+        eventId: createdEvent.id,
+        eventKey,
+      };
+    }
     if (options.focusTitle) {
       setSelectedEventTitleFocusMode("select-all");
       setRightSidebarTab("events");
@@ -4529,8 +4562,8 @@ export function CalendarApp() {
 
     const cancelKeyboardMoveAtOrigin = (session: KeyboardMoveSession) => {
       if (!keyboardTransformIsAtOrigin(session)) return false;
-      if (session.guestPromptTimer !== null) clearTimeout(session.guestPromptTimer);
-      session.guestPromptTimer = null;
+      if (session.idleTimer !== null) clearTimeout(session.idleTimer);
+      session.idleTimer = null;
       session.action?.cancel();
       session.action = null;
       restoreEvents(session.originals);
@@ -4562,17 +4595,25 @@ export function CalendarApp() {
       queueKeyboardMoveToast(session);
     };
 
-    const scheduleKeyboardMoveGuestPrompt = (session: KeyboardMoveSession) => {
+    const scheduleKeyboardMoveIdleAction = (
+      session: KeyboardMoveSession,
+      delay?: number,
+    ) => {
       if (
         keyboardMoveSessionRef.current !== session
         || cancelKeyboardMoveAtOrigin(session)
       ) return;
-      session.guestPromptTimer = restartKeyboardMoveGuestPromptTimer({
+      session.idleTimer = restartKeyboardMoveIdleTimer({
         cancelTimer: clearTimeout,
-        currentTimer: session.guestPromptTimer,
+        currentTimer: session.idleTimer,
+        delay,
         onIdle: () => {
-          session.guestPromptTimer = null;
-          void initializeKeyboardMove(session);
+          session.idleTimer = null;
+          if (session.sendUpdates === null) {
+            void initializeKeyboardMove(session);
+          } else {
+            queueKeyboardMoveToast(session);
+          }
         },
         scheduleTimer: setTimeout,
       });
@@ -4653,7 +4694,7 @@ export function CalendarApp() {
           sendUpdates: null,
           startMinuteDelta: 0,
           targetStart: null,
-          guestPromptTimer: null,
+          idleTimer: null,
         };
         keyboardMoveSessionRef.current = session;
         sessionStarted = true;
@@ -4703,7 +4744,8 @@ export function CalendarApp() {
         ) ?? moved[0];
         if (movedAnchor) {
           const eventKey = calendarEventKey(movedAnchor.calendarId, movedAnchor.id);
-          pendingKeyboardMovedEventScrollRef.current = {
+          pendingRenderedEventScrollRef.current = {
+            edge: null,
             eventId: movedAnchor.id,
             eventKey,
           };
@@ -4713,16 +4755,50 @@ export function CalendarApp() {
           }
         }
       }
+      if (resizeShortcut && session.resizeActiveEdge) {
+        const focusedEventKey = keyboardEvent.target instanceof Element
+          ? keyboardEvent.target.closest<HTMLElement>("[data-event-key]")
+            ?.dataset.eventKey ?? null
+          : null;
+        const anchorEventKey = focusedEventKey ?? selectionAnchorRef.current;
+        const resizedAnchor = moved.find((event) =>
+          calendarEventKey(event.calendarId, event.id) === anchorEventKey
+        ) ?? moved[0];
+        if (resizedAnchor) {
+          const activeEdge = session.resizeActiveEdge;
+          const edgeDate = parseISO(
+            activeEdge === "end" ? resizedAnchor.end : resizedAnchor.start,
+          );
+          const segmentDate = activeEdge === "end"
+            ? new Date(edgeDate.getTime() - 1)
+            : edgeDate;
+          pendingRenderedEventScrollRef.current = {
+            edge: activeEdge,
+            eventId: resizedAnchor.id,
+            eventKey: calendarEventKey(resizedAnchor.calendarId, resizedAnchor.id),
+          };
+          if (!renderedDays.some((day) => isSameDay(day, segmentDate))) {
+            setWeekStart(startOfCalendarWeek(segmentDate));
+          }
+        }
+      }
       setEvents((current) => current.map((event) => movedById.get(event.id) ?? event));
       if (cancelKeyboardMoveAtOrigin(session)) return true;
+      const idleDelay = resizeShortcut
+        ? KEYBOARD_RESIZE_TOAST_DEBOUNCE_MS
+        : undefined;
       if (sessionStarted) {
-        scheduleKeyboardMoveGuestPrompt(session);
+        scheduleKeyboardMoveIdleAction(session, idleDelay);
         return true;
       }
       if (session.sendUpdates === null) {
-        scheduleKeyboardMoveGuestPrompt(session);
+        scheduleKeyboardMoveIdleAction(session, idleDelay);
       } else if (session.action === null) {
-        queueKeyboardMoveToast(session);
+        if (resizeShortcut) {
+          scheduleKeyboardMoveIdleAction(session, idleDelay);
+        } else {
+          queueKeyboardMoveToast(session);
+        }
       }
       return true;
     };
@@ -4965,9 +5041,11 @@ export function CalendarApp() {
 
         <section className="calendar-list">
           <div className="section-heading"><span>Calendars</span><button type="button" onClick={() => void connectGoogle()} aria-label="Add Google account"><Plus size={14} /></button></div>
-          {google.connected ? google.accounts.map((account) => (
+          {google.connected ? google.accounts.filter(
+            (account) => account.status === "active",
+          ).map((account) => (
             <div className="calendar-account-group" key={account.id}>
-              <div className="calendar-account-label"><span>{account.email}</span><small>{account.status === "active" ? "Google" : "Reconnect"}</small></div>
+              <div className="calendar-account-label"><span>{account.email}</span><small>Google</small></div>
               {calendars.filter((calendar) => calendar.accountId === account.id).map((calendar) => {
                 const visible = visibleCalendars.has(calendar.id);
                 return (
@@ -5276,6 +5354,8 @@ export function CalendarApp() {
                     data-event-day-index={geometry.dayIndex}
                     data-event-end-minute={geometry.endMinute}
                     data-event-key={calendarEventKey(event.calendarId, event.id)}
+                    data-event-segment-end={geometry.isEnd ? "true" : undefined}
+                    data-event-segment-start={geometry.isStart ? "true" : undefined}
                     data-event-start-minute={geometry.top / pixelsPerMinute}
                     data-marquee-event-id={event.id}
                     data-marquee-stack={layout.zIndex}

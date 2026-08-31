@@ -33,6 +33,7 @@ import type {
   CalendarSource,
 } from "@/lib/calendar-types";
 import { shouldAutoCreateEventConference } from "@/lib/event-participants";
+import { isEventDetailsSubmitShortcut } from "@/lib/event-keyboard-navigation";
 import { googleMeetCode } from "@/lib/google-conference-client";
 import {
   recentEventEditDurationMinutes,
@@ -342,7 +343,25 @@ function EventDetailsEditor({
   };
 
   return (
-    <div className="event-details event-editor">
+    <div
+      className="event-details event-editor"
+      onKeyDownCapture={(keyboardEvent) => {
+        if (
+          keyboardEvent.nativeEvent.isComposing
+          || !isEventDetailsSubmitShortcut({
+            altKey: keyboardEvent.altKey,
+            ctrlKey: keyboardEvent.ctrlKey,
+            key: keyboardEvent.key,
+            metaKey: keyboardEvent.metaKey,
+            shiftKey: keyboardEvent.shiftKey,
+          })
+        ) return;
+        keyboardEvent.preventDefault();
+        keyboardEvent.stopPropagation();
+        onFocusEvent(edited);
+        void flushUpdate();
+      }}
+    >
       <EventTitleEditor
         ref={titleRef}
         accentColor={edited.color}
@@ -368,24 +387,7 @@ function EventDetailsEditor({
             ) {
               keyboardEvent.preventDefault();
               onCalendarPickerOpen();
-              return;
             }
-            if (keyboardEvent.key !== "Enter" || keyboardEvent.nativeEvent.isComposing) return;
-            keyboardEvent.preventDefault();
-            console.debug("[BUG:EVENT-TITLE-FOCUS] [TITLE:ENTER] submitting title", {
-              activeElement: document.activeElement?.tagName ?? null,
-              calendarId: edited.calendarId,
-              eventId: edited.id,
-              title: edited.title,
-            });
-            void flushUpdate().then((saved) => {
-              console.debug("[BUG:EVENT-TITLE-FOCUS] [TITLE:SAVE] title flush completed", {
-                calendarId: edited.calendarId,
-                eventId: edited.id,
-                saved,
-              });
-              if (saved) onFocusEvent(edited);
-            });
         }}
       />
 
@@ -655,13 +657,13 @@ export function EventCreationSidebar({
         <form
           className="event-details event-editor event-creation-form"
           onKeyDown={(event) => {
-            if (
-              !(event.metaKey || event.ctrlKey)
-              || event.shiftKey
-              || event.altKey
-              || event.key !== "Enter"
-              || event.nativeEvent.isComposing
-            ) return;
+            if (event.nativeEvent.isComposing || !isEventDetailsSubmitShortcut({
+              altKey: event.altKey,
+              ctrlKey: event.ctrlKey,
+              key: event.key,
+              metaKey: event.metaKey,
+              shiftKey: event.shiftKey,
+            })) return;
             event.preventDefault();
             event.stopPropagation();
             event.currentTarget.requestSubmit();

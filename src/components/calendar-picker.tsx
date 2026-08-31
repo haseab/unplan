@@ -128,7 +128,17 @@ export function CalendarPicker({
   };
 
   return (
-    <div className="calendar-picker" ref={rootRef}>
+    <div
+      className="calendar-picker"
+      onBlurCapture={(event) => {
+        if (
+          event.relatedTarget instanceof Node
+          && event.currentTarget.contains(event.relatedTarget)
+        ) return;
+        closePicker();
+      }}
+      ref={rootRef}
+    >
       <button
         aria-label={ariaLabel}
         aria-controls={open ? listboxId : undefined}

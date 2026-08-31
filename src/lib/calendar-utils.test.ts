@@ -4,6 +4,7 @@ import type { CalendarEvent } from "./calendar-types";
 import {
   advanceKeyboardResizeTransform,
   applyKeyboardResizeTransform,
+  calendarScrollTopForMinute,
   eventGeometry,
   eventSegmentGeometries,
   eventSegmentKey,
@@ -105,6 +106,47 @@ test("keyboard end resizing keeps the start fixed and enforces the minimum durat
     ...event,
     end: new Date(originalStart.getTime() + 15 * 60 * 1000).toISOString(),
   });
+});
+
+test("keyboard end resizing continues into the next day", () => {
+  const lateEvent = {
+    ...event,
+    start: new Date(2026, 7, 22, 22, 30).toISOString(),
+    end: new Date(2026, 7, 22, 23, 45).toISOString(),
+  };
+
+  assert.deepEqual(resizeEventEnd(lateEvent, 30), {
+    ...lateEvent,
+    end: new Date(2026, 7, 23, 0, 15).toISOString(),
+  });
+});
+
+test("keyboard start resizing continues into the previous day", () => {
+  const earlyEvent = {
+    ...event,
+    start: new Date(2026, 7, 22, 0, 15).toISOString(),
+    end: new Date(2026, 7, 22, 1, 30).toISOString(),
+  };
+  const transform: KeyboardResizeTransform = {
+    activeEdge: "start",
+    endMinuteDelta: 0,
+    startMinuteDelta: -30,
+  };
+
+  assert.deepEqual(applyKeyboardResizeTransform(earlyEvent, transform), {
+    ...earlyEvent,
+    start: new Date(2026, 7, 21, 23, 45).toISOString(),
+  });
+});
+
+test("an unchanged keyboard resize preserves the original event", () => {
+  const transform: KeyboardResizeTransform = {
+    activeEdge: null,
+    endMinuteDelta: 0,
+    startMinuteDelta: 0,
+  };
+
+  assert.strictEqual(applyKeyboardResizeTransform(event, transform), event);
 });
 
 test("an initial keyboard resize up chooses the start edge and keeps it selected", () => {
@@ -314,4 +356,28 @@ test("event segment identity stays stable when the rendered range shifts", () =>
     eventSegmentKey(event, new Date(2026, 7, 17), 5),
     eventSegmentKey(event, new Date(2026, 7, 18), 4),
   );
+});
+
+test("calendar scrolling follows a resized edge beyond the viewport", () => {
+  assert.equal(calendarScrollTopForMinute({
+    currentScrollTop: 480,
+    minute: 1_200,
+    pixelsPerMinute: 1,
+    viewportHeight: 600,
+  }), 624);
+  assert.equal(calendarScrollTopForMinute({
+    currentScrollTop: 480,
+    minute: 900,
+    pixelsPerMinute: 1,
+    viewportHeight: 600,
+  }), 480);
+});
+
+test("calendar scrolling reveals a next-day resize tail at the top", () => {
+  assert.equal(calendarScrollTopForMinute({
+    currentScrollTop: 900,
+    minute: 15,
+    pixelsPerMinute: 1,
+    viewportHeight: 600,
+  }), 0);
 });

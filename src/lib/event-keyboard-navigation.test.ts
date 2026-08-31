@@ -16,10 +16,12 @@ import {
   isEventMoveAtOrigin,
   isEventMoveToPresentShortcut,
   isEventTitleFocusShortcut,
+  isEventDetailsSubmitShortcut,
   isLeftSidebarToggleShortcut,
   isSettingsShortcut,
   KEYBOARD_MOVE_GUEST_PROMPT_DELAY_MS,
-  restartKeyboardMoveGuestPromptTimer,
+  KEYBOARD_RESIZE_TOAST_DEBOUNCE_MS,
+  restartKeyboardMoveIdleTimer,
   resolveCalendarFocusTargetKey,
   resolveEventNavigationAnchorKey,
   shouldConsumeEventNavigationKey,
@@ -28,7 +30,7 @@ import {
   type EventNavigationRect,
 } from "./event-keyboard-navigation";
 
-test("keyboard moves restart a 500ms guest prompt debounce", () => {
+test("keyboard actions restart their requested idle debounce", () => {
   const cancelled: number[] = [];
   const scheduled: Array<{ callback: () => void; delay: number; timer: number }> = [];
   const scheduleTimer = (callback: () => void, delay: number) => {
@@ -38,23 +40,25 @@ test("keyboard moves restart a 500ms guest prompt debounce", () => {
   };
   let prompted = 0;
 
-  const firstTimer = restartKeyboardMoveGuestPromptTimer({
+  const firstTimer = restartKeyboardMoveIdleTimer({
     cancelTimer: (timer: number) => cancelled.push(timer),
     currentTimer: null,
     onIdle: () => { prompted += 1; },
     scheduleTimer,
   });
-  const secondTimer = restartKeyboardMoveGuestPromptTimer({
+  const secondTimer = restartKeyboardMoveIdleTimer({
     cancelTimer: (timer: number) => cancelled.push(timer),
     currentTimer: firstTimer,
+    delay: KEYBOARD_RESIZE_TOAST_DEBOUNCE_MS,
     onIdle: () => { prompted += 1; },
     scheduleTimer,
   });
 
   assert.equal(KEYBOARD_MOVE_GUEST_PROMPT_DELAY_MS, 500);
+  assert.equal(KEYBOARD_RESIZE_TOAST_DEBOUNCE_MS, 1_000);
   assert.deepEqual(cancelled, [firstTimer]);
   assert.equal(scheduled[0].delay, 500);
-  assert.equal(scheduled[1].delay, 500);
+  assert.equal(scheduled[1].delay, 1_000);
   scheduled.find(({ timer }) => timer === secondTimer)?.callback();
   assert.equal(prompted, 1);
 });
@@ -365,6 +369,26 @@ test("Enter focuses the title whenever a selected calendar event has focus", () 
   assert.equal(shortcut({ modalOpen: true }), false);
 });
 
+test("Command or Control + Enter submits event details", () => {
+  const shortcut = (
+    overrides: Partial<Parameters<typeof isEventDetailsSubmitShortcut>[0]> = {},
+  ) => isEventDetailsSubmitShortcut({
+    altKey: false,
+    ctrlKey: false,
+    key: "Enter",
+    metaKey: true,
+    shiftKey: false,
+    ...overrides,
+  });
+
+  assert.equal(shortcut(), true);
+  assert.equal(shortcut({ ctrlKey: true, metaKey: false }), true);
+  assert.equal(shortcut({ ctrlKey: false, metaKey: false }), false);
+  assert.equal(shortcut({ altKey: true }), false);
+  assert.equal(shortcut({ shiftKey: true }), false);
+  assert.equal(shortcut({ key: " " }), false);
+});
+
 test("sidebar horizontal arrows are suppressed", () => {
   const key = (value: string, editable = false) => sidebarHorizontalArrowAction({
     altKey: false,
@@ -610,7 +634,7 @@ test("opposite arrows backtrack the exact navigation path", () => {
   assert.equal(findEventNavigationBacktrackKey(history, "b", "right"), null);
 });
 
-test("vertical navigation stays within the current day", () => {
+test("vertical navigation prefers the next chronological event on the current day", () => {
   const anchor = rect("anchor", 1, 100, 100);
   const candidates = [
     rect("next-day", 2, 210, 150),
@@ -618,6 +642,42 @@ test("vertical navigation stays within the current day", () => {
   ];
 
   assert.equal(findDirectionalEventKey(anchor, candidates, "down"), "same-day");
+});
+
+test("vertical navigation crosses midnight when no event remains on the current day", () => {
+  const lateTask = rect("late-task", 0, 100, 23 * 60 + 30, 80, 30);
+  const nextDayTask = rect("next-day-task", 1, 210, 60, 80, 30);
+
+  assert.equal(
+    findDirectionalEventKey(lateTask, [nextDayTask], "down"),
+    "next-day-task",
+  );
+  assert.equal(
+    findDirectionalEventKey(nextDayTask, [lateTask], "up"),
+    "late-task",
+  );
+});
+
+test("vertical navigation leaves a cross-midnight event for the next task", () => {
+  const crossMidnightStart = rect(
+    "cross-midnight",
+    0,
+    100,
+    23 * 60 + 45,
+    80,
+    15,
+  );
+  const crossMidnightEnd = rect("cross-midnight", 1, 210, 0, 80, 60);
+  const nextTask = rect("next-task", 1, 210, 90, 80, 30);
+
+  assert.equal(
+    findDirectionalEventKey(
+      crossMidnightStart,
+      [crossMidnightEnd, nextTask],
+      "down",
+    ),
+    "next-task",
+  );
 });
 
 test("the selected event wins over stale browser focus", () => {
