@@ -11,6 +11,7 @@ import {
   findEventClosestToTime,
   findRenderedEventClosestToPresent,
   findDirectionalEventKey,
+  findVerticalEventKey,
   isEventCalendarPickerShortcut,
   isEventMoveAtOrigin,
   isEventMoveToPresentShortcut,
@@ -496,17 +497,37 @@ test("arrow navigation chooses the nearest event in the requested direction", ()
   assert.equal(findDirectionalEventKey(anchor, candidates, "down"), "down");
 });
 
-test("arrow navigation uses center-to-center distance", () => {
+test("vertical navigation follows chronological order", () => {
   const anchor = rect("anchor", 1, 100, 100);
   const candidates = [
-    rect("closer-by-distance", 1, 160, 150),
-    rect("closer-on-axis", 1, 100, 200),
+    rect("earlier-across-the-day", 1, 600, 150),
+    rect("later-on-axis", 1, 100, 200),
   ];
 
   assert.equal(
     findDirectionalEventKey(anchor, candidates, "down"),
-    "closer-by-distance",
+    "earlier-across-the-day",
   );
+});
+
+test("vertical navigation reaches narrow events in overlapping columns", () => {
+  const moving = rect("moving", 1, 40, 80, 105, 35);
+  const sendContent = rect("send-content", 1, 200, 120, 135, 45);
+  const getSo101 = rect("get-so-101", 1, 40, 180, 295, 45);
+  const fixIssues = rect("fix-issues", 1, 40, 240, 295, 45);
+  const events = [moving, sendContent, getSo101, fixIssues];
+
+  assert.equal(findVerticalEventKey(fixIssues, events, "up"), "get-so-101");
+  assert.equal(findVerticalEventKey(getSo101, events, "up"), "send-content");
+  assert.equal(findVerticalEventKey(sendContent, events, "up"), "moving");
+});
+
+test("simultaneous events use stable left-to-right vertical ordering", () => {
+  const left = rect("left", 1, 40, 100);
+  const right = rect("right", 1, 160, 100);
+
+  assert.equal(findVerticalEventKey(left, [left, right], "down"), "right");
+  assert.equal(findVerticalEventKey(right, [left, right], "up"), "left");
 });
 
 test("horizontal navigation skips empty days", () => {

@@ -76,7 +76,7 @@ type EventCreationSidebarProps = {
     event: CalendarEvent,
     responseStatus: CalendarEventRsvpStatus,
   ) => Promise<boolean>;
-  onPreviewEvent: (event: CalendarEvent) => void;
+  onPreviewEvent: (event: CalendarEvent | null) => void;
   onUpdateEvent: (event: CalendarEvent) => Promise<boolean>;
   selectedEvents: CalendarEvent[];
   recentTitles: RecentEventTitle[];
@@ -147,7 +147,7 @@ function EventDetailsEditor({
   onFocusEvent: (event: CalendarEvent) => void;
   onRecentTitleUsed: (entry: RecentEventTitle) => void;
   onTitleAutoFocused: () => void;
-  onPreview: (event: CalendarEvent) => void;
+  onPreview: (event: CalendarEvent | null) => void;
   onRespond: (
     event: CalendarEvent,
     responseStatus: CalendarEventRsvpStatus,

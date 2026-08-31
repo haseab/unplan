@@ -539,13 +539,38 @@ export const isHorizontalEventNavigationCandidate = (
   return movesRight ? candidateX > anchorX + 1 : candidateX < anchorX - 1;
 };
 
+const compareVerticalEventOrder = (
+  first: EventNavigationRect,
+  second: EventNavigationRect,
+) => first.startMinute - second.startMinute
+  || first.left - second.left
+  || first.endMinute - second.endMinute
+  || first.eventKey.localeCompare(second.eventKey);
+
+export const findVerticalEventKey = (
+  anchor: EventNavigationRect,
+  candidates: EventNavigationRect[],
+  direction: "down" | "up",
+) => {
+  const ordered = [
+    anchor,
+    ...candidates.filter((candidate) =>
+      candidate.dayIndex === anchor.dayIndex
+      && candidate.eventKey !== anchor.eventKey
+    ),
+  ].sort(compareVerticalEventOrder);
+  const anchorIndex = ordered.findIndex(
+    (candidate) => candidate.eventKey === anchor.eventKey,
+  );
+  const nextIndex = anchorIndex + (direction === "up" ? -1 : 1);
+  return ordered[nextIndex]?.eventKey ?? null;
+};
+
 export const findDirectionalEventKey = (
   anchor: EventNavigationRect,
   candidates: EventNavigationRect[],
   direction: EventNavigationDirection,
 ) => {
-  const anchorX = center(anchor.left, anchor.right);
-  const anchorY = center(anchor.top, anchor.bottom);
   const available = candidates.filter(
     (candidate) => candidate.eventKey !== anchor.eventKey,
   );
@@ -556,25 +581,5 @@ export const findDirectionalEventKey = (
     );
     return findClosestEventKey(anchor, directionalEvents);
   }
-
-  let best: { eventKey: string; score: number } | null = null;
-
-  for (const candidate of available) {
-    if (candidate.dayIndex !== anchor.dayIndex) continue;
-
-    const candidateX = center(candidate.left, candidate.right);
-    const candidateY = center(candidate.top, candidate.bottom);
-    const primary = direction === "up"
-      ? anchorY - candidateY
-      : candidateY - anchorY;
-    if (primary <= 1) continue;
-
-    const perpendicular = Math.abs(candidateX - anchorX);
-    const score = Math.hypot(primary, perpendicular);
-    if (!best || score < best.score) {
-      best = { eventKey: candidate.eventKey, score };
-    }
-  }
-
-  return best?.eventKey ?? null;
+  return findVerticalEventKey(anchor, available, direction);
 };

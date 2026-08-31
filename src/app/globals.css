@@ -1330,8 +1330,10 @@ kbd {
 .event-editor-calendar-select .calendar-picker-copy strong { font-size: 14px; font-weight: 640; }
 .event-editor-calendar-select .calendar-picker-menu { top: calc(100% + 7px); bottom: auto; }
 .event-editor-calendar-select .calendar-picker-options { max-height: min(230px, 32vh); }
+.event-editor-calendar-select .calendar-picker-menu-heading,
+.event-editor-calendar-select .calendar-picker-group-label { font-size: 11px; }
 .event-editor-calendar-select .calendar-picker-search { height: 40px; }
-.event-editor-calendar-select .calendar-picker-search-input { font-size: 13px; }
+.event-editor-calendar-select .calendar-picker-search-input { font-size: 15px; }
 .event-editor-calendar-select .calendar-picker-option { height: 44px; }
 .event-editor-calendar-select .calendar-picker-option .calendar-picker-copy strong { font-size: 13px; }
 .event-editor-select-field { min-width: 0; }

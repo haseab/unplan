@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { CalendarEvent } from "./calendar-types";
 import {
+  calendarEventViews,
   reconcileOptimisticCalendarEvents,
   withCalendarEventPreview,
 } from "./optimistic-calendar-events";
@@ -84,4 +85,15 @@ test("projects an event edit without mutating the committed event collection", (
   assert.equal(displayed[0].title, "Live title");
   assert.equal(committed[0].title, "Original title");
   assert.equal(displayed[1], committed[1]);
+});
+
+test("keeps the editor selection committed while displaying its live preview", () => {
+  const committed = [event("editing", "Original title"), event("other")];
+  const preview = event("editing", "Live title");
+
+  const views = calendarEventViews(committed, new Set(["editing"]), preview);
+
+  assert.equal(views.displayedEvents[0].title, "Live title");
+  assert.equal(views.selectedEvents[0].title, "Original title");
+  assert.equal(views.selectedEvents[0], committed[0]);
 });

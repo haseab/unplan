@@ -240,8 +240,8 @@ import {
 import { createGoogleMeet } from "@/lib/google-conference-client";
 import { isEventPast } from "@/lib/event-time";
 import {
+  calendarEventViews,
   reconcileOptimisticCalendarEvents,
-  withCalendarEventPreview,
 } from "@/lib/optimistic-calendar-events";
 import {
   applyTodoistTaskOrder,
@@ -841,18 +841,13 @@ export function CalendarApp() {
     setViewStart: setWeekStart,
     viewStart: weekStart,
   });
-  const displayedEvents = React.useMemo(
-    () => withCalendarEventPreview(
+  const { displayedEvents, selectedEvents } = React.useMemo(
+    () => calendarEventViews(
       events,
-      eventDetailsPreview && selected.has(eventDetailsPreview.id)
-        ? eventDetailsPreview
-        : null,
+      selected,
+      eventDetailsPreview,
     ),
     [eventDetailsPreview, events, selected],
-  );
-  const selectedEvents = React.useMemo(
-    () => displayedEvents.filter((event) => selected.has(event.id)),
-    [displayedEvents, selected],
   );
   const visibleKey = React.useMemo(
     () => [...visibleCalendars].sort().join("|"),

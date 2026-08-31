@@ -1,23 +1,11 @@
 "use client";
 
-import { addMinutes } from "date-fns";
 import * as React from "react";
 
 import type { CalendarEvent } from "@/lib/calendar-types";
+import { eventDraftsEqual, normalizeEventDraft } from "@/lib/event-draft";
 
 type EventDraftUpdater = CalendarEvent | ((current: CalendarEvent) => CalendarEvent);
-
-const normalizeEventDraft = (candidate: CalendarEvent): CalendarEvent => {
-  const start = new Date(candidate.start);
-  const end = new Date(candidate.end);
-  return {
-    ...candidate,
-    title: candidate.title.trim(),
-    end: end > start
-      ? candidate.end
-      : addMinutes(start, candidate.allDay ? 24 * 60 : 30).toISOString(),
-  };
-};
 
 export function useDebouncedEventUpdate({
   delay = 1_000,
@@ -27,7 +15,7 @@ export function useDebouncedEventUpdate({
 }: {
   delay?: number;
   event: CalendarEvent;
-  onPreview: (event: CalendarEvent) => void;
+  onPreview: (event: CalendarEvent | null) => void;
   onUpdate: (event: CalendarEvent) => Promise<boolean>;
 }) {
   const [draft, setDraft] = React.useState(event);
@@ -54,6 +42,16 @@ export function useDebouncedEventUpdate({
 
   const persist = React.useCallback(async (candidate: CalendarEvent, version: number) => {
     const normalized = normalizeEventDraft(candidate);
+    const original = eventRef.current;
+    if (eventDraftsEqual(normalized, original)) {
+      if (version === versionRef.current) {
+        dirtyRef.current = false;
+        draftRef.current = original;
+        setDraft(original);
+        onPreviewRef.current(null);
+      }
+      return true;
+    }
     if (version === versionRef.current) {
       draftRef.current = normalized;
       setDraft(normalized);
@@ -125,7 +123,12 @@ export function useDebouncedEventUpdate({
     if (timerRef.current !== null) clearTimeout(timerRef.current);
     const pending = pendingRef.current;
     pendingRef.current = null;
-    if (pending) void onUpdateRef.current(normalizeEventDraft(pending.candidate));
+    if (pending) {
+      const normalized = normalizeEventDraft(pending.candidate);
+      if (!eventDraftsEqual(normalized, eventRef.current)) {
+        void onUpdateRef.current(normalized);
+      }
+    }
   }, []);
 
   return { deferUpdate, draft, flushUpdate, updateDraft, updateLocalDraft };

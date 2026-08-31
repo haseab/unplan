@@ -59,7 +59,7 @@ export const EventTitleEditor = React.forwardRef<
 
   const results = React.useMemo(() => searchRecentEventTitles(
     recentTitles,
-    touched ? value : "",
+    value,
     {
       excludeTitle: excludeCurrentTitle && !touched ? value : undefined,
       limit: 5,
