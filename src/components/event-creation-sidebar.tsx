@@ -166,7 +166,6 @@ function EventDetailsEditor({
     updateDraft,
     updateLocalDraft,
   } = useDebouncedEventUpdate({
-    delay: 1_000,
     event,
     onPreview,
     onUpdate,

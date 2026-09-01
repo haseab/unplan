@@ -7,8 +7,10 @@ import { eventDraftsEqual, normalizeEventDraft } from "@/lib/event-draft";
 
 type EventDraftUpdater = CalendarEvent | ((current: CalendarEvent) => CalendarEvent);
 
+export const EVENT_MUTATION_DEBOUNCE_MS = 500;
+
 export function useDebouncedEventUpdate({
-  delay = 1_000,
+  delay = EVENT_MUTATION_DEBOUNCE_MS,
   event,
   onPreview,
   onUpdate,
