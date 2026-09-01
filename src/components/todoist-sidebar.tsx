@@ -20,7 +20,12 @@ import { useListMarqueeSelection } from "@/hooks/use-list-marquee-selection";
 import { useTodoistGroupPreferences } from "@/hooks/use-todoist-group-preferences";
 import type { CalendarSource } from "@/lib/calendar-types";
 import { getEventPalette } from "@/lib/event-color";
-import { adjacentListItemId, updateListSelection } from "@/lib/list-selection";
+import { crossSurfaceMoveShortcut } from "@/lib/event-keyboard-navigation";
+import {
+  adjacentListItemId,
+  listItemIdAfterRemoval,
+  updateListSelection,
+} from "@/lib/list-selection";
 import {
   moveTask,
   sidebarFolderNavigationId,
@@ -64,6 +69,9 @@ const REORDER_BUG_FLAG = "[BUG:SIDEBAR-REORDER]";
 const FOLDER_REORDER_BUG_FLAG = "[BUG:FOLDER-REORDER]";
 const RELEASE_MOTION_BUG_FLAG = "[BUG:SIDEBAR-RELEASE-MOTION]";
 let releaseMotionTraceSequence = 0;
+
+const normalizeTodoistGroupName = (name: string) =>
+  name.trim().replace(/\s+/g, " ").replaceAll("/", "-");
 
 const logSidebarReorder = (
   phase: string,
@@ -207,6 +215,14 @@ type GroupDropTarget = {
   group: string;
 };
 
+type TaskQueueReturnPoint = {
+  destinationGroup: string;
+  id: number;
+  movedTaskId: string;
+  returnTaskId: string;
+  sourceGroup: string;
+};
+
 type TodoistSidebarProps = {
   calendarDropProjection: CalendarTaskDropProjection | null;
   calendars: CalendarSource[];
@@ -216,13 +232,14 @@ type TodoistSidebarProps = {
   focusTaskId: string | null;
   loading: boolean;
   onCreateGroup: (group: string) => void;
-  onDeleteTasks: (tasks: TodoistTask[]) => Promise<void>;
+  onDeleteTasks: (tasks: TodoistTask[]) => Promise<boolean>;
   onDuplicateTask: (task: TodoistTask) => Promise<void>;
   onFocusTaskHandled: () => void;
   onDeleteGroup: (group: string) => void;
   onCalendarDragEnd: () => void;
   onCalendarDragStart: (tasks: TodoistTask[]) => void;
   onMoveTaskToGroup: (task: TodoistTask, group: string) => Promise<void>;
+  onMoveTasksToTriage: (tasks: TodoistTask[], focusedTaskId: string) => void;
   onQueueTaskKeyboardMove: (
     task: TodoistTask,
     group: string | null,
@@ -289,6 +306,7 @@ export function TodoistSidebar({
   onFocusTaskHandled,
   onDeleteGroup,
   onMoveTaskToGroup,
+  onMoveTasksToTriage,
   onQueueTaskKeyboardMove,
   onOpenSettings,
   onRefresh,
@@ -322,12 +340,16 @@ export function TodoistSidebar({
   const [deletingGroups, setDeletingGroups] = React.useState<Set<string>>(new Set());
   const [moving, setMoving] = React.useState<Set<string>>(new Set());
   const [selectedTaskIds, setSelectedTaskIds] = React.useState<Set<string>>(new Set());
+  const [taskQueueReturnPoints, setTaskQueueReturnPoints] = React.useState<
+    TaskQueueReturnPoint[]
+  >([]);
   const groupsRef = React.useRef<HTMLDivElement>(null);
   const draggedGroupRef = React.useRef<string | null>(null);
   const groupDropTargetRef = React.useRef<GroupDropTarget | null>(null);
   const groupDragCancelledRef = React.useRef(false);
   const groupDragStartFrameRef = React.useRef<number | null>(null);
   const groupDragDiagnosticRef = React.useRef<string | null>(null);
+  const taskQueueReturnPointIdRef = React.useRef(0);
   const groupHoverExpandTargetRef = React.useRef<string | null>(null);
   const groupHoverExpandTimerRef = React.useRef<number | null>(null);
   const calendarDropProjectionRef = React.useRef(calendarDropProjection);
@@ -648,13 +670,28 @@ export function TodoistSidebar({
     });
   }, [onQueueTaskKeyboardMove, taskGroups]);
 
+  const deleteSidebarTasks = React.useCallback((tasksToDelete: TodoistTask[]) => {
+    if (!tasksToDelete.length) return Promise.resolve();
+    const deletedTaskIds = new Set(tasksToDelete.map(({ id }) => id));
+    const nextTaskId = listItemIdAfterRemoval({
+      orderedIds: orderedVisibleTaskIds,
+      removedIds: deletedTaskIds,
+    });
+    return onDeleteTasks(tasksToDelete).then((deleted) => {
+      if (!deleted) return;
+      if (nextTaskId) {
+        focusTask(nextTaskId);
+      } else {
+        selectionAnchorRef.current = null;
+        setSelectedTaskIds(new Set());
+      }
+    });
+  }, [focusTask, onDeleteTasks, orderedVisibleTaskIds]);
+
   const deleteSelectedTasks = React.useCallback(() => {
     const selectedTasks = orderedVisibleTasks.filter(({ id }) => selectedTaskIds.has(id));
-    if (!selectedTasks.length) return;
-    selectionAnchorRef.current = null;
-    setSelectedTaskIds(new Set());
-    void onDeleteTasks(selectedTasks);
-  }, [onDeleteTasks, orderedVisibleTasks, selectedTaskIds]);
+    deleteSidebarTasks(selectedTasks);
+  }, [deleteSidebarTasks, orderedVisibleTasks, selectedTaskIds]);
 
   React.useEffect(() => {
     if (selectedTaskIds.size === 0) return;
@@ -876,15 +913,17 @@ export function TodoistSidebar({
   }, [cancelGroupHoverExpand]);
 
   const createGroup = () => {
-    const normalized = groupName.trim().replace(/\s+/g, " ").replaceAll("/", "-");
-    if (!normalized) return;
+    const normalized = normalizeTodoistGroupName(groupName);
+    if (!normalized || taskGroups.some(([group]) =>
+      group.toLocaleLowerCase() === normalized.toLocaleLowerCase()
+    )) return;
     onCreateGroup(normalized);
     setGroupName("");
     setCreatingGroup(false);
   };
 
   const createChildGroup = (parentGroup: string) => {
-    const normalized = childGroupName.trim().replace(/\s+/g, " ").replaceAll("/", "-");
+    const normalized = normalizeTodoistGroupName(childGroupName);
     if (!normalized || taskGroups.some(([group]) =>
       group.toLocaleLowerCase() === normalized.toLocaleLowerCase()
     )) return;
@@ -896,7 +935,7 @@ export function TodoistSidebar({
   };
 
   const commitGroupRename = (group: string) => {
-    const normalized = renameValue.trim().replace(/\s+/g, " ").replaceAll("/", "-");
+    const normalized = normalizeTodoistGroupName(renameValue);
     if (!normalized || normalized === group) {
       setRenamingGroup(null);
       return;
@@ -1037,7 +1076,7 @@ export function TodoistSidebar({
     return () => document.removeEventListener("keydown", handleKeyDown, true);
   }, [cancelGroupDrag]);
 
-  const moveToGroup = async (task: TodoistTask, group: string) => {
+  const moveToGroup = React.useCallback(async (task: TodoistTask, group: string) => {
     if (moving.has(task.id)) return false;
     setMoving((current) => new Set(current).add(task.id));
     try {
@@ -1050,7 +1089,57 @@ export function TodoistSidebar({
         return next;
       });
     }
-  };
+  }, [moving, onMoveTaskToGroup]);
+
+  React.useEffect(() => {
+    const moveSelectedTasksToTriage = (event: KeyboardEvent) => {
+      const target = event.target instanceof Element ? event.target : null;
+      const focusedTaskId = target?.closest<HTMLElement>("[data-task-shell-id]")
+        ?.dataset.taskShellId;
+      if (!focusedTaskId) return;
+      const action = crossSurfaceMoveShortcut({
+        activeSurface: "sidebar",
+        altKey: event.altKey,
+        editable: target instanceof HTMLElement
+          && (target.isContentEditable || target.matches("input, textarea, select")),
+        key: event.key,
+        metaKey: event.metaKey,
+        modalOpen: Boolean(document.querySelector(".modal-backdrop")),
+        shiftKey: event.shiftKey,
+      });
+      if (action !== "triage-sidebar-tasks") return;
+
+      const focusedTask = orderedVisibleTasks.find(({ id }) => id === focusedTaskId);
+      if (!focusedTask) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const requestedTasks = selectedTaskIds.has(focusedTaskId)
+        ? orderedVisibleTasks.filter(({ id }) => selectedTaskIds.has(id))
+        : [focusedTask];
+      const tasksToMove = requestedTasks.filter((task) => {
+        const currentGroup = taskGroups.find(([, items]) =>
+          items.some(({ task: candidate }) => candidate.id === task.id)
+        )?.[0];
+        return currentGroup?.toLocaleLowerCase() !== "ungrouped";
+      });
+      if (!tasksToMove.length) return;
+
+      const movedTaskIds = new Set(tasksToMove.map(({ id }) => id));
+      const nextTaskId = listItemIdAfterRemoval({
+        orderedIds: orderedVisibleTaskIds,
+        removedIds: movedTaskIds,
+      });
+      onMoveTasksToTriage(tasksToMove, focusedTaskId);
+      if (nextTaskId) {
+        focusTask(nextTaskId);
+      } else {
+        selectionAnchorRef.current = null;
+        setSelectedTaskIds(new Set());
+      }
+    };
+    document.addEventListener("keydown", moveSelectedTasksToTriage, true);
+    return () => document.removeEventListener("keydown", moveSelectedTasksToTriage, true);
+  }, [focusTask, onMoveTasksToTriage, orderedVisibleTaskIds, orderedVisibleTasks, selectedTaskIds, taskGroups]);
 
   const moveTaskToFolderByKeyboard = (
     task: TodoistTask,
@@ -1079,6 +1168,27 @@ export function TodoistSidebar({
       taskId: task.id,
       targetTaskIds,
     });
+    const sourceTaskIds = taskGroups.find(([group]) => group === currentGroup)?.[1]
+      .map(({ task: candidate }) => candidate.id) ?? [];
+    const returnTaskId = listItemIdAfterRemoval({
+      orderedIds: sourceTaskIds,
+      removedIds: new Set([task.id]),
+    }) ?? listItemIdAfterRemoval({
+      orderedIds: orderedVisibleTaskIds,
+      removedIds: new Set([task.id]),
+    });
+    const returnPoint = returnTaskId
+      ? {
+          destinationGroup: targetGroup,
+          id: ++taskQueueReturnPointIdRef.current,
+          movedTaskId: task.id,
+          returnTaskId,
+          sourceGroup: currentGroup,
+        }
+      : null;
+    if (returnPoint) {
+      setTaskQueueReturnPoints((current) => [...current, returnPoint]);
+    }
     const collapseSource = currentGroup !== TODOIST_ROOT_GROUP
       && shouldCollapseTodoistTaskMoveSource(direction);
     const targetWasCollapsed = targetGroup !== TODOIST_ROOT_GROUP
@@ -1087,6 +1197,11 @@ export function TodoistSidebar({
     if (collapseSource) collapseGroup(currentGroup);
     pendingKeyboardRevealRef.current = { align: "start", taskId: task.id };
     onQueueTaskKeyboardMove(task, targetGroup, orderedTaskIds, displayedTaskIds, () => {
+      if (returnPoint) {
+        setTaskQueueReturnPoints((current) => current.filter(
+          ({ id }) => id !== returnPoint.id,
+        ));
+      }
       pendingKeyboardRevealRef.current = { align: "start", taskId: task.id };
       if (targetWasCollapsed) {
         collapseGroup(targetGroup);
@@ -1095,6 +1210,25 @@ export function TodoistSidebar({
         expandGroup(currentGroup);
       }
     });
+  };
+
+  const returnToPreviousQueueTask = (task: TodoistTask) => {
+    const returnPoint = [...taskQueueReturnPoints].reverse().find((candidate) =>
+      candidate.movedTaskId === task.id
+      && tasks.some(({ id }) => id === candidate.returnTaskId)
+    );
+    if (!returnPoint) return;
+    setTaskQueueReturnPoints((current) => current.filter(
+      ({ id }) => id !== returnPoint.id,
+    ));
+    if (returnPoint.destinationGroup !== TODOIST_ROOT_GROUP) {
+      collapseGroup(returnPoint.destinationGroup);
+    }
+    if (returnPoint.sourceGroup !== TODOIST_ROOT_GROUP) {
+      [...todoistGroupAncestors(returnPoint.sourceGroup, groupParents), returnPoint.sourceGroup]
+        .forEach(expandGroup);
+    }
+    focusTask(returnPoint.returnTaskId);
   };
 
   const reorderAtTask = async (
@@ -1201,7 +1335,14 @@ export function TodoistSidebar({
             placeholder="Folder name…"
             value={groupName}
           />
-          <button disabled={!groupName.trim()} type="submit">Create</button>
+          <button
+            disabled={!normalizeTodoistGroupName(groupName)
+              || taskGroups.some(([group]) => group.toLocaleLowerCase()
+                === normalizeTodoistGroupName(groupName).toLocaleLowerCase())}
+            type="submit"
+          >
+            Create
+          </button>
         </form>
       )}
 
@@ -1256,6 +1397,10 @@ export function TodoistSidebar({
               Math.max(0, items.length - 1) * 5,
             );
             const groupScrollable = !isRoot && groupContentHeight > groupScrollHeight;
+            const normalizedChildGroupName = normalizeTodoistGroupName(childGroupName);
+            const childGroupNameExists = Boolean(normalizedChildGroupName)
+              && taskGroups.some(([candidate]) => candidate.toLocaleLowerCase()
+                === normalizedChildGroupName.toLocaleLowerCase());
             const externalProjection = calendarDropProjection?.group === group
               ? calendarDropProjection
               : null;
@@ -1692,6 +1837,7 @@ export function TodoistSidebar({
               {!isRoot && creatingChildFor === group && (
                 <form
                   className="todo-event-child-folder-form"
+                  data-error={childGroupNameExists ? "true" : undefined}
                   style={{ order: folderRowOrder + 1 }}
                   onSubmit={(event) => {
                     event.preventDefault();
@@ -1701,8 +1847,13 @@ export function TodoistSidebar({
                   <Folder aria-hidden="true" size={13} />
                   <input
                     aria-label={`New folder inside ${group}`}
+                    aria-invalid={childGroupNameExists || undefined}
                     autoFocus
-                    onBlur={() => {
+                    onBlur={(event) => {
+                      if (
+                        event.relatedTarget instanceof Node
+                        && event.currentTarget.form?.contains(event.relatedTarget)
+                      ) return;
                       setChildGroupName("");
                       setCreatingChildFor(null);
                     }}
@@ -1716,6 +1867,15 @@ export function TodoistSidebar({
                     placeholder="New folder…"
                     value={childGroupName}
                   />
+                  <button
+                    disabled={!normalizedChildGroupName || childGroupNameExists}
+                    type="submit"
+                  >
+                    Create
+                  </button>
+                  {childGroupNameExists && (
+                    <small role="alert">A folder with this name already exists</small>
+                  )}
                 </form>
               )}
               <div
@@ -1779,21 +1939,17 @@ export function TodoistSidebar({
                       )}
                       {showExternalProjectionBefore && renderExternalProjection()}
                       <TodoistEventCard
+                        canNavigateBack={taskQueueReturnPoints.some((returnPoint) =>
+                          returnPoint.movedTaskId === task.id
+                          && tasks.some(({ id }) => id === returnPoint.returnTaskId)
+                        )}
                         description={task.description}
                         dragged={draggedTaskId === task.id}
                         durationMinutes={durationMinutes}
                         moving={moving.has(task.id)}
                         onActivate={() => activateTask(task.id)}
                         onDelete={() => {
-                          if (selectionAnchorRef.current === task.id) {
-                            selectionAnchorRef.current = null;
-                          }
-                          setSelectedTaskIds((current) => {
-                            const next = new Set(current);
-                            next.delete(task.id);
-                            return next;
-                          });
-                          return onDeleteTasks([task]);
+                          return deleteSidebarTasks([task]);
                         }}
                         onDuplicate={() => onDuplicateTask(task)}
                         onDragEnd={(event) => {
@@ -1890,6 +2046,7 @@ export function TodoistSidebar({
                         onMove={(direction) => moveTaskByKeyboard(task, direction)}
                         onMoveToFolder={(direction) =>
                           moveTaskToFolderByKeyboard(task, direction)}
+                        onNavigateBack={() => returnToPreviousQueueTask(task)}
                         onRename={(title) => onRenameTask(task, title)}
                         onResize={(minutes) => onResizeTask(task, minutes)}
                         onSelect={(event) => {

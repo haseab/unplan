@@ -2,10 +2,37 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   moveTask,
+  sidebarFocusFallbackNavigationId,
   sidebarNavigationItems,
   sidebarTriageNavigationItems,
   taskMoveIndex,
 } from "./task-sidebar-order";
+
+test("focuses the first task in the most recently opened folder", () => {
+  const openFolders = new Map([
+    ["folder:Work", ["task:work-1", "task:work-2"]],
+    ["folder:Personal", ["task:personal-1"]],
+  ]);
+
+  assert.equal(sidebarFocusFallbackNavigationId({
+    firstFolderId: "folder:Work",
+    openFolders,
+    recentOpenFolderIds: ["folder:Personal", "folder:Work"],
+  }), "task:work-1");
+});
+
+test("focus fallback uses an empty open folder, then the first closed folder", () => {
+  assert.equal(sidebarFocusFallbackNavigationId({
+    firstFolderId: "folder:Work",
+    openFolders: new Map([["folder:Personal", []]]),
+    recentOpenFolderIds: ["folder:Personal"],
+  }), "folder:Personal");
+  assert.equal(sidebarFocusFallbackNavigationId({
+    firstFolderId: "folder:Work",
+    openFolders: new Map(),
+    recentOpenFolderIds: [],
+  }), "folder:Work");
+});
 
 test("moves a task one position and stops at list boundaries", () => {
   assert.deepEqual(moveTask(["a", "b", "c"], 1, taskMoveIndex(1, 3, -1)), ["b", "a", "c"]);

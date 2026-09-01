@@ -1,3 +1,5 @@
+import { Check, CirclePause, Clock3, LoaderCircle } from "lucide-react";
+import { createElement } from "react";
 import { toast } from "sonner";
 
 type ToastId = string | number;
@@ -25,6 +27,7 @@ type PendingAction = {
 type ActionToastOptions = {
   coalesceKey?: string;
   duration: number;
+  submitImmediately?: boolean;
   onSettled?: () => void;
   onUndo: () => void;
   onSubmit: (reportProgress: (message: string) => void) => Promise<void> | void;
@@ -48,6 +51,23 @@ const EMPTY_SYNC_SNAPSHOT: ActionToastSyncSnapshot = {
   pendingResourceIds: [],
 };
 let syncSnapshot = EMPTY_SYNC_SNAPSHOT;
+
+type ActionToastVisualState = "paused" | "queued" | "updated" | "updating";
+
+const actionToastIcon = (state: ActionToastVisualState) => {
+  const Icon = state === "paused"
+    ? CirclePause
+    : state === "queued"
+      ? Clock3
+      : state === "updated"
+        ? Check
+        : LoaderCircle;
+  return createElement(Icon, {
+    "aria-hidden": true,
+    className: `action-toast-icon action-toast-icon-${state}${state === "updating" ? " spin" : ""}`,
+    size: 16,
+  });
+};
 
 const actionIsHeld = (action: PendingAction) =>
   [...resourceHolds.values()].some((heldIds) =>
@@ -127,6 +147,7 @@ export function queueActionToast(
       closeButton: true,
       description: paused ? "Unsynced while this event is being edited" : undefined,
       duration: Infinity,
+      icon: actionToastIcon(paused ? "paused" : "queued"),
       onDismiss: () => {
         // Closing an actionable toast means “keep it”, so commit immediately.
         submit();
@@ -202,20 +223,41 @@ export function queueActionToast(
     }
     publishSyncSnapshot();
     toast.loading(currentOptions.submittingMessage ?? "Saving to Google…", {
+      action: undefined,
+      closeButton: false,
+      description: undefined,
       id: toastId,
       duration: Infinity,
+      icon: actionToastIcon("updating"),
+      onDismiss: undefined,
     });
 
     const reportProgress = (progressMessage: string) => {
       if (state !== "submitting") return;
-      toast.loading(progressMessage, { id: toastId, duration: Infinity });
+      toast.loading(progressMessage, {
+        action: undefined,
+        closeButton: false,
+        description: undefined,
+        duration: Infinity,
+        icon: actionToastIcon("updating"),
+        id: toastId,
+        onDismiss: undefined,
+      });
     };
 
     void Promise.resolve(currentOptions.onSubmit(reportProgress))
       .then(() => {
         state = "complete";
         activeActions.delete(toastId);
-        toast.dismiss(toastId);
+        toast.success(currentMessage, {
+          action: undefined,
+          closeButton: false,
+          description: undefined,
+          duration: 1_800,
+          icon: actionToastIcon("updated"),
+          id: toastId,
+          onDismiss: undefined,
+        });
         currentOptions.onSettled?.();
       })
       .catch((error: unknown) => {
@@ -232,15 +274,25 @@ export function queueActionToast(
     return true;
   };
 
-  const toastId: ToastId = toast(message, {
-    action: { label: "Undo (⌘Z)", onClick: undo },
-    closeButton: true,
-    duration: Infinity,
-    onDismiss: () => {
-      // Closing an actionable toast means “keep it”, so commit immediately.
-      submit();
-    },
-  });
+  const toastId: ToastId = options.submitImmediately
+    ? toast.loading(options.submittingMessage ?? "Saving to Google…", {
+        action: undefined,
+        closeButton: false,
+        description: undefined,
+        duration: Infinity,
+        icon: actionToastIcon("updating"),
+        onDismiss: undefined,
+      })
+    : toast(message, {
+        action: { label: "Undo (⌘Z)", onClick: undo },
+        closeButton: true,
+        duration: Infinity,
+        icon: actionToastIcon("queued"),
+        onDismiss: () => {
+          // Closing an actionable toast means “keep it”, so commit immediately.
+          submit();
+        },
+      });
   const controls: ActionToastController = { cancel, toastId, submit, undo };
   const refresh = (nextMessage: string, nextDuration: number) => {
     if (state !== "pending") return;
@@ -275,7 +327,9 @@ export function queueActionToast(
   pendingActions.set(toastId, action);
   if (options.coalesceKey) pendingCoalescedActions.set(options.coalesceKey, action);
   activeActions.add(toastId);
-  if (actionIsHeld(action)) {
+  if (options.submitImmediately) {
+    submit();
+  } else if (actionIsHeld(action)) {
     paused = true;
     renderPendingToast();
   } else {

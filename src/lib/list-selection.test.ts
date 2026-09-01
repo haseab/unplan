@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { adjacentListItemId, updateListSelection } from "./list-selection";
+import {
+  adjacentListItemId,
+  listItemIdAfterRemoval,
+  updateListSelection,
+} from "./list-selection";
 
 const orderedIds = ["first", "second", "third", "fourth"];
 
@@ -69,4 +73,23 @@ test("navigates to adjacent visible list items without wrapping", () => {
   assert.equal(adjacentListItemId(orderedIds, "second", "next"), "third");
   assert.equal(adjacentListItemId(orderedIds, "first", "previous"), null);
   assert.equal(adjacentListItemId(orderedIds, "fourth", "next"), null);
+});
+
+test("post-removal selection prefers the next item and falls back to the previous item", () => {
+  assert.equal(listItemIdAfterRemoval({
+    orderedIds,
+    removedIds: new Set(["second"]),
+  }), "third");
+  assert.equal(listItemIdAfterRemoval({
+    orderedIds,
+    removedIds: new Set(["second", "third"]),
+  }), "fourth");
+  assert.equal(listItemIdAfterRemoval({
+    orderedIds,
+    removedIds: new Set(["fourth"]),
+  }), "third");
+  assert.equal(listItemIdAfterRemoval({
+    orderedIds,
+    removedIds: new Set(orderedIds),
+  }), null);
 });

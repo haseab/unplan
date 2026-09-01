@@ -48,6 +48,9 @@ export type TodoistTask = {
   } | null;
 };
 
+export const todoistTaskUrl = (taskId: string) =>
+  `https://app.todoist.com/app/task/${encodeURIComponent(taskId)}`;
+
 export type CreateTodoistTaskInput = {
   content: string;
   description?: string;

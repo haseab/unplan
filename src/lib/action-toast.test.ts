@@ -51,6 +51,23 @@ test("keyboard submit commits pending actions from oldest to newest", async () =
   await Promise.resolve();
 });
 
+test("immediate actions skip the pending queue and submit at creation", async () => {
+  let submitted = 0;
+  queueActionToast("Moved event", {
+    ...pendingOptions(
+      () => { submitted += 1; },
+      () => {},
+      "event-change:immediate-event",
+    ),
+    submitImmediately: true,
+  });
+
+  assert.equal(submitted, 1);
+  assert.equal(hasPendingActionToast(), false);
+
+  await Promise.resolve();
+});
+
 test("keyboard undo removes only the newest pending action", async () => {
   const undone: string[] = [];
   const submitted: string[] = [];

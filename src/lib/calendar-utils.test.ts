@@ -15,6 +15,7 @@ import {
   latestQuarterHour,
   moveEventToStart,
   retimePastEventToLatestQuarterHour,
+  resolveKeyboardResizeEdge,
   resizeEvent,
   resizeEventEnd,
   type KeyboardResizeTransform,
@@ -225,6 +226,69 @@ test("an initial keyboard resize down chooses the end edge and keeps it selected
     ...event,
     end: new Date(2026, 7, 22, 10, 45).toISOString(),
   });
+});
+
+test("keyboard resize uses the end edge when extending the start would hit the previous event", () => {
+  const previous = {
+    ...event,
+    id: "previous",
+    start: new Date(2026, 7, 22, 9).toISOString(),
+    end: event.start,
+  };
+
+  assert.equal(resolveKeyboardResizeEdge({
+    candidates: [previous, event],
+    events: [event],
+    minuteDelta: -15,
+    preferredEdge: null,
+  }), "end");
+});
+
+test("keyboard resize uses the start edge when extending the end would hit the next event", () => {
+  const next = {
+    ...event,
+    id: "next",
+    start: event.end,
+    end: new Date(2026, 7, 22, 12).toISOString(),
+  };
+
+  assert.equal(resolveKeyboardResizeEdge({
+    candidates: [event, next],
+    events: [event],
+    minuteDelta: 15,
+    preferredEdge: null,
+  }), "start");
+});
+
+test("keyboard resize keeps the first or remembered edge when both sides are free", () => {
+  assert.equal(resolveKeyboardResizeEdge({
+    candidates: [event],
+    events: [event],
+    minuteDelta: -15,
+    preferredEdge: null,
+  }), "start");
+  assert.equal(resolveKeyboardResizeEdge({
+    candidates: [event],
+    events: [event],
+    minuteDelta: 15,
+    preferredEdge: "start",
+  }), "start");
+});
+
+test("a collision overrides a remembered keyboard resize edge", () => {
+  const next = {
+    ...event,
+    id: "next",
+    start: event.end,
+    end: new Date(2026, 7, 22, 12).toISOString(),
+  };
+
+  assert.equal(resolveKeyboardResizeEdge({
+    candidates: [event, next],
+    events: [event],
+    minuteDelta: 15,
+    preferredEdge: "end",
+  }), "start");
 });
 
 test("fills the gap to the nearest timed event on the same day", () => {

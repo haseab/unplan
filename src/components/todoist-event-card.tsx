@@ -23,6 +23,7 @@ const formatDuration = (minutes: number) => {
 };
 
 type TodoistEventCardProps = {
+  canNavigateBack: boolean;
   description: string;
   dragged: boolean;
   durationMinutes: number;
@@ -34,6 +35,7 @@ type TodoistEventCardProps = {
   onDragStart: (event: React.DragEvent<HTMLButtonElement>) => void;
   onMove: (direction: -1 | 1) => void;
   onMoveToFolder: (direction: "down" | "left" | "right" | "up") => void;
+  onNavigateBack: () => void;
   onNavigate: (direction: "next" | "previous", extendSelection: boolean) => void;
   onNavigateToGroupEdge: (edge: "end" | "start") => void;
   onRename: (title: string) => Promise<void>;
@@ -49,6 +51,7 @@ type TodoistEventCardProps = {
 };
 
 export function TodoistEventCard({
+  canNavigateBack,
   description,
   dragged,
   durationMinutes,
@@ -60,6 +63,7 @@ export function TodoistEventCard({
   onDragStart,
   onMove,
   onMoveToFolder,
+  onNavigateBack,
   onNavigate,
   onNavigateToGroupEdge,
   onRename,
@@ -202,6 +206,7 @@ export function TodoistEventCard({
         aria-pressed={selected}
         className={`calendar-event todo-event-block event-density-${density} ${renderedHeight < 24 ? "event-compact" : ""} ${density === "time" ? "event-condensed" : ""} ${selected ? "event-selected" : ""}`}
         data-marquee-task-id={task.id}
+        data-sidebar-back-enabled={canNavigateBack ? "true" : undefined}
         data-sidebar-navigation-id={`task:${task.id}`}
         data-sidebar-navigation-kind="task"
         draggable={!busy && !editing && resizePreview === null}
@@ -258,6 +263,18 @@ export function TodoistEventCard({
             event.stopPropagation();
             onActivate();
             onMove(moveDirection);
+            return;
+          }
+          if (
+            canNavigateBack
+            && !modifier
+            && !event.altKey
+            && !event.shiftKey
+            && event.key === "ArrowLeft"
+          ) {
+            event.preventDefault();
+            event.stopPropagation();
+            onNavigateBack();
             return;
           }
           if (

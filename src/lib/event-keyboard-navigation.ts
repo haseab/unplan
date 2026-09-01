@@ -232,6 +232,7 @@ export const isPastEventDuplicateShortcut = ({
 
 export type CrossSurfaceMoveAction =
   | "schedule-sidebar-task"
+  | "triage-sidebar-tasks"
   | "triage-calendar-events";
 
 export const crossSurfaceMoveShortcut = ({
@@ -254,6 +255,9 @@ export const crossSurfaceMoveShortcut = ({
   if (!metaKey || !shiftKey || altKey || editable || modalOpen) return null;
   if (activeSurface === "sidebar" && key === "ArrowLeft") {
     return "schedule-sidebar-task";
+  }
+  if (activeSurface === "sidebar" && key === "ArrowRight") {
+    return "triage-sidebar-tasks";
   }
   if (activeSurface === "calendar" && key === "ArrowRight") {
     return "triage-calendar-events";

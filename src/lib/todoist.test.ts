@@ -8,6 +8,7 @@ import {
   collectTodoistPages,
   reorderTodoistTaskIds,
   todoistTaskDropTargetAtPointer,
+  todoistTaskUrl,
   resolveTodoistDestination,
   type TodoistProject,
   type TodoistSection,
@@ -30,6 +31,13 @@ const sections: TodoistSection[] = [
   { id: "doing", name: "Doing", projectId: "work" },
   { id: "later", name: "Later", projectId: "inbox" },
 ];
+
+test("builds the current Todoist task URL", () => {
+  assert.equal(
+    todoistTaskUrl("6XGgmFVcrG5RRjVr"),
+    "https://app.todoist.com/app/task/6XGgmFVcrG5RRjVr",
+  );
+});
 
 test("preserves a valid Todoist project and section", () => {
   assert.deepEqual(

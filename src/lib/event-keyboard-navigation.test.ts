@@ -156,8 +156,8 @@ test("Command+Shift moves items between the active sidebar and calendar surfaces
   });
 
   assert.equal(shortcut("sidebar", "ArrowLeft"), "schedule-sidebar-task");
+  assert.equal(shortcut("sidebar", "ArrowRight"), "triage-sidebar-tasks");
   assert.equal(shortcut("calendar", "ArrowRight"), "triage-calendar-events");
-  assert.equal(shortcut("sidebar", "ArrowRight"), null);
   assert.equal(shortcut("calendar", "ArrowLeft"), null);
   assert.equal(shortcut("sidebar", "ArrowLeft", { editable: true }), null);
   assert.equal(shortcut("calendar", "ArrowRight", { modalOpen: true }), null);

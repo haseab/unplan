@@ -160,7 +160,7 @@ import {
   isEventUnaccepted,
   updateSelfParticipantResponse,
 } from "@/lib/event-participants";
-import { isExtractedTaskTriageShortcut } from "@/lib/task-triage";
+import { taskTriageShortcutMode } from "@/lib/task-triage";
 import {
   crossSurfaceMoveShortcut,
   eventGapFillShortcut,
@@ -212,6 +212,7 @@ import {
   moveEvent,
   moveEventToStart,
   retimePastEventToLatestQuarterHour,
+  resolveKeyboardResizeEdge,
   resizeEvent,
   snapMinutes,
   startOfCalendarWeek,
@@ -513,7 +514,7 @@ export function CalendarApp() {
   const [showVisibleEventFinder, setShowVisibleEventFinder] = React.useState(false);
   const [visibleEventFindMatchKeys, setVisibleEventFindMatchKeys] =
     React.useState<ReadonlySet<string>>(() => new Set());
-  const [pendingTodoistSearchTaskId, setPendingTodoistSearchTaskId] =
+  const [pendingTodoistFocusTaskId, setPendingTodoistFocusTaskId] =
     React.useState<string | null>(null);
   const [showShortcuts, setShowShortcuts] = React.useState(false);
   const [showSettings, setShowSettings] = React.useState(false);
@@ -651,14 +652,17 @@ export function CalendarApp() {
     dayDelta: number;
     resizeActiveEdge: "end" | "start" | null;
     endMinuteDelta: number;
+    initializing: boolean;
     minuteDelta: number;
     originals: CalendarEvent[];
     selectionKey: string;
     sendUpdates: GoogleSendUpdates | null;
     startMinuteDelta: number;
+    submitImmediately: boolean;
     targetStart: Date | null;
     idleTimer: ReturnType<typeof setTimeout> | null;
   } | null>(null);
+  const submitKeyboardMoveRef = React.useRef<(() => boolean) | null>(null);
   const keyboardResizeEdgeRef = React.useRef<{
     activeEdge: "end" | "start";
     selectionKey: string;
@@ -1547,10 +1551,10 @@ export function CalendarApp() {
     clearEventSelection();
     setSidebarOpen(true);
     setRightSidebarTab("todos");
-    setPendingTodoistSearchTaskId(task.id);
+    setPendingTodoistFocusTaskId(task.id);
   }, [clearEventSelection, setEventSearchOpen]);
-  const handleSearchTaskFocus = React.useCallback(() => {
-    setPendingTodoistSearchTaskId(null);
+  const handleTodoistTaskFocus = React.useCallback(() => {
+    setPendingTodoistFocusTaskId(null);
   }, []);
 
   React.useEffect(() => {
@@ -2857,20 +2861,20 @@ export function CalendarApp() {
   }, [cancelPendingEventCreations, chooseGuestNotifications, chooseRecurringDeleteScope, confirmBulkAction, selected, toastDuration]);
 
   const deleteTodoistTasks = React.useCallback(async (source: TodoistTask[]) => {
-    if (!source.length) return;
+    if (!source.length) return false;
     const confirmed = await confirmBulkAction({
       action: "delete",
       count: source.length,
       subject: "tasks",
       threshold: TASK_DELETE_CONFIRMATION_THRESHOLD,
     });
-    if (!confirmed) return;
+    if (!confirmed) return false;
 
     const taskIds = new Set(source.map((task) => task.id));
     const deleted = todoistTasks.flatMap((task, index) =>
       taskIds.has(task.id) ? [{ task, index }] : [],
     );
-    if (!deleted.length) return;
+    if (!deleted.length) return false;
 
     const restoreTasks = (snapshots: typeof deleted) => {
       snapshots
@@ -2905,6 +2909,7 @@ export function CalendarApp() {
         submittingMessage: "Deleting tasks…",
       },
     );
+    return true;
   }, [confirmBulkAction, deleteTodoistTask, insertLocalTodoistTaskAt, removeLocalTodoistTasks, toastDuration, todoistTasks]);
 
   const copySelection = React.useCallback(() => {
@@ -3321,12 +3326,15 @@ export function CalendarApp() {
         !event.altKey &&
         event.key === "Enter" &&
         !isEditableTarget(event.target) &&
-        !(event.target instanceof Element && event.target.closest(".event-creation-form")) &&
-        triggerToastSubmit()
+        !(event.target instanceof Element && event.target.closest(".event-creation-form"))
       ) {
-        event.preventDefault();
-        event.stopPropagation();
-        return;
+        const submitted = submitKeyboardMoveRef.current?.()
+          || triggerToastSubmit();
+        if (submitted) {
+          event.preventDefault();
+          event.stopPropagation();
+          return;
+        }
       }
       if (
         modifier &&
@@ -3530,6 +3538,16 @@ export function CalendarApp() {
         }
       }
       if (isEditableTarget(event.target)) return;
+      const requestedTaskTriageMode = taskTriageShortcutMode({
+        altKey: event.altKey,
+        extractedTaskCount: extractedTasks.length,
+        key: event.key,
+        modalOpen: Boolean(document.querySelector(".modal-backdrop")),
+        modifier,
+        normalTaskCount: ungroupedTodoistTasks.length,
+        repeat: event.repeat,
+        shiftKey: event.shiftKey,
+      });
       if (isEventCalendarPickerShortcut({
         altKey: event.altKey,
         key: event.key,
@@ -3556,19 +3574,9 @@ export function CalendarApp() {
         && (event.key === "ArrowUp" || event.key === "ArrowDown")
       ) {
         event.preventDefault();
-      } else if (
-        isExtractedTaskTriageShortcut({
-          altKey: event.altKey,
-          extractedTaskCount: extractedTasks.length,
-          key: event.key,
-          modalOpen: Boolean(document.querySelector(".modal-backdrop")),
-          modifier,
-          repeat: event.repeat,
-          shiftKey: event.shiftKey,
-        })
-      ) {
+      } else if (requestedTaskTriageMode) {
         event.preventDefault();
-        setTaskTriageMode("extracted");
+        setTaskTriageMode(requestedTaskTriageMode);
         setShowTaskTriage(true);
       } else if (
         modifier
@@ -3611,7 +3619,8 @@ export function CalendarApp() {
           void duplicateEvents([retimed], { revealCopy: true });
         }
       } else if (
-        !modifier
+        activeSelectionSurface === "calendar"
+        && !modifier
         && !event.altKey
         && ["ArrowDown", "ArrowLeft", "ArrowRight", "ArrowUp"].includes(event.key)
       ) {
@@ -3704,7 +3713,7 @@ export function CalendarApp() {
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [activeSelectionSurface, cancelActiveInteraction, cancelVisibleEventFinder, changeDayCount, clearEventSelection, closeDateCommand, copySelection, createAdjacentEvent, creationDraft, dayCount, deleteEvents, dismissCreationDraft, duplicateEvents, extractedTasks.length, focusCalendarSurface, focusRenderedEvent, focusSidebarSurface, google.connected, loadGoogleEvents, navigateBetweenEvents, navigateDays, openDateCommand, openEventSearch, openVisibleEventFinder, rightSidebarTab, selected, setEventSearchOpen, showDateCommandDialog, showEventSearch, showSettings, showShortcuts, showVisibleEventFinder, syncing]);
+  }, [activeSelectionSurface, cancelActiveInteraction, cancelVisibleEventFinder, changeDayCount, clearEventSelection, closeDateCommand, copySelection, createAdjacentEvent, creationDraft, dayCount, deleteEvents, dismissCreationDraft, duplicateEvents, extractedTasks.length, focusCalendarSurface, focusRenderedEvent, focusSidebarSurface, google.connected, loadGoogleEvents, navigateBetweenEvents, navigateDays, openDateCommand, openEventSearch, openVisibleEventFinder, rightSidebarTab, selected, setEventSearchOpen, showDateCommandDialog, showEventSearch, showSettings, showShortcuts, showVisibleEventFinder, syncing, ungroupedTodoistTasks.length]);
 
   const toggleCalendar = (calendarId: string) => {
     const calendar = calendars.find((candidate) => candidate.id === calendarId);
@@ -4343,6 +4352,8 @@ export function CalendarApp() {
         return;
       }
 
+      if (action !== "triage-calendar-events") return;
+
       const focusedEventId = target?.closest<HTMLElement>("[data-calendar-event-id]")
         ?.dataset.calendarEventId;
       const eventIds = focusedEventId && selected.has(focusedEventId)
@@ -4634,7 +4645,10 @@ export function CalendarApp() {
     const keyboardTransformOnlyResizes = (session: KeyboardMoveSession) =>
       session.targetStart === null && isEventMoveAtOrigin(session);
 
-    const queueKeyboardMoveToast = (session: KeyboardMoveSession) => {
+    const queueKeyboardMoveToast = (
+      session: KeyboardMoveSession,
+      submitImmediately = false,
+    ) => {
       if (
         keyboardMoveSessionRef.current !== session
         || keyboardTransformIsAtOrigin(session)
@@ -4645,6 +4659,7 @@ export function CalendarApp() {
         `${resizedOnly ? "Resized" : "Moved"} ${moved.length === 1 ? moved[0].title : `${moved.length} events`}`,
         {
           duration: toastDuration,
+          submitImmediately,
           onUndo: () => {
             restoreEvents(session.originals);
             if (keyboardMoveSessionRef.current === session) {
@@ -4699,9 +4714,12 @@ export function CalendarApp() {
       if (
         keyboardMoveSessionRef.current !== session
         || cancelKeyboardMoveAtOrigin(session)
+        || session.initializing
       ) return;
+      session.initializing = true;
       const moved = keyboardEventUpdates(session);
       const sendUpdates = await chooseGuestNotifications("update", moved);
+      session.initializing = false;
       if (!sendUpdates) {
         restoreEvents(session.originals);
         if (keyboardMoveSessionRef.current === session) {
@@ -4714,7 +4732,7 @@ export function CalendarApp() {
         || cancelKeyboardMoveAtOrigin(session)
       ) return;
       session.sendUpdates = sendUpdates;
-      queueKeyboardMoveToast(session);
+      queueKeyboardMoveToast(session, session.submitImmediately);
     };
 
     const scheduleKeyboardMoveIdleAction = (
@@ -4739,6 +4757,21 @@ export function CalendarApp() {
         },
         scheduleTimer: setTimeout,
       });
+    };
+
+    submitKeyboardMoveRef.current = () => {
+      const session = keyboardMoveSessionRef.current;
+      if (!session || keyboardTransformIsAtOrigin(session)) return false;
+      if (session.idleTimer !== null) clearTimeout(session.idleTimer);
+      session.idleTimer = null;
+      if (session.action) return session.action.submit();
+      session.submitImmediately = true;
+      if (session.sendUpdates === null) {
+        void initializeKeyboardMove(session);
+      } else {
+        queueKeyboardMoveToast(session, true);
+      }
+      return true;
     };
 
     let repeatDelayTimer: number | null = null;
@@ -4810,11 +4843,13 @@ export function CalendarApp() {
           dayDelta: 0,
           resizeActiveEdge: rememberedResizeEdge,
           endMinuteDelta: 0,
+          initializing: false,
           minuteDelta: 0,
           originals: selection,
           selectionKey,
           sendUpdates: null,
           startMinuteDelta: 0,
+          submitImmediately: false,
           targetStart: null,
           idleTimer: null,
         };
@@ -4831,9 +4866,21 @@ export function CalendarApp() {
         session.minuteDelta += moveShortcut?.minuteDelta ?? 0;
       }
       if (resizeShortcut) {
+        const firstResizeInSession = session.endMinuteDelta === 0
+          && session.startMinuteDelta === 0;
+        const contextualResizeEdge = firstResizeInSession
+          ? resolveKeyboardResizeEdge({
+              candidates: eventsRef.current.filter((candidate) =>
+                visibleRef.current.has(candidate.calendarId)
+              ),
+              events: keyboardEventUpdates(session, selection),
+              minuteDelta: resizeShortcut.minuteDelta,
+              preferredEdge: session.resizeActiveEdge,
+            })
+          : session.resizeActiveEdge;
         const nextResize = advanceKeyboardResizeTransform(
           {
-            activeEdge: session.resizeActiveEdge,
+            activeEdge: contextualResizeEdge,
             endMinuteDelta: session.endMinuteDelta,
             startMinuteDelta: session.startMinuteDelta,
           },
@@ -4962,6 +5009,7 @@ export function CalendarApp() {
     window.addEventListener("keyup", handleKeyboardMoveKeyUp);
     window.addEventListener("blur", stopKeyboardMoveRepeat);
     return () => {
+      submitKeyboardMoveRef.current = null;
       stopKeyboardMoveRepeat();
       window.removeEventListener("keydown", handleKeyboardMoveKeyDown);
       window.removeEventListener("keyup", handleKeyboardMoveKeyUp);
@@ -4987,6 +5035,84 @@ export function CalendarApp() {
       throw error;
     }
   }, [replaceLocalTodoistTask, updateTodoistTask]);
+
+  const moveSidebarTodoistTaskToGroup = React.useCallback((
+    task: TodoistTask,
+    group: string,
+  ) => updateSidebarTodoistTask(
+    task,
+    todoistContentWithGroup(task.content, group),
+    "Event group could not be updated",
+  ), [updateSidebarTodoistTask]);
+
+  const moveSidebarTodoistTasksToTriage = React.useCallback((
+    tasks: TodoistTask[],
+    focusedTaskId: string,
+  ) => {
+    const moves = tasks.flatMap((task) => {
+      const currentGroup = calendarEventDetailsFromTodoistContent(task.content).group
+        ?.trim()
+        .toLocaleLowerCase();
+      return currentGroup === "ungrouped"
+        ? []
+        : [{
+            original: task,
+            updated: {
+              ...task,
+              content: todoistContentWithGroup(task.content, "Ungrouped"),
+            },
+          }];
+    });
+    if (!moves.length) return;
+
+    moves.forEach(({ updated }) => replaceLocalTodoistTask(updated));
+    let failedTaskIds: Set<string> | null = null;
+    const restoreTasks = (
+      taskIds = new Set(moves.map(({ original }) => original.id)),
+      restoreFocus = false,
+    ) => {
+      moves.forEach(({ original }) => {
+        if (taskIds.has(original.id)) replaceLocalTodoistTask(original);
+      });
+      if (restoreFocus && taskIds.has(focusedTaskId)) {
+        setPendingTodoistFocusTaskId(focusedTaskId);
+      }
+    };
+    queueActionToast(
+      moves.length === 1
+        ? `Moved ${todoistTaskDisplayTitle(moves[0].original.content)} to Triage`
+        : `Moved ${moves.length} tasks to Triage`,
+      {
+        duration: toastDuration,
+        onUndo: () => restoreTasks(undefined, true),
+        onSubmit: async (reportProgress) => {
+          const { failed } = await runMutationBatch(
+            moves,
+            ({ updated }) => updateTodoistTask(updated.id, {
+              content: updated.content,
+              description: updated.description,
+            }),
+            (completed, total) => reportProgress(
+              `Moving tasks to Triage… ${completed}/${total}`,
+            ),
+          );
+          if (!failed.length) return;
+          failedTaskIds = new Set(failed.map(({ item }) => item.original.id));
+          restoreTasks(failedTaskIds);
+          throw new Error(
+            `${failed.length} ${failed.length === 1 ? "task" : "tasks"} could not be moved to Triage`,
+          );
+        },
+        onError: (error) => {
+          if (!failedTaskIds) restoreTasks();
+          toast.error(error instanceof Error ? error.message : "Tasks could not be moved to Triage");
+        },
+        submittingMessage: moves.length === 1
+          ? "Moving task to Triage…"
+          : "Moving tasks to Triage…",
+      },
+    );
+  }, [replaceLocalTodoistTask, toastDuration, updateTodoistTask]);
 
   const renameSidebarTodoistTask = React.useCallback((
     task: TodoistTask,
@@ -5624,7 +5750,7 @@ export function CalendarApp() {
               <span>Select visible search result</span><kbd>⌘ ↵</kbd>
               <span>Search all events and tasks</span><kbd>⌘ K</kbd>
               <span>Open settings</span><kbd>⌘ ,</kbd>
-              <span>Review extracted tasks</span><kbd>⌘ E</kbd>
+              <span>Review extracted or event tasks</span><kbd>⌘ E</kbd>
               <span>Change selected events’ calendar</span><kbd>C</kbd>
               <span>Duplicate selected events</span><kbd>⌘ D</kbd>
               <span>Duplicate and drag an event</span><kbd>⌘ drag</kbd>
@@ -5725,10 +5851,14 @@ export function CalendarApp() {
             submittingMessage: `Moving task to ${group}…`,
           });
         }}
+        onDeleteTask={async (task) => {
+          await deleteTodoistTasks([task]);
+        }}
         onReturnAnimationEnd={(taskId) => setReturningTriageTask((current) =>
           current?.id === taskId ? null : current
         )}
         onOpenChange={setShowTaskTriage}
+        onRenameTask={renameSidebarTodoistTask}
         onResolveExtracted={async (task, resolution) => {
           if (resolution === "keep" && !technicalitiesCalendar) {
             throw new Error("A writable Technicalities calendar is required");
@@ -5832,7 +5962,7 @@ export function CalendarApp() {
             connected={todoistConnected}
             customGroups={todoistCustomGroups}
             error={todoistError}
-            focusTaskId={pendingTodoistSearchTaskId}
+            focusTaskId={pendingTodoistFocusTaskId}
             loading={todoistLoading}
             onCalendarDragEnd={() => {
               setDraggedTodoistTasks([]);
@@ -5854,7 +5984,7 @@ export function CalendarApp() {
             })}
             onDeleteTasks={deleteTodoistTasks}
             onDuplicateTask={duplicateSidebarTodoistTask}
-            onFocusTaskHandled={handleSearchTaskFocus}
+            onFocusTaskHandled={handleTodoistTaskFocus}
             onDeleteGroup={(group) => setTodoistCustomGroups((current) => {
               const next = current.filter((candidate) => candidate !== group);
               window.localStorage.setItem(
@@ -5864,23 +5994,8 @@ export function CalendarApp() {
               return next;
             })}
             onOpenSettings={() => setShowSettings(true)}
-            onMoveTaskToGroup={async (task, group) => {
-              const groupedTask = {
-                ...task,
-                content: todoistContentWithGroup(task.content, group),
-              };
-              replaceLocalTodoistTask(groupedTask);
-              try {
-                await updateTodoistTask(task.id, {
-                  content: groupedTask.content,
-                  description: task.description,
-                });
-              } catch (error) {
-                replaceLocalTodoistTask(task);
-                toast.error(error instanceof Error ? error.message : "Event group could not be updated");
-                throw error;
-              }
-            }}
+            onMoveTaskToGroup={moveSidebarTodoistTaskToGroup}
+            onMoveTasksToTriage={moveSidebarTodoistTasksToTriage}
             onQueueTaskKeyboardMove={(task, group, orderedTaskIds, previousOrderedTaskIds, restoreFolderState) => {
               const groupedTask = group === null
                 ? task

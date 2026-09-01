@@ -52,6 +52,23 @@ export const sidebarTriageNavigationItems = ({
     : []),
 ];
 
+export const sidebarFocusFallbackNavigationId = ({
+  firstFolderId,
+  openFolders,
+  recentOpenFolderIds,
+}: {
+  firstFolderId: string | null;
+  openFolders: ReadonlyMap<string, readonly string[]>;
+  recentOpenFolderIds: readonly string[];
+}) => {
+  const mostRecentOpenFolderId = [...recentOpenFolderIds].reverse().find(
+    (folderId) => openFolders.has(folderId),
+  );
+  if (!mostRecentOpenFolderId) return firstFolderId;
+  return openFolders.get(mostRecentOpenFolderId)?.[0]
+    ?? mostRecentOpenFolderId;
+};
+
 export const sidebarNavigationItems = (
   groups: Array<{ group: string; taskIds: string[] }>,
   parents: Record<string, string | null>,

@@ -4,6 +4,7 @@ import {
   ArrowLeft,
   ArrowRight,
   Check,
+  ExternalLink,
   Folder,
   FolderOpen,
   LoaderCircle,
@@ -12,12 +13,15 @@ import {
   X,
 } from "lucide-react";
 import * as React from "react";
-import type { TodoistTask } from "@/lib/todoist";
+import { todoistTaskUrl, type TodoistTask } from "@/lib/todoist";
 import { calendarEventDetailsFromTodoistContent } from "@/lib/todoist-calendar";
 import { readTodoistFolderPreferences } from "@/lib/todoist-folder-backup";
-import { taskTriageFolders, type TaskTriageFolder } from "@/lib/task-triage";
-
-export type TaskTriageMode = "extracted" | "normal";
+import {
+  taskTriageFolders,
+  type TaskTriageFolder,
+  type TaskTriageMode,
+} from "@/lib/task-triage";
+export type { TaskTriageMode } from "@/lib/task-triage";
 type TriageDirection = "left" | "right";
 
 type TaskTriageDialogProps = {
@@ -25,7 +29,9 @@ type TaskTriageDialogProps = {
   groups: string[];
   initialMode: TaskTriageMode;
   onAssignGroup: (task: TodoistTask, group: string) => Promise<void>;
+  onDeleteTask: (task: TodoistTask) => Promise<void>;
   onOpenChange: (open: boolean) => void;
+  onRenameTask: (task: TodoistTask, title: string) => Promise<void>;
   onResolveExtracted: (task: TodoistTask, resolution: "delete" | "keep") => Promise<void>;
   onReturnAnimationEnd: (taskId: string) => void;
   open: boolean;
@@ -37,6 +43,7 @@ type ExtractedTaskReviewProps = {
   count: number;
   error: string | null;
   onResolve: (direction: TriageDirection) => void;
+  onOpenOriginal: () => void;
   resolving: boolean;
   returning: boolean;
   task: TodoistTask;
@@ -46,6 +53,7 @@ function ExtractedTaskReview({
   count,
   error,
   onResolve,
+  onOpenOriginal,
   resolving,
   returning,
   task,
@@ -75,6 +83,15 @@ function ExtractedTaskReview({
         </button>
       </div>
       <p className="task-triage-shortcuts"><kbd>←</kbd> delete <span /> keep <kbd>→</kbd></p>
+      {!task.optimistic && (
+        <div className="task-triage-secondary-actions task-triage-extracted-secondary-actions">
+          <button className="task-triage-open-original" onClick={onOpenOriginal} type="button">
+            <ExternalLink size={14} />
+            <span>Open in Todoist</span>
+            <kbd>⌘O</kbd>
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -84,8 +101,11 @@ type NormalTaskReviewProps = {
   folders: TaskTriageFolder[];
   highlightedFolder: number;
   onAssign: (group: string) => void;
+  onDelete: () => void;
   onHighlight: (index: number) => void;
+  onOpenOriginal: () => void;
   onQueryChange: (query: string) => void;
+  onRename: (title: string) => Promise<void>;
   query: string;
   resolving: boolean;
   searchInputRef: React.RefObject<HTMLInputElement | null>;
@@ -98,8 +118,11 @@ function NormalTaskReview({
   folders,
   highlightedFolder,
   onAssign,
+  onDelete,
   onHighlight,
+  onOpenOriginal,
   onQueryChange,
+  onRename,
   query,
   resolving,
   searchInputRef,
@@ -107,11 +130,82 @@ function NormalTaskReview({
   totalFolders,
 }: NormalTaskReviewProps) {
   const details = calendarEventDetailsFromTodoistContent(task.content);
+  const title = details.title || task.content;
+  const [titleDraft, setTitleDraft] = React.useState(title);
+  const [savingTitle, setSavingTitle] = React.useState(false);
+  const titleFieldRef = React.useRef<HTMLTextAreaElement>(null);
+  const titleCommitRef = React.useRef(false);
+  const titleCancelRef = React.useRef(false);
+
+  React.useLayoutEffect(() => {
+    const field = titleFieldRef.current;
+    if (!field) return;
+    field.style.height = "0px";
+    field.style.height = `${field.scrollHeight}px`;
+  }, [titleDraft]);
+
+  const commitTitle = async () => {
+    if (titleCommitRef.current) return;
+    if (titleCancelRef.current) {
+      titleCancelRef.current = false;
+      return;
+    }
+    const normalized = titleDraft.trim().replace(/\s+/g, " ");
+    if (!normalized || normalized === title) {
+      setTitleDraft(title);
+      return;
+    }
+    titleCommitRef.current = true;
+    setSavingTitle(true);
+    try {
+      await onRename(normalized);
+      setTitleDraft(normalized);
+    } catch {
+      setTitleDraft(title);
+    } finally {
+      titleCommitRef.current = false;
+      setSavingTitle(false);
+    }
+  };
+
+  const cancelTitleEdit = () => {
+    titleCancelRef.current = true;
+    setTitleDraft(title);
+    window.requestAnimationFrame(() => searchInputRef.current?.focus());
+  };
+
   return (
     <div className="task-triage-normal">
       <article className="task-triage-task-preview">
         <span>Task to file</span>
-        <h3>{details.title || task.content}</h3>
+        <textarea
+          aria-label="Task title"
+          data-task-triage-title="true"
+          disabled={resolving || savingTitle}
+          onBlur={() => void commitTitle()}
+          onChange={(event) => setTitleDraft(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Escape") {
+              event.preventDefault();
+              event.stopPropagation();
+              cancelTitleEdit();
+              return;
+            }
+            if (
+              event.key === "Enter"
+              && !event.shiftKey
+              && !event.altKey
+              && !event.nativeEvent.isComposing
+            ) {
+              event.preventDefault();
+              event.stopPropagation();
+              void commitTitle().then(() => searchInputRef.current?.focus());
+            }
+          }}
+          ref={titleFieldRef}
+          rows={1}
+          value={titleDraft}
+        />
       </article>
       {error && <p className="task-triage-error">{error}</p>}
       <div className="task-triage-folder-picker">
@@ -166,6 +260,27 @@ function NormalTaskReview({
           )}
         </div>
       </div>
+      <div className="task-triage-secondary-actions">
+        {!task.optimistic && (
+          <button className="task-triage-open-original" onClick={onOpenOriginal} type="button">
+            <ExternalLink size={14} />
+            <span>Open in Todoist</span>
+            <kbd>⌘O</kbd>
+          </button>
+        )}
+        <button
+          aria-label="Delete task"
+          className="task-triage-delete-task"
+          disabled={resolving || savingTitle}
+          onClick={onDelete}
+          title="Delete task (⌘⌫)"
+          type="button"
+        >
+          <Trash2 size={14} />
+          <span>Delete task</span>
+          <kbd>⌘⌫</kbd>
+        </button>
+      </div>
     </div>
   );
 }
@@ -175,7 +290,9 @@ export function TaskTriageDialog({
   groups,
   initialMode,
   onAssignGroup,
+  onDeleteTask,
   onOpenChange,
+  onRenameTask,
   onResolveExtracted,
   onReturnAnimationEnd,
   open,
@@ -270,13 +387,68 @@ export function TaskTriageDialog({
     }
   }, [currentTask, groups, onAssignGroup, phase, resolving, ungroupedTasks.length]);
 
+  const deleteNormalTask = React.useCallback(async () => {
+    if (!currentTask || resolving || phase !== "normal") return;
+    setError(null);
+    setResolving(true);
+    setFolderQuery("");
+    setHighlightedFolder(0);
+    if (ungroupedTasks.length === 1) setCompleted(true);
+    try {
+      await onDeleteTask(currentTask);
+    } catch (caught) {
+      setCompleted(false);
+      setError(caught instanceof Error ? caught.message : "That task could not be deleted");
+    } finally {
+      setResolving(false);
+    }
+  }, [currentTask, onDeleteTask, phase, resolving, ungroupedTasks.length]);
+
+  const openOriginalTask = React.useCallback(() => {
+    if (!currentTask || currentTask.optimistic) return;
+    window.open(todoistTaskUrl(currentTask.id), "_blank", "noopener,noreferrer");
+  }, [currentTask]);
+
   React.useEffect(() => {
     if (!open) return;
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
+        if (
+          event.target instanceof HTMLElement
+          && event.target.matches("[data-task-triage-title]")
+        ) return;
         event.preventDefault();
         event.stopPropagation();
         close();
+        return;
+      }
+      if (
+        (event.metaKey || event.ctrlKey)
+        && !event.altKey
+        && !event.shiftKey
+        && !event.repeat
+        && event.key.toLowerCase() === "o"
+        && currentTask
+        && !currentTask.optimistic
+      ) {
+        event.preventDefault();
+        event.stopPropagation();
+        openOriginalTask();
+        return;
+      }
+      if (
+        phase === "normal"
+        && (event.metaKey || event.ctrlKey)
+        && !event.altKey
+        && !event.shiftKey
+        && !event.repeat
+        && (event.key === "Backspace" || event.key === "Delete")
+        && !(event.target instanceof HTMLElement
+          && event.target.matches("[data-task-triage-title]"))
+      ) {
+        event.preventDefault();
+        event.stopPropagation();
+        void deleteNormalTask();
         return;
       }
       if (phase !== "extracted" || event.metaKey || event.ctrlKey || event.altKey || event.repeat) return;
@@ -292,7 +464,7 @@ export function TaskTriageDialog({
     };
     window.addEventListener("keydown", handleKeyDown, true);
     return () => window.removeEventListener("keydown", handleKeyDown, true);
-  }, [close, open, phase, resolveExtracted]);
+  }, [close, currentTask, deleteNormalTask, open, openOriginalTask, phase, resolveExtracted]);
 
   React.useEffect(() => {
     if (!completionVisible) return;
@@ -307,8 +479,8 @@ export function TaskTriageDialog({
       <div aria-label="Task triage complete" aria-modal="true" className="modal-backdrop task-triage-backdrop" role="dialog">
         <section className="task-triage-modal task-triage-complete">
           <Check aria-hidden="true" size={28} />
-          <h2>{initialMode === "normal" ? "Tasks filed" : "All clear"}</h2>
-          <p>{initialMode === "normal" ? "Every task has a folder." : "There’s nothing left to triage."}</p>
+          <h2>{initialMode === "normal" ? "Triage complete" : "All clear"}</h2>
+          <p>{initialMode === "normal" ? "No tasks left to file." : "There’s nothing left to triage."}</p>
         </section>
       </div>
     );
@@ -347,6 +519,7 @@ export function TaskTriageDialog({
             count={extractedTasks.length}
             error={error}
             onResolve={(direction) => void resolveExtracted(direction)}
+            onOpenOriginal={openOriginalTask}
             resolving={resolving}
             returning={returningTask?.id === currentTask.id}
             task={currentTask}
@@ -356,12 +529,16 @@ export function TaskTriageDialog({
             error={error}
             folders={folders}
             highlightedFolder={highlightedFolder}
+            key={`${currentTask.id}:${currentTask.content}`}
             onAssign={(group) => void assignFolder(group)}
+            onDelete={() => void deleteNormalTask()}
             onHighlight={setHighlightedFolder}
+            onOpenOriginal={openOriginalTask}
             onQueryChange={(query) => {
               setFolderQuery(query);
               setHighlightedFolder(0);
             }}
+            onRename={(title) => onRenameTask(currentTask, title)}
             query={folderQuery}
             resolving={resolving}
             searchInputRef={searchInputRef}

@@ -11,6 +11,30 @@ export const adjacentListItemId = (
   return orderedIds[nextIndex] ?? null;
 };
 
+export const listItemIdAfterRemoval = ({
+  orderedIds,
+  removedIds,
+}: {
+  orderedIds: string[];
+  removedIds: ReadonlySet<string>;
+}) => {
+  const removedIndexes = orderedIds.flatMap((id, index) =>
+    removedIds.has(id) ? [index] : []
+  );
+  if (!removedIndexes.length) return null;
+
+  const lastRemovedIndex = Math.max(...removedIndexes);
+  const itemBelow = orderedIds.slice(lastRemovedIndex + 1).find((id) =>
+    !removedIds.has(id)
+  );
+  if (itemBelow) return itemBelow;
+
+  const firstRemovedIndex = Math.min(...removedIndexes);
+  return orderedIds.slice(0, firstRemovedIndex).reverse().find((id) =>
+    !removedIds.has(id)
+  ) ?? null;
+};
+
 export const updateListSelection = ({
   anchorId,
   intent,

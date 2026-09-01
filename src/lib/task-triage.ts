@@ -11,12 +11,15 @@ export type TaskTriageFolder = {
   path: string;
 };
 
-export const isExtractedTaskTriageShortcut = ({
+export type TaskTriageMode = "extracted" | "normal";
+
+export const taskTriageShortcutMode = ({
   altKey,
   extractedTaskCount,
   key,
   modalOpen,
   modifier,
+  normalTaskCount,
   repeat,
   shiftKey,
 }: {
@@ -25,17 +28,21 @@ export const isExtractedTaskTriageShortcut = ({
   key: string;
   modalOpen: boolean;
   modifier: boolean;
+  normalTaskCount: number;
   repeat: boolean;
   shiftKey: boolean;
-}) => (
-  modifier
-  && !altKey
-  && extractedTaskCount > 0
-  && key.toLowerCase() === "e"
-  && !modalOpen
-  && !repeat
-  && !shiftKey
-);
+}): TaskTriageMode | null => {
+  const isShortcut = modifier
+    && !altKey
+    && key.toLowerCase() === "e"
+    && !modalOpen
+    && !repeat
+    && !shiftKey;
+  if (!isShortcut) return null;
+  if (extractedTaskCount > 0) return "extracted";
+  if (normalTaskCount > 0) return "normal";
+  return null;
+};
 
 const folderLabel = (group: string) =>
   group.split("/").map((part) => part.trim()).filter(Boolean).at(-1) ?? group;

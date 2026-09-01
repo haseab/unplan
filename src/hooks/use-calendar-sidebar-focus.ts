@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { sidebarHorizontalArrowAction } from "@/lib/event-keyboard-navigation";
+import { sidebarFocusFallbackNavigationId } from "@/lib/task-sidebar-order";
 
 const FOCUSABLE_SELECTOR = [
   "button:not([disabled])",
@@ -19,20 +20,6 @@ const visibleFocusableElement = (root: Element | null) => {
   ) ?? null;
 };
 
-const topmostVisibleElement = (root: Element | null, selector: string) => {
-  if (!root) return null;
-  const rootBounds = root.getBoundingClientRect();
-  return [...root.querySelectorAll<HTMLElement>(selector)]
-    .map((element) => ({ bounds: element.getBoundingClientRect(), element }))
-    .filter(({ bounds }) =>
-      bounds.width > 0
-      && bounds.height > 0
-      && bounds.bottom > rootBounds.top
-      && bounds.top < rootBounds.bottom
-    )
-    .sort((first, second) => first.bounds.top - second.bounds.top)[0]?.element ?? null;
-};
-
 const isCollapsedSidebarTask = (element: HTMLElement | null) =>
   Boolean(element?.closest(".todo-event-group-blocks-shell[data-collapsed='true']"));
 
@@ -44,7 +31,53 @@ export const useCalendarSidebarFocus = (
   focusCalendarTarget: (rememberedEventKey: string | null) => boolean,
 ) => {
   const calendarEventKeyRef = React.useRef<string | null>(null);
+  const recentOpenFolderIdsRef = React.useRef<string[]>([]);
   const sidebarTaskNavigationIdRef = React.useRef<string | null>(null);
+
+  const sidebarOpenFolders = React.useCallback((sidebar: HTMLElement) => {
+    const openFolders = new Map<string, string[]>();
+    sidebar.querySelectorAll<HTMLElement>(
+      "[data-sidebar-navigation-kind='folder'][aria-expanded='true']",
+    ).forEach((folder) => {
+      const folderId = folder.dataset.sidebarNavigationId;
+      const group = folder.closest<HTMLElement>("[data-unplan-group]");
+      if (!folderId || !group) return;
+      openFolders.set(folderId, [
+        ...group.querySelectorAll<HTMLElement>(
+          ":scope [data-sidebar-navigation-kind='task']",
+        ),
+      ].map((task) => task.dataset.sidebarNavigationId).filter(
+        (taskId): taskId is string => Boolean(taskId),
+      ));
+    });
+    return openFolders;
+  }, []);
+
+  const syncRecentOpenFolders = React.useCallback((sidebar: HTMLElement) => {
+    const openFolderIds = [...sidebarOpenFolders(sidebar).keys()];
+    const openFolderIdSet = new Set(openFolderIds);
+    const next = recentOpenFolderIdsRef.current.filter((folderId) =>
+      openFolderIdSet.has(folderId)
+    );
+    openFolderIds.forEach((folderId) => {
+      if (!next.includes(folderId)) next.push(folderId);
+    });
+    recentOpenFolderIdsRef.current = next;
+  }, [sidebarOpenFolders]);
+
+  React.useEffect(() => {
+    const sidebar = document.querySelector<HTMLElement>(".right-sidebar");
+    if (!sidebar) return;
+    syncRecentOpenFolders(sidebar);
+    const observer = new MutationObserver(() => syncRecentOpenFolders(sidebar));
+    observer.observe(sidebar, {
+      attributeFilter: ["aria-expanded"],
+      attributes: true,
+      childList: true,
+      subtree: true,
+    });
+    return () => observer.disconnect();
+  }, [syncRecentOpenFolders]);
 
   React.useEffect(() => {
     const rememberFocusedItem = (event: FocusEvent) => {
@@ -113,15 +146,23 @@ export const useCalendarSidebarFocus = (
           `[data-sidebar-navigation-id="${CSS.escape(rememberedId)}"]`,
         )
       : null;
-    const navigationViewport = sidebar.querySelector(".todo-event-groups");
+    syncRecentOpenFolders(sidebar);
+    const openFolders = sidebarOpenFolders(sidebar);
+    const firstFolder = sidebar.querySelector<HTMLElement>(
+      "[data-sidebar-navigation-kind='folder']",
+    );
+    const fallbackId = sidebarFocusFallbackNavigationId({
+      firstFolderId: firstFolder?.dataset.sidebarNavigationId ?? null,
+      openFolders,
+      recentOpenFolderIds: recentOpenFolderIdsRef.current,
+    });
+    const fallback = fallbackId
+      ? sidebar.querySelector<HTMLElement>(
+          `[data-sidebar-navigation-id="${CSS.escape(fallbackId)}"]`,
+        )
+      : null;
     const target = (!isCollapsedSidebarTask(remembered) ? remembered : null)
-      ?? topmostVisibleElement(
-        navigationViewport,
-        "[data-sidebar-navigation-kind='folder']",
-      )
-      ?? sidebar.querySelector<HTMLElement>(
-        "[data-sidebar-navigation-kind='folder']",
-      )
+      ?? fallback
       ?? sidebar.querySelector<HTMLElement>("[data-sidebar-navigation-id]")
       ?? sidebar.querySelector<HTMLElement>("[data-sidebar-primary-focus]")
       ?? visibleFocusableElement(sidebar.querySelector(".right-sidebar-content"))
@@ -132,7 +173,7 @@ export const useCalendarSidebarFocus = (
     if (document.activeElement !== target) return false;
     target.scrollIntoView({ behavior: "auto", block: "nearest" });
     return true;
-  }, []);
+  }, [sidebarOpenFolders, syncRecentOpenFolders]);
 
   React.useEffect(() => {
     const handleSidebarHorizontalArrow = (event: KeyboardEvent) => {
@@ -149,6 +190,10 @@ export const useCalendarSidebarFocus = (
         shiftKey: event.shiftKey,
       });
       if (!action) return;
+      if (
+        event.key === "ArrowLeft"
+        && event.target.closest("[data-sidebar-back-enabled='true']")
+      ) return;
 
       event.preventDefault();
       event.stopPropagation();

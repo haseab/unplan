@@ -800,7 +800,9 @@ kbd {
 
 .task-triage-task-preview { padding: 12px 14px; border-radius: 11px; background: var(--surface-muted); }
 .task-triage-task-preview > span { color: var(--text-faint); font-size: 8.5px; font-weight: 680; letter-spacing: 0.06em; text-transform: uppercase; }
-.task-triage-task-preview h3 { margin: 6px 0 0; color: var(--ink); font-size: 15px; font-weight: 560; line-height: 1.3; letter-spacing: -0.025em; overflow-wrap: anywhere; white-space: normal; }
+.task-triage-task-preview textarea { display: block; width: 100%; min-height: 25px; max-height: 150px; margin-top: 6px; overflow-y: auto; resize: none; border: 0; outline: 0; background: transparent; color: var(--ink); font: inherit; font-size: 15px; font-weight: 560; line-height: 1.3; letter-spacing: -0.025em; }
+.task-triage-task-preview textarea:focus { box-shadow: inset 0 -1px var(--blue-ink); }
+.task-triage-task-preview textarea:disabled { opacity: 0.6; }
 .task-triage-folder-picker { display: grid; gap: 8px; margin-top: 12px; animation: triage-folder-picker-in 220ms cubic-bezier(0.2, 0.78, 0.2, 1) both; }
 .task-triage-folder-picker > label { display: grid; height: 44px; grid-template-columns: 17px minmax(0, 1fr) 17px; align-items: center; gap: 8px; padding: 0 13px; border: 1px solid var(--blue-border); border-radius: 11px; background: var(--surface); color: var(--blue-ink); box-shadow: 0 0 0 3px color-mix(in oklab, var(--blue-soft) 70%, transparent); }
 .task-triage-folder-picker input { min-width: 0; border: 0; outline: 0; background: transparent; color: var(--ink); font: inherit; font-size: 11px; }
@@ -814,6 +816,14 @@ kbd {
 .task-triage-folder-picker > div > button small { overflow: hidden; color: var(--text-faint); font-size: 8.5px; font-weight: 450; text-overflow: ellipsis; white-space: nowrap; }
 .task-triage-folder-picker > div > button kbd { justify-self: end; }
 .task-triage-folder-picker > div > p { margin: 0; padding: 18px; color: var(--text-faint); font-size: 9px; text-align: center; }
+.task-triage-secondary-actions { display: flex; justify-content: space-between; gap: 8px; margin-top: 10px; }
+.task-triage-extracted-secondary-actions { justify-content: flex-start; }
+.task-triage-secondary-actions > button { display: inline-flex; min-height: 30px; align-items: center; gap: 6px; padding: 0 9px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--surface-muted); color: var(--text-soft); font: inherit; font-size: 9px; font-weight: 600; cursor: pointer; }
+.task-triage-secondary-actions > button:hover:not(:disabled) { background: var(--surface-hover); color: var(--ink); }
+.task-triage-secondary-actions > .task-triage-open-original:hover:not(:disabled) { border-color: var(--blue-border); color: var(--blue-ink); }
+.task-triage-secondary-actions > .task-triage-delete-task:hover:not(:disabled) { border-color: color-mix(in oklab, #ef8982 45%, var(--line-strong)); background: color-mix(in oklab, #ef8982 9%, var(--surface)); color: #ef8982; }
+.task-triage-secondary-actions > button:disabled { opacity: 0.5; cursor: default; }
+.task-triage-secondary-actions > button kbd { height: 19px; min-width: 25px; padding: 0 4px; font-size: 8px; }
 @keyframes triage-folder-picker-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 
 .task-triage-complete { display: grid; min-height: 300px; place-content: center; text-align: center; }
@@ -1020,10 +1030,14 @@ kbd {
 .todo-event-group-rename input:focus { box-shadow: inset 0 0 0 1px var(--blue-ink); }
 .todo-event-group-rename-button, .todo-event-group-add-button { width: 22px; flex: 0 0 22px; justify-content: center; padding: 0; color: var(--text-faint); opacity: 0; transition: opacity 120ms ease; }
 .todo-event-group-heading:hover .todo-event-group-rename-button, .todo-event-group-rename-button:focus-visible, .todo-event-group-heading:hover .todo-event-group-add-button, .todo-event-group-add-button:focus-visible { opacity: 0.7; }
-.todo-event-child-folder-form { display: flex; height: 31px; align-items: center; gap: 5px; margin: 0 0 3px calc(15px + var(--folder-depth, 0) * 13px); padding-right: 29px; color: var(--text-faint); transform-origin: top left; animation: todo-folder-form-in 180ms cubic-bezier(0.2, 0.8, 0.2, 1); }
+.todo-event-child-folder-form { display: grid; min-height: 31px; grid-template-columns: 13px minmax(0, 1fr) auto; align-items: center; gap: 5px; margin: 0 0 3px calc(15px + var(--folder-depth, 0) * 13px); padding-right: 29px; color: var(--text-faint); transform-origin: top left; animation: todo-folder-form-in 180ms cubic-bezier(0.2, 0.8, 0.2, 1); }
 .todo-event-child-folder-form > svg { flex: 0 0 auto; }
 .todo-event-child-folder-form input { min-width: 0; height: 25px; flex: 1; padding: 0 8px; border: 0; border-radius: 7px; outline: none; background: var(--hover); color: var(--ink); font: inherit; font-size: 9px; font-weight: 600; letter-spacing: -0.02em; box-shadow: inset 0 0 0 1px var(--line-strong); }
 .todo-event-child-folder-form input:focus { box-shadow: inset 0 0 0 1px var(--blue-ink); }
+.todo-event-child-folder-form input[aria-invalid="true"] { box-shadow: inset 0 0 0 1px color-mix(in oklab, #ef8982 70%, var(--line-strong)); }
+.todo-event-child-folder-form > button { height: 25px; padding: 0 8px; border: 1px solid var(--blue-border); border-radius: 7px; background: var(--blue-soft); color: var(--blue-ink); font: inherit; font-size: 8px; font-weight: 650; cursor: pointer; }
+.todo-event-child-folder-form > button:disabled { opacity: 0.45; cursor: default; }
+.todo-event-child-folder-form > small { grid-column: 2 / -1; margin: -1px 0 4px; color: #ef8982; font-size: 7.5px; line-height: 1.2; }
 .todo-event-group-drag-image { position: fixed; z-index: 9999; top: 0; left: 0; border-radius: 8px; background: var(--surface-elevated); color: var(--ink); opacity: 0.94; pointer-events: none; box-shadow: 0 12px 28px rgba(0, 0, 0, 0.3); }
 .todo-event-group-drop-projection { height: 31px; flex: 0 0 auto; margin: 0 0 5px calc(var(--folder-depth, 0) * 13px); border: 2px solid var(--blue-border); border-radius: 8px; background: color-mix(in oklab, var(--blue) 9%, transparent); pointer-events: auto; box-shadow: 0 0 0 1px color-mix(in oklab, var(--blue) 18%, transparent); }
 .todo-event-group-blocks-shell { display: grid; min-height: 0; flex: 0 0 auto; grid-template-rows: 1fr; margin: 0 0 13px calc(42px + var(--folder-depth, 0) * 13px); opacity: 1; transition: grid-template-rows 220ms cubic-bezier(0.2, 0.8, 0.2, 1), margin-bottom 220ms cubic-bezier(0.2, 0.8, 0.2, 1), opacity 160ms ease; }
@@ -1378,6 +1392,11 @@ kbd {
 [data-sonner-toaster] { --width: 340px; }
 [data-sonner-toast] { border-color: var(--line-strong) !important; border-radius: 10px !important; background: var(--surface-elevated) !important; color: var(--ink) !important; font-family: var(--font-geist-sans), sans-serif !important; font-size: 11px !important; box-shadow: 0 12px 34px var(--shadow-color) !important; backdrop-filter: blur(14px); }
 [data-sonner-toast] [data-button] { border-radius: 6px !important; background: var(--blue-soft) !important; color: var(--blue-ink) !important; font-size: 10px !important; }
+.action-toast-icon { flex: 0 0 auto; stroke-width: 2.25; }
+.action-toast-icon-queued { color: var(--blue-ink); }
+.action-toast-icon-paused { color: #d79a3f; }
+.action-toast-icon-updating { color: var(--blue-ink); }
+.action-toast-icon-updated { color: #58c98c; }
 
 @media (max-width: 900px) {
   .sidebar { position: absolute; inset: 0 auto 0 0; box-shadow: 12px 0 40px rgba(45, 43, 38, 0.14); }

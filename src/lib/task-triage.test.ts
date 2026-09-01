@@ -1,32 +1,34 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  isExtractedTaskTriageShortcut,
   taskTriageFolders,
+  taskTriageShortcutMode,
 } from "./task-triage";
 
-test("Cmd/Ctrl + E opens extracted task triage when tasks are available", () => {
+test("Cmd/Ctrl + E prefers extracted tasks and falls back to event tasks", () => {
   const shortcut = (
-    overrides: Partial<Parameters<typeof isExtractedTaskTriageShortcut>[0]> = {},
-  ) => isExtractedTaskTriageShortcut({
+    overrides: Partial<Parameters<typeof taskTriageShortcutMode>[0]> = {},
+  ) => taskTriageShortcutMode({
     altKey: false,
     extractedTaskCount: 2,
     key: "e",
     modalOpen: false,
     modifier: true,
+    normalTaskCount: 3,
     repeat: false,
     shiftKey: false,
     ...overrides,
   });
 
-  assert.equal(shortcut(), true);
-  assert.equal(shortcut({ key: "E" }), true);
-  assert.equal(shortcut({ extractedTaskCount: 0 }), false);
-  assert.equal(shortcut({ modalOpen: true }), false);
-  assert.equal(shortcut({ modifier: false }), false);
-  assert.equal(shortcut({ repeat: true }), false);
-  assert.equal(shortcut({ shiftKey: true }), false);
-  assert.equal(shortcut({ altKey: true }), false);
+  assert.equal(shortcut(), "extracted");
+  assert.equal(shortcut({ key: "E" }), "extracted");
+  assert.equal(shortcut({ extractedTaskCount: 0 }), "normal");
+  assert.equal(shortcut({ extractedTaskCount: 0, normalTaskCount: 0 }), null);
+  assert.equal(shortcut({ modalOpen: true }), null);
+  assert.equal(shortcut({ modifier: false }), null);
+  assert.equal(shortcut({ repeat: true }), null);
+  assert.equal(shortcut({ shiftKey: true }), null);
+  assert.equal(shortcut({ altKey: true }), null);
 });
 
 test("task triage folders follow saved hierarchy and order", () => {

@@ -311,6 +311,57 @@ export const advanceKeyboardResizeTransform = (
       };
 };
 
+type KeyboardResizeEdge = NonNullable<KeyboardResizeTransform["activeEdge"]>;
+
+const overlapDuration = (first: CalendarEvent, second: CalendarEvent) => Math.max(
+  0,
+  Math.min(parseISO(first.end).getTime(), parseISO(second.end).getTime())
+    - Math.max(parseISO(first.start).getTime(), parseISO(second.start).getTime()),
+);
+
+const keyboardResizeCreatesConflict = (
+  events: CalendarEvent[],
+  candidates: CalendarEvent[],
+  edge: KeyboardResizeEdge,
+  minuteDelta: number,
+) => events.some((event) => {
+  const resized = applyKeyboardResizeTransform(event, {
+    activeEdge: edge,
+    endMinuteDelta: edge === "end" ? minuteDelta : 0,
+    startMinuteDelta: edge === "start" ? minuteDelta : 0,
+  });
+  return candidates.some((candidate) =>
+    !candidate.allDay
+    && (candidate.id !== event.id || candidate.calendarId !== event.calendarId)
+    && overlapDuration(resized, candidate) > overlapDuration(event, candidate)
+  );
+});
+
+export const resolveKeyboardResizeEdge = ({
+  candidates,
+  events,
+  minuteDelta,
+  preferredEdge,
+}: {
+  candidates: CalendarEvent[];
+  events: CalendarEvent[];
+  minuteDelta: number;
+  preferredEdge: KeyboardResizeEdge | null;
+}): KeyboardResizeEdge => {
+  const fallbackEdge = preferredEdge ?? (minuteDelta < 0 ? "start" : "end");
+  const otherEdge = fallbackEdge === "start" ? "end" : "start";
+  const fallbackConflicts = keyboardResizeCreatesConflict(
+    events,
+    candidates,
+    fallbackEdge,
+    minuteDelta,
+  );
+  if (!fallbackConflicts) return fallbackEdge;
+  return keyboardResizeCreatesConflict(events, candidates, otherEdge, minuteDelta)
+    ? fallbackEdge
+    : otherEdge;
+};
+
 export const fillEventGap = (
   event: CalendarEvent,
   candidates: CalendarEvent[],
