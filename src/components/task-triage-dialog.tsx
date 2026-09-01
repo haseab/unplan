@@ -13,6 +13,7 @@ import {
   X,
 } from "lucide-react";
 import * as React from "react";
+import { InlineMarkdownLinks } from "@/components/inline-markdown-links";
 import { todoistTaskUrl, type TodoistTask } from "@/lib/todoist";
 import { calendarEventDetailsFromTodoistContent } from "@/lib/todoist-calendar";
 import { readTodoistFolderPreferences } from "@/lib/todoist-folder-backup";
@@ -66,7 +67,7 @@ function ExtractedTaskReview({
           <span>Extracted task</span>
           <span>{count} remaining</span>
         </div>
-        <h3>{details.title || task.content}</h3>
+        <h3><InlineMarkdownLinks>{details.title || task.content}</InlineMarkdownLinks></h3>
         {task.description && <p>{task.description}</p>}
       </article>
       {error && <p className="task-triage-error">{error}</p>}
@@ -131,18 +132,31 @@ function NormalTaskReview({
 }: NormalTaskReviewProps) {
   const details = calendarEventDetailsFromTodoistContent(task.content);
   const title = details.title || task.content;
+  const [editingTitle, setEditingTitle] = React.useState(false);
   const [titleDraft, setTitleDraft] = React.useState(title);
   const [savingTitle, setSavingTitle] = React.useState(false);
   const titleFieldRef = React.useRef<HTMLTextAreaElement>(null);
+  const titleFocusAtEndRef = React.useRef(false);
   const titleCommitRef = React.useRef(false);
   const titleCancelRef = React.useRef(false);
 
   React.useLayoutEffect(() => {
     const field = titleFieldRef.current;
-    if (!field) return;
+    if (!field || !editingTitle) return;
     field.style.height = "0px";
     field.style.height = `${field.scrollHeight}px`;
-  }, [titleDraft]);
+    if (titleFocusAtEndRef.current) {
+      titleFocusAtEndRef.current = false;
+      field.focus({ preventScroll: true });
+      field.setSelectionRange(field.value.length, field.value.length);
+    }
+  }, [editingTitle, titleDraft]);
+
+  const beginTitleEdit = (focusAtEnd = false) => {
+    if (resolving || savingTitle) return;
+    titleFocusAtEndRef.current = focusAtEnd;
+    setEditingTitle(true);
+  };
 
   const commitTitle = async () => {
     if (titleCommitRef.current) return;
@@ -153,6 +167,7 @@ function NormalTaskReview({
     const normalized = titleDraft.trim().replace(/\s+/g, " ");
     if (!normalized || normalized === title) {
       setTitleDraft(title);
+      setEditingTitle(false);
       return;
     }
     titleCommitRef.current = true;
@@ -165,12 +180,14 @@ function NormalTaskReview({
     } finally {
       titleCommitRef.current = false;
       setSavingTitle(false);
+      setEditingTitle(false);
     }
   };
 
   const cancelTitleEdit = () => {
     titleCancelRef.current = true;
     setTitleDraft(title);
+    setEditingTitle(false);
     window.requestAnimationFrame(() => searchInputRef.current?.focus());
   };
 
@@ -178,34 +195,52 @@ function NormalTaskReview({
     <div className="task-triage-normal">
       <article className="task-triage-task-preview">
         <span>Task to file</span>
-        <textarea
-          aria-label="Task title"
-          data-task-triage-title="true"
-          disabled={resolving || savingTitle}
-          onBlur={() => void commitTitle()}
-          onChange={(event) => setTitleDraft(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Escape") {
+        {editingTitle ? (
+          <textarea
+            aria-label="Task title"
+            autoFocus
+            data-task-triage-title="true"
+            disabled={resolving || savingTitle}
+            onBlur={() => void commitTitle()}
+            onChange={(event) => setTitleDraft(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") {
+                event.preventDefault();
+                event.stopPropagation();
+                cancelTitleEdit();
+                return;
+              }
+              if (
+                event.key === "Enter"
+                && !event.shiftKey
+                && !event.altKey
+                && !event.nativeEvent.isComposing
+              ) {
+                event.preventDefault();
+                event.stopPropagation();
+                void commitTitle().then(() => searchInputRef.current?.focus());
+              }
+            }}
+            ref={titleFieldRef}
+            rows={1}
+            value={titleDraft}
+          />
+        ) : (
+          <div
+            aria-label={`Edit task title: ${titleDraft}`}
+            className="task-triage-markdown-title"
+            onClick={() => beginTitleEdit()}
+            onKeyDown={(event) => {
+              if (event.key !== "Enter" || event.target !== event.currentTarget) return;
               event.preventDefault();
-              event.stopPropagation();
-              cancelTitleEdit();
-              return;
-            }
-            if (
-              event.key === "Enter"
-              && !event.shiftKey
-              && !event.altKey
-              && !event.nativeEvent.isComposing
-            ) {
-              event.preventDefault();
-              event.stopPropagation();
-              void commitTitle().then(() => searchInputRef.current?.focus());
-            }
-          }}
-          ref={titleFieldRef}
-          rows={1}
-          value={titleDraft}
-        />
+              beginTitleEdit();
+            }}
+            role="button"
+            tabIndex={0}
+          >
+            <InlineMarkdownLinks>{titleDraft}</InlineMarkdownLinks>
+          </div>
+        )}
       </article>
       {error && <p className="task-triage-error">{error}</p>}
       <div className="task-triage-folder-picker">
@@ -217,7 +252,18 @@ function NormalTaskReview({
             aria-label="Search folders"
             onChange={(event) => onQueryChange(event.target.value)}
             onKeyDown={(event) => {
-              if (event.key === "ArrowDown" && folders.length) {
+              if (
+                event.key === "Tab"
+                && !event.shiftKey
+                && !event.altKey
+                && !event.ctrlKey
+                && !event.metaKey
+                && !resolving
+                && !savingTitle
+              ) {
+                event.preventDefault();
+                beginTitleEdit(true);
+              } else if (event.key === "ArrowDown" && folders.length) {
                 event.preventDefault();
                 onHighlight((highlightedFolder + 1) % folders.length);
               } else if (event.key === "ArrowUp" && folders.length) {

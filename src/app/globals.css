@@ -462,7 +462,7 @@ kbd {
 .setup-banner span { flex: 1; }
 .setup-banner a { height: 23px; border-color: var(--setup-border); background: var(--surface); color: var(--setup-ink); font-size: 9px; text-decoration: none; }
 
-.calendar-scroll { position: relative; min-height: 0; flex: 1; overflow: auto; scroll-padding: 86px 0 12px 57px; scroll-snap-type: x mandatory; overscroll-behavior: contain; scrollbar-color: var(--line-strong) transparent; scrollbar-width: thin; }
+.calendar-scroll { position: relative; min-height: 0; flex: 1; overflow: auto; scroll-padding: 118px 0 12px 57px; scroll-snap-type: x mandatory; overscroll-behavior: contain; scrollbar-color: var(--line-strong) transparent; scrollbar-width: thin; }
 .calendar-scroll[data-calendar-recentering="true"] { scroll-snap-type: none; }
 .calendar-canvas { position: relative; }
 .calendar-header { position: sticky; z-index: 14; top: 0; display: grid; width: 100%; height: 53px; grid-template-columns: 57px minmax(0, 1fr); border-bottom: 1px solid var(--line); background: var(--paper); }
@@ -787,6 +787,10 @@ kbd {
 }
 .task-triage-card-meta { display: flex; align-items: center; justify-content: space-between; color: var(--text-faint); font-size: 9px; font-weight: 620; letter-spacing: 0.04em; text-transform: uppercase; }
 .task-triage-task-card h3 { max-width: 420px; margin: auto; color: var(--ink); font-size: clamp(18px, 3.4vw, 24px); font-weight: 540; line-height: 1.18; letter-spacing: -0.035em; text-align: center; overflow-wrap: anywhere; }
+.task-triage-task-card h3 a,
+.task-triage-markdown-title a { color: var(--blue-ink); text-decoration: underline; text-decoration-color: color-mix(in oklab, currentColor 55%, transparent); text-underline-offset: 0.14em; }
+.task-triage-task-card h3 a:hover,
+.task-triage-markdown-title a:hover { text-decoration-color: currentColor; }
 .task-triage-task-card > p { display: -webkit-box; max-width: 390px; margin: 0 auto 2px; overflow: hidden; color: var(--muted); font-size: 10.5px; line-height: 1.45; text-align: center; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 .task-triage-error { margin: 10px 5px 0; color: #ef8982; font-size: 10px; text-align: center; }
 .task-triage-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; margin-top: 12px; }
@@ -803,6 +807,8 @@ kbd {
 .task-triage-task-preview textarea { display: block; width: 100%; min-height: 25px; max-height: 150px; margin-top: 6px; overflow-y: auto; resize: none; border: 0; outline: 0; background: transparent; color: var(--ink); font: inherit; font-size: 15px; font-weight: 560; line-height: 1.3; letter-spacing: -0.025em; }
 .task-triage-task-preview textarea:focus { box-shadow: inset 0 -1px var(--blue-ink); }
 .task-triage-task-preview textarea:disabled { opacity: 0.6; }
+.task-triage-markdown-title { min-height: 25px; margin-top: 6px; color: var(--ink); font-size: 15px; font-weight: 560; line-height: 1.3; letter-spacing: -0.025em; overflow-wrap: anywhere; cursor: text; }
+.task-triage-markdown-title:focus-visible { outline: 1px solid var(--blue-ink); outline-offset: 3px; border-radius: 3px; }
 .task-triage-folder-picker { display: grid; gap: 8px; margin-top: 12px; animation: triage-folder-picker-in 220ms cubic-bezier(0.2, 0.78, 0.2, 1) both; }
 .task-triage-folder-picker > label { display: grid; height: 44px; grid-template-columns: 17px minmax(0, 1fr) 17px; align-items: center; gap: 8px; padding: 0 13px; border: 1px solid var(--blue-border); border-radius: 11px; background: var(--surface); color: var(--blue-ink); box-shadow: 0 0 0 3px color-mix(in oklab, var(--blue-soft) 70%, transparent); }
 .task-triage-folder-picker input { min-width: 0; border: 0; outline: 0; background: transparent; color: var(--ink); font: inherit; font-size: 11px; }
@@ -1039,7 +1045,7 @@ kbd {
 .todo-event-child-folder-form > button:disabled { opacity: 0.45; cursor: default; }
 .todo-event-child-folder-form > small { grid-column: 2 / -1; margin: -1px 0 4px; color: #ef8982; font-size: 7.5px; line-height: 1.2; }
 .todo-event-group-drag-image { position: fixed; z-index: 9999; top: 0; left: 0; border-radius: 8px; background: var(--surface-elevated); color: var(--ink); opacity: 0.94; pointer-events: none; box-shadow: 0 12px 28px rgba(0, 0, 0, 0.3); }
-.todo-event-group-drop-projection { height: 31px; flex: 0 0 auto; margin: 0 0 5px calc(var(--folder-depth, 0) * 13px); border: 2px solid var(--blue-border); border-radius: 8px; background: color-mix(in oklab, var(--blue) 9%, transparent); pointer-events: auto; box-shadow: 0 0 0 1px color-mix(in oklab, var(--blue) 18%, transparent); }
+.todo-event-group-drop-projection { height: 31px; flex: 0 0 auto; margin: 0 0 5px calc(var(--folder-depth, 0) * 13px); border: 2px solid var(--blue-border); border-radius: 8px; background: color-mix(in oklab, var(--blue) 9%, transparent); pointer-events: none; box-shadow: 0 0 0 1px color-mix(in oklab, var(--blue) 18%, transparent); }
 .todo-event-group-blocks-shell { display: grid; min-height: 0; flex: 0 0 auto; grid-template-rows: 1fr; margin: 0 0 13px calc(42px + var(--folder-depth, 0) * 13px); opacity: 1; transition: grid-template-rows 220ms cubic-bezier(0.2, 0.8, 0.2, 1), margin-bottom 220ms cubic-bezier(0.2, 0.8, 0.2, 1), opacity 160ms ease; }
 .todo-event-root > .todo-event-group-blocks-shell { min-height: 42px; flex: 1 0 auto; margin-left: 0; }
 .todo-event-root > .todo-event-group-blocks-shell > .todo-event-group-blocks { min-height: 42px; max-height: none; }

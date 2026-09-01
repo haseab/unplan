@@ -349,17 +349,21 @@ export const resolveKeyboardResizeEdge = ({
   preferredEdge: KeyboardResizeEdge | null;
 }): KeyboardResizeEdge => {
   const fallbackEdge = preferredEdge ?? (minuteDelta < 0 ? "start" : "end");
-  const otherEdge = fallbackEdge === "start" ? "end" : "start";
-  const fallbackConflicts = keyboardResizeCreatesConflict(
+  const lockCheckDelta = Math.abs(minuteDelta);
+  const startLocked = keyboardResizeCreatesConflict(
     events,
     candidates,
-    fallbackEdge,
-    minuteDelta,
+    "start",
+    -lockCheckDelta,
   );
-  if (!fallbackConflicts) return fallbackEdge;
-  return keyboardResizeCreatesConflict(events, candidates, otherEdge, minuteDelta)
-    ? fallbackEdge
-    : otherEdge;
+  const endLocked = keyboardResizeCreatesConflict(
+    events,
+    candidates,
+    "end",
+    lockCheckDelta,
+  );
+  if (startLocked === endLocked) return fallbackEdge;
+  return startLocked ? "end" : "start";
 };
 
 export const fillEventGap = (

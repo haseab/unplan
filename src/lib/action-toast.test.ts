@@ -68,6 +68,75 @@ test("immediate actions skip the pending queue and submit at creation", async ()
   await Promise.resolve();
 });
 
+test("a dependent event mutation waits for its pending creation", async () => {
+  const submitted: string[] = [];
+  let releaseCreation!: () => void;
+  const creationGate = new Promise<void>((resolve) => {
+    releaseCreation = resolve;
+  });
+
+  queueActionToast("Duplicated event", {
+    ...pendingOptions(
+      async () => {
+        submitted.push("create-start");
+        await creationGate;
+        submitted.push("create-end");
+      },
+      () => {},
+      "event-create:dependent-event",
+    ),
+    createsResourceIds: ["dependent-event"],
+    resourceIds: ["dependent-event"],
+  });
+  queueActionToast("Moved event", {
+    ...pendingOptions(
+      () => { submitted.push("move"); },
+      () => {},
+      "event-change:dependent-event",
+    ),
+    resourceIds: ["dependent-event"],
+    submitImmediately: true,
+  });
+
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.deepEqual(submitted, ["create-start"]);
+
+  releaseCreation();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.deepEqual(submitted, ["create-start", "create-end", "move"]);
+  assert.equal(hasPendingActionToast(), false);
+});
+
+test("a dependent event mutation is not sent when creation fails", async () => {
+  let moveSubmitted = false;
+  let moveRolledBack = false;
+
+  queueActionToast("Duplicated event", {
+    ...pendingOptions(
+      () => { throw new Error("creation failed"); },
+      () => {},
+      "event-create:failed-dependent-event",
+    ),
+    createsResourceIds: ["failed-dependent-event"],
+    resourceIds: ["failed-dependent-event"],
+  });
+  queueActionToast("Moved event", {
+    ...pendingOptions(
+      () => { moveSubmitted = true; },
+      () => {},
+      "event-change:failed-dependent-event",
+    ),
+    onError: () => { moveRolledBack = true; },
+    resourceIds: ["failed-dependent-event"],
+    submitImmediately: true,
+  });
+
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(moveSubmitted, false);
+  assert.equal(moveRolledBack, true);
+});
+
 test("keyboard undo removes only the newest pending action", async () => {
   const undone: string[] = [];
   const submitted: string[] = [];

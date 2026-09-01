@@ -30,7 +30,9 @@ import {
 type SettingsDialogProps = {
   calendars: CalendarSource[];
   defaultCalendarId: string | null;
+  defaultTaskCalendarId: string | null;
   onDefaultCalendarChange: (calendarId: string) => void;
+  onDefaultTaskCalendarChange: (calendarId: string) => void;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   todoistConnected: boolean;
@@ -55,7 +57,9 @@ const showSettingsSaved = (message: string) =>
 export function SettingsDialog({
   calendars,
   defaultCalendarId,
+  defaultTaskCalendarId,
   onDefaultCalendarChange,
+  onDefaultTaskCalendarChange,
   open,
   onOpenChange,
   todoistConnected,
@@ -115,6 +119,14 @@ export function SettingsDialog({
     onDefaultCalendarChange(calendarId);
     const calendarName = calendars.find((calendar) => calendar.id === calendarId)?.name;
     showSettingsSaved(calendarName ? `${calendarName} set as the default calendar` : "Default calendar updated");
+  };
+
+  const updateDefaultTaskCalendar = (calendarId: string) => {
+    onDefaultTaskCalendarChange(calendarId);
+    const calendarName = calendars.find((calendar) => calendar.id === calendarId)?.name;
+    showSettingsSaved(calendarName
+      ? `${calendarName} set as the default task calendar`
+      : "Default task calendar updated");
   };
 
   const updateTheme = (nextTheme: Theme) => {
@@ -215,6 +227,24 @@ export function SettingsDialog({
                 calendars={calendars}
                 onChange={updateDefaultCalendar}
                 value={defaultCalendarId}
+              />
+            </div>
+          </section>
+
+          <section className="settings-section settings-primary-section">
+            <div className="settings-section-heading">
+              <span>Task calendar</span>
+              <strong>{calendars.find((calendar) => calendar.id === defaultTaskCalendarId)?.name ?? "Unavailable"}</strong>
+            </div>
+            <p>
+              Used when you triage or schedule a task that does not already specify a calendar.
+            </p>
+            <div className="settings-calendar-picker">
+              <CalendarPicker
+                ariaLabel="Default calendar for tasks"
+                calendars={calendars}
+                onChange={updateDefaultTaskCalendar}
+                value={defaultTaskCalendarId}
               />
             </div>
           </section>

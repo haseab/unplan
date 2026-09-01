@@ -19,7 +19,6 @@ type EventTitleEditorProps = EventTitleFieldProps & {
   onRecentTitleNavigation?: () => void;
   onRecentTitleUsed: (entry: RecentEventTitle) => void;
   recentTitles: RecentEventTitle[];
-  submitOnEnter?: boolean;
 };
 
 const formatDuration = (minutes: number) => {
@@ -46,7 +45,6 @@ export const EventTitleEditor = React.forwardRef<
   onRecentTitleUsed,
   onValueChange,
   recentTitles,
-  submitOnEnter = false,
   value,
   ...props
 }, forwardedRef) {
@@ -134,7 +132,6 @@ export const EventTitleEditor = React.forwardRef<
             open
             && event.key === "Enter"
             && activeIndex >= 0
-            && !submitOnEnter
             && !event.metaKey
             && !event.ctrlKey
             && !event.altKey

@@ -390,6 +390,7 @@ type TodoistCalendarDropPoint = {
 
 const hours = Array.from({ length: 24 }, (_, index) => index);
 const DEFAULT_CALENDAR_STORAGE_KEY = "unplan:default-event-calendar";
+const DEFAULT_TASK_CALENDAR_STORAGE_KEY = "unplan:default-task-calendar";
 const EVENT_CREATION_DRAG_THRESHOLD = 5;
 const CROSS_SERVICE_DRAG_THRESHOLD = 12;
 const TODOIST_KEYBOARD_MOVE_TOAST_DEBOUNCE_MS = 350;
@@ -569,6 +570,11 @@ export function CalendarApp() {
     typeof window === "undefined"
       ? null
       : window.localStorage.getItem(DEFAULT_CALENDAR_STORAGE_KEY),
+  );
+  const [preferredTaskCalendarId, setPreferredTaskCalendarId] = React.useState<string | null>(() =>
+    typeof window === "undefined"
+      ? null
+      : window.localStorage.getItem(DEFAULT_TASK_CALENDAR_STORAGE_KEY),
   );
   const [now, setNow] = React.useState(() => new Date());
   const { duration: toastDuration } = useToastSettings();
@@ -898,6 +904,12 @@ export function CalendarApp() {
     () => findTechnicalitiesCalendar(writableCalendars),
     [writableCalendars],
   );
+  const defaultTaskCalendar = React.useMemo(
+    () => writableCalendars.find((calendar) => calendar.id === preferredTaskCalendarId)
+      ?? technicalitiesCalendar
+      ?? defaultCalendar,
+    [defaultCalendar, preferredTaskCalendarId, technicalitiesCalendar, writableCalendars],
+  );
   const createAdjacentEvent = React.useCallback((edge: "after" | "before") => {
     if (selectedEvents.length !== 1 || !defaultCalendar || !createEventRef.current) {
       return false;
@@ -941,6 +953,11 @@ export function CalendarApp() {
   const setDefaultCalendarId = React.useCallback((calendarId: string) => {
     setPreferredCalendarId(calendarId);
     window.localStorage.setItem(DEFAULT_CALENDAR_STORAGE_KEY, calendarId);
+  }, []);
+
+  const setDefaultTaskCalendarId = React.useCallback((calendarId: string) => {
+    setPreferredTaskCalendarId(calendarId);
+    window.localStorage.setItem(DEFAULT_TASK_CALENDAR_STORAGE_KEY, calendarId);
   }, []);
 
   const clearEventSelection = React.useCallback(() => {
@@ -2034,6 +2051,7 @@ export function CalendarApp() {
               `Duplicated ${copies.length === 1 ? copies[0].title : `${copies.length} events`}`,
               {
                 coalesceKey: pendingCreation.coalesceKey,
+                createsResourceIds: copyIds,
                 duration: toastDuration,
                 onSettled: () => clearPendingEventCreation(pendingCreation),
                 onUndo: () => {
@@ -2603,6 +2621,7 @@ export function CalendarApp() {
       `Duplicated ${copies.length === 1 ? source[0].title : `${copies.length} events`}`,
       {
         coalesceKey: pendingCreation.coalesceKey,
+        createsResourceIds: copyIds,
         duration: toastDuration,
         onSettled: () => clearPendingEventCreation(pendingCreation),
         onUndo: () => {
@@ -3885,6 +3904,7 @@ export function CalendarApp() {
     registerPendingEventCreation(pendingCreation);
     pendingCreation.action = queueActionToast(`Created ${title}`, {
       coalesceKey: pendingCreation.coalesceKey,
+      createsResourceIds: [temporaryId],
       duration: toastDuration,
       onSettled: () => clearPendingEventCreation(pendingCreation),
       onUndo: () => {
@@ -3933,7 +3953,7 @@ export function CalendarApp() {
     const moves = taskDrafts.map(({ draft, task }, index) => {
       const taskDetails = calendarEventDetailsFromTodoistContent(task.content);
       const calendar = writableCalendars.find(({ id }) => id === taskDetails.calendarId)
-        ?? defaultCalendar;
+        ?? defaultTaskCalendar;
       if (!calendar) throw new Error("No writable calendar is available");
       const providerEventId = calendar.provider === "google"
         ? createGoogleCompatibleEventId()
@@ -3993,6 +4013,7 @@ export function CalendarApp() {
         ? `Scheduled ${moves[0].event.title}`
         : `Scheduled ${moves.length} tasks`,
       {
+        createsResourceIds: eventIds,
         duration: toastDuration,
         onUndo: () => {
           console.debug("[BUG:TODOIST-CALENDAR-DROP] [CALENDAR:DROP] rolling back via undo", {
@@ -4084,7 +4105,7 @@ export function CalendarApp() {
           : "Creating calendar events…",
       });
     return moves;
-  }, [completeTodoistTask, defaultCalendar, removeLocalTodoistTasks, replaceLocalTodoistTask, toastDuration, writableCalendars]);
+  }, [completeTodoistTask, defaultTaskCalendar, removeLocalTodoistTasks, replaceLocalTodoistTask, toastDuration, writableCalendars]);
 
   const dropTodoistTaskOnCalendar = React.useCallback((dropEvent: React.DragEvent<HTMLDivElement>) => {
     dropEvent.preventDefault();
@@ -4117,7 +4138,7 @@ export function CalendarApp() {
         const taskDetails = calendarEventDetailsFromTodoistContent(task.content);
         const durationMinutes = taskDetails.durationMinutes ?? 30;
         const draft = {
-          calendarId: taskDetails.calendarId ?? defaultCalendar?.id ?? "",
+          calendarId: taskDetails.calendarId ?? defaultTaskCalendar?.id ?? "",
           start: nextStart,
           end: new Date(nextStart.getTime() + durationMinutes * 60_000),
         };
@@ -4128,7 +4149,7 @@ export function CalendarApp() {
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Todoist task could not be scheduled");
     }
-  }, [defaultCalendar, pixelsPerMinute, renderedDayCount, renderedDays, scheduleTodoistTasks]);
+  }, [defaultTaskCalendar, pixelsPerMinute, renderedDayCount, renderedDays, scheduleTodoistTasks]);
 
   const moveCalendarEventsToTriage = React.useCallback(async (
     requestedEvents: CalendarEvent[],
@@ -4328,7 +4349,7 @@ export function CalendarApp() {
         try {
           const moves = scheduleTodoistTasks([{
             draft: {
-              calendarId: details.calendarId ?? defaultCalendar?.id ?? "",
+              calendarId: details.calendarId ?? defaultTaskCalendar?.id ?? "",
               end: new Date(start.getTime() + durationMinutes * 60_000),
               start,
             },
@@ -4377,7 +4398,7 @@ export function CalendarApp() {
     };
     document.addEventListener("keydown", handleCrossSurfaceMove, true);
     return () => document.removeEventListener("keydown", handleCrossSurfaceMove, true);
-  }, [activeSelectionSurface, defaultCalendar?.id, moveCalendarEventsToTriage, renderedDays, renderedEventElements, scheduleTodoistTasks, selected, visibleTodoistTasks]);
+  }, [activeSelectionSurface, defaultTaskCalendar?.id, moveCalendarEventsToTriage, renderedDays, renderedEventElements, scheduleTodoistTasks, selected, visibleTodoistTasks]);
 
   React.useLayoutEffect(() => {
     const pending = pendingKeyboardScheduledEventRef.current;
@@ -5524,9 +5545,9 @@ export function CalendarApp() {
             )}
             {todoistDropSegments.map((segment) => {
               const calendar = calendars.find(({ id }) => id === segment.calendarId);
-              const accent = getCalendarAccent(
-                calendar?.backgroundColor
-                  ?? defaultCalendar?.backgroundColor
+                const accent = getCalendarAccent(
+                  calendar?.backgroundColor
+                  ?? defaultTaskCalendar?.backgroundColor
                   ?? "#9ba1ad",
               );
               return (
@@ -5820,9 +5841,18 @@ export function CalendarApp() {
         initialMode={taskTriageMode}
         onAssignGroup={async (task, group) => {
           const title = todoistTaskDisplayTitle(task.content);
+          const taskDetails = calendarEventDetailsFromTodoistContent(task.content);
+          const taskCalendar = writableCalendars.find(
+            ({ id }) => id === taskDetails.calendarId,
+          ) ?? defaultTaskCalendar;
           const groupedTask = {
             ...task,
-            content: todoistContentWithGroup(task.content, group),
+            content: todoistContentWithGroup(
+              taskCalendar
+                ? todoistContentWithCalendar(task.content, taskCalendar.id)
+                : task.content,
+              group,
+            ),
             optimistic: true,
           };
           setReturningTriageTask(null);
@@ -5860,8 +5890,8 @@ export function CalendarApp() {
         onOpenChange={setShowTaskTriage}
         onRenameTask={renameSidebarTodoistTask}
         onResolveExtracted={async (task, resolution) => {
-          if (resolution === "keep" && !technicalitiesCalendar) {
-            throw new Error("A writable Technicalities calendar is required");
+          if (resolution === "keep" && !defaultTaskCalendar) {
+            throw new Error("A writable task calendar is required");
           }
           if (resolution === "keep" && !taskExtractionDestination) {
             throw new Error("Create another Todoist project to keep extracted tasks");
@@ -5871,7 +5901,7 @@ export function CalendarApp() {
           const stagedTask = resolution === "keep" ? {
             ...task,
             content: todoistContentWithGroup(
-              todoistContentWithCalendar(task.content, technicalitiesCalendar!.id),
+              todoistContentWithCalendar(task.content, defaultTaskCalendar!.id),
               "Ungrouped",
             ),
             optimistic: true,
@@ -5897,7 +5927,7 @@ export function CalendarApp() {
                 const resolvedTask = await resolveExtractedTask(
                   task,
                   resolution,
-                  technicalitiesCalendar?.id,
+                  defaultTaskCalendar?.id,
                 );
                 if (resolvedTask) replaceLocalTodoistTask(resolvedTask, "end");
               },
@@ -5926,7 +5956,9 @@ export function CalendarApp() {
       <SettingsDialog
         calendars={writableCalendars}
         defaultCalendarId={defaultCalendar?.id ?? null}
+        defaultTaskCalendarId={defaultTaskCalendar?.id ?? null}
         onDefaultCalendarChange={setDefaultCalendarId}
+        onDefaultTaskCalendarChange={setDefaultTaskCalendarId}
         open={showSettings}
         onOpenChange={setShowSettings}
         todoistConnected={todoistConnected}

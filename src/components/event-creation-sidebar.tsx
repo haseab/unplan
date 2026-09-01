@@ -243,6 +243,11 @@ function EventDetailsEditor({
     updateDraft((current) => ({ ...current, ...patch }));
   };
 
+  const previewTitle = (title: string) => {
+    setTitleDraft(title);
+    onPreview({ ...edited, title });
+  };
+
   const commitTitle = async () => {
     const nextTitle = titleDraft.trim();
     const previousTitle = titleCommittedRef.current;
@@ -260,7 +265,7 @@ function EventDetailsEditor({
 
   const cancelTitle = () => {
     skipTitleBlurCommitRef.current = true;
-    setTitleDraft(titleCommittedRef.current);
+    previewTitle(titleCommittedRef.current);
   };
 
   const openTimeField = (field: "end" | "start") => {
@@ -406,7 +411,6 @@ function EventDetailsEditor({
           onRecentTitleUsed(entry);
         }}
         recentTitles={recentTitles}
-        submitOnEnter
         value={titleDraft}
         onBlur={() => {
           if (skipTitleBlurCommitRef.current) {
@@ -415,7 +419,7 @@ function EventDetailsEditor({
           }
           void commitTitle();
         }}
-        onValueChange={setTitleDraft}
+        onValueChange={previewTitle}
         onKeyDown={(keyboardEvent) => {
             const titleAction = eventTitleEditAction({
               altKey: keyboardEvent.altKey,

@@ -275,6 +275,41 @@ test("keyboard resize keeps the first or remembered edge when both sides are fre
   }), "start");
 });
 
+test("keyboard resize keeps the first or remembered edge when both sides are locked", () => {
+  const previous = {
+    ...event,
+    id: "previous",
+    start: new Date(2026, 7, 22, 9).toISOString(),
+    end: event.start,
+  };
+  const next = {
+    ...event,
+    id: "next",
+    start: event.end,
+    end: new Date(2026, 7, 22, 12).toISOString(),
+  };
+  const candidates = [previous, event, next];
+
+  assert.equal(resolveKeyboardResizeEdge({
+    candidates,
+    events: [event],
+    minuteDelta: -15,
+    preferredEdge: null,
+  }), "start");
+  assert.equal(resolveKeyboardResizeEdge({
+    candidates,
+    events: [event],
+    minuteDelta: 15,
+    preferredEdge: null,
+  }), "end");
+  assert.equal(resolveKeyboardResizeEdge({
+    candidates,
+    events: [event],
+    minuteDelta: 15,
+    preferredEdge: "start",
+  }), "start");
+});
+
 test("a collision overrides a remembered keyboard resize edge", () => {
   const next = {
     ...event,

@@ -13,7 +13,9 @@ type ActionToastController = {
 
 type PendingAction = {
   coalesceKey?: string;
+  completion: Promise<boolean>;
   controls: ActionToastController;
+  createdResourceIds: ReadonlySet<string>;
   isPaused: () => boolean;
   pause: () => void;
   refresh: (message: string, duration: number) => void;
@@ -26,6 +28,7 @@ type PendingAction = {
 
 type ActionToastOptions = {
   coalesceKey?: string;
+  createsResourceIds?: Iterable<string>;
   duration: number;
   submitImmediately?: boolean;
   onSettled?: () => void;
@@ -44,6 +47,7 @@ export type ActionToastSyncSnapshot = {
 const pendingActions = new Map<ToastId, PendingAction>();
 const pendingCoalescedActions = new Map<string, PendingAction>();
 const activeActions = new Set<ToastId>();
+const activeCreationActions = new Set<PendingAction>();
 const resourceHolds = new Map<string, ReadonlySet<string>>();
 const syncListeners = new Set<() => void>();
 const EMPTY_SYNC_SNAPSHOT: ActionToastSyncSnapshot = {
@@ -134,6 +138,24 @@ export function queueActionToast(
   let currentOptions = options;
   const initialOnUndo = options.onUndo;
   const resourceIds = new Set(options.resourceIds ?? []);
+  const createdResourceIds = new Set(options.createsResourceIds ?? []);
+  let resolveCompletion!: (succeeded: boolean) => void;
+  let completionSettled = false;
+  const completion = new Promise<boolean>((resolve) => {
+    resolveCompletion = resolve;
+  });
+
+  const settleCompletion = (succeeded: boolean) => {
+    if (completionSettled) return;
+    completionSettled = true;
+    activeCreationActions.delete(action);
+    resolveCompletion(succeeded);
+  };
+
+  const requiredCreations = () => [...activeCreationActions].filter(
+    (candidate) => candidate !== action
+      && [...candidate.createdResourceIds].some((resourceId) => resourceIds.has(resourceId)),
+  );
 
   const clearTimer = () => {
     if (timeoutId !== null) clearTimeout(timeoutId);
@@ -194,6 +216,7 @@ export function queueActionToast(
     publishSyncSnapshot();
     initialOnUndo();
     currentOptions.onSettled?.();
+    settleCompletion(false);
     toast.dismiss(toastId);
     return true;
   };
@@ -209,12 +232,15 @@ export function queueActionToast(
     activeActions.delete(toastId);
     publishSyncSnapshot();
     currentOptions.onSettled?.();
+    settleCompletion(false);
     toast.dismiss(toastId);
     return true;
   };
 
   const submit = () => {
     if (state !== "pending") return false;
+    const creationDependencies = requiredCreations();
+    creationDependencies.forEach((dependency) => dependency.submit());
     state = "submitting";
     clearTimer();
     pendingActions.delete(toastId);
@@ -245,7 +271,24 @@ export function queueActionToast(
       });
     };
 
-    void Promise.resolve(currentOptions.onSubmit(reportProgress))
+    const runSubmit = () => {
+      try {
+        return Promise.resolve(currentOptions.onSubmit(reportProgress));
+      } catch (error) {
+        return Promise.reject(error);
+      }
+    };
+    const submission = creationDependencies.length
+      ? Promise.all(creationDependencies.map(({ completion }) => completion))
+        .then(async (outcomes) => {
+          if (outcomes.some((succeeded) => !succeeded)) {
+            throw new Error("A required event creation could not be saved");
+          }
+          await runSubmit();
+        })
+      : runSubmit();
+
+    void submission
       .then(() => {
         state = "complete";
         activeActions.delete(toastId);
@@ -259,6 +302,7 @@ export function queueActionToast(
           onDismiss: undefined,
         });
         currentOptions.onSettled?.();
+        settleCompletion(true);
       })
       .catch((error: unknown) => {
         state = "failed";
@@ -270,6 +314,7 @@ export function queueActionToast(
             error instanceof Error ? error.message : "The change could not be saved",
           );
         currentOptions.onSettled?.();
+        settleCompletion(false);
       });
     return true;
   };
@@ -306,13 +351,21 @@ export function queueActionToast(
   };
   const action: PendingAction = {
     coalesceKey: options.coalesceKey,
+    completion,
     controls,
+    createdResourceIds,
     isPaused: () => paused,
     pause,
     refresh,
     replace: (nextMessage, nextOptions) => {
       if (state !== "pending") return;
       currentOptions = nextOptions;
+      createdResourceIds.clear();
+      for (const resourceId of nextOptions.createsResourceIds ?? []) {
+        createdResourceIds.add(resourceId);
+      }
+      if (createdResourceIds.size) activeCreationActions.add(action);
+      else activeCreationActions.delete(action);
       resourceIds.clear();
       for (const resourceId of nextOptions.resourceIds ?? []) {
         resourceIds.add(resourceId);
@@ -327,6 +380,7 @@ export function queueActionToast(
   pendingActions.set(toastId, action);
   if (options.coalesceKey) pendingCoalescedActions.set(options.coalesceKey, action);
   activeActions.add(toastId);
+  if (createdResourceIds.size) activeCreationActions.add(action);
   if (options.submitImmediately) {
     submit();
   } else if (actionIsHeld(action)) {

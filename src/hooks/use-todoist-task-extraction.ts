@@ -104,7 +104,7 @@ export function useTodoistTaskExtraction({
   const resolveTask = React.useCallback(async (
     task: TodoistTask,
     resolution: "delete" | "keep",
-    technicalitiesCalendarId?: string,
+    taskCalendarId?: string,
   ) => {
     if (!token) throw new Error("Connect Todoist in Settings first");
     if (resolution === "delete") {
@@ -112,14 +112,14 @@ export function useTodoistTaskExtraction({
       resolvingTaskIdsRef.current.delete(task.id);
       return null;
     } else {
-      if (!technicalitiesCalendarId) {
-        throw new Error("A writable Technicalities calendar is required");
+      if (!taskCalendarId) {
+        throw new Error("A writable task calendar is required");
       }
       if (!destinationProject) {
         throw new Error("Create another Todoist project to keep extracted tasks");
       }
       await updateTodoistTask(token, task.id, {
-        content: todoistContentWithCalendar(task.content, technicalitiesCalendarId),
+        content: todoistContentWithCalendar(task.content, taskCalendarId),
         description: task.description,
       });
       const movedTask = await moveTodoistTask(token, task.id, destinationProject.id);

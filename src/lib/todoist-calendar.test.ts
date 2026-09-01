@@ -429,6 +429,19 @@ test("moves a folder together with all of its descendants", () => {
   );
 });
 
+test("promotes a child before its parent in the root folder order", () => {
+  assert.deepEqual(
+    reorderTodoistGroupNames(
+      ["Priority", "Founders Inc", "Easy Tasks"],
+      "Easy Tasks",
+      "Founders Inc",
+      "before",
+      { "Easy Tasks": "Founders Inc" },
+    ),
+    ["Priority", "Easy Tasks", "Founders Inc"],
+  );
+});
+
 test("builds an indented folder tree from persisted parent names", () => {
   const groups: Array<[string, number]> = [
     ["Ungrouped", 0],

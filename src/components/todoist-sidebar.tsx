@@ -1008,6 +1008,62 @@ export function TodoistSidebar({
     setGroupDropTarget(null);
   }, [cancelGroupHoverExpand]);
 
+  const commitGroupDrop = React.useCallback((
+    sourceGroup: string,
+    target: GroupDropTarget | null,
+    targetSection: string,
+  ) => {
+    if (groupDragCancelledRef.current) {
+      logFolderReorder("drop:ignored-cancelled", { targetSection });
+      finishGroupDrag("cancelled-drop");
+      return;
+    }
+    if (!sourceGroup || !target) {
+      logFolderReorder("drop:missing-source-or-target", {
+        sourceGroup,
+        target,
+        targetSection,
+      });
+      finishGroupDrag("drop");
+      return;
+    }
+    if (target.edge === "inside") {
+      logFolderReorder("drop:nest", {
+        sourceGroup,
+        targetGroup: target.group,
+      });
+      const nextParent = target.group === TODOIST_ROOT_GROUP
+        ? null
+        : target.group;
+      setGroupParent(sourceGroup, nextParent);
+      if (nextParent && collapsedGroups.has(nextParent)) {
+        toggleGroup(nextParent);
+      }
+    } else {
+      const displayedOrder = taskGroups
+        .map(([name]) => name)
+        .filter((name) => name !== TODOIST_ROOT_GROUP);
+      const nextParent = todoistGroupParent(target.group, groupParents);
+      const nextOrder = reorderTodoistGroupNames(
+        displayedOrder,
+        sourceGroup,
+        target.group,
+        target.edge,
+        groupParents,
+      );
+      logFolderReorder("drop:reorder-persist", {
+        displayedOrder,
+        nextOrder,
+        nextParent,
+        sourceGroup,
+        target,
+      });
+      setGroupParent(sourceGroup, nextParent);
+      saveGroupOrder(nextOrder);
+    }
+    finishGroupDrag("drop");
+  }, [collapsedGroups, finishGroupDrag, groupParents, saveGroupOrder, setGroupParent, taskGroups, toggleGroup]);
+
   const cancelGroupDrag = React.useCallback(() => {
     if (!draggedGroupRef.current) return;
     groupDragCancelledRef.current = true;
@@ -1352,6 +1408,34 @@ export function TodoistSidebar({
       ) : (
         <div
           className="todo-event-groups"
+          onDragOverCapture={(event) => {
+            if (!event.dataTransfer.types.includes(TODOIST_GROUP_DRAG_TYPE)) return;
+            event.preventDefault();
+            event.dataTransfer.dropEffect = "move";
+          }}
+          onDropCapture={(event) => {
+            if (!event.dataTransfer.types.includes(TODOIST_GROUP_DRAG_TYPE)) return;
+            event.preventDefault();
+            event.stopPropagation();
+            const sourceGroup = event.dataTransfer.getData(TODOIST_GROUP_DRAG_TYPE)
+              || draggedGroupRef.current
+              || "";
+            const target = groupDropTargetRef.current;
+            const targetSection = event.target instanceof Element
+              ? event.target.closest<HTMLElement>("[data-unplan-group]")
+                ?.dataset.unplanGroup ?? "folder-list"
+              : "folder-list";
+            logFolderReorder("drop:received", {
+              cancelled: groupDragCancelledRef.current,
+              dataTypes: [...event.dataTransfer.types],
+              dropEffect: event.dataTransfer.dropEffect,
+              sourceFromPayload: event.dataTransfer.getData(TODOIST_GROUP_DRAG_TYPE),
+              sourceFromRef: draggedGroupRef.current,
+              targetFromRef: target,
+              targetSection,
+            });
+            commitGroupDrop(sourceGroup, target, targetSection);
+          }}
           onPointerDown={(event) => {
             if ((event.target as Element).closest("button, input, textarea, select, a")) return;
             beginMarquee(event);
@@ -1594,71 +1678,6 @@ export function TodoistSidebar({
               onDrop={(event) => {
                 event.preventDefault();
                 event.stopPropagation();
-                logFolderReorder("drop:received", {
-                  cancelled: groupDragCancelledRef.current,
-                  dataTypes: [...event.dataTransfer.types],
-                  dropEffect: event.dataTransfer.dropEffect,
-                  sourceFromPayload: event.dataTransfer.getData(TODOIST_GROUP_DRAG_TYPE),
-                  sourceFromRef: draggedGroupRef.current,
-                  targetFromRef: groupDropTargetRef.current,
-                  targetSection: group,
-                });
-                if (event.dataTransfer.types.includes(TODOIST_GROUP_DRAG_TYPE)) {
-                  if (groupDragCancelledRef.current) {
-                    logFolderReorder("drop:ignored-cancelled", { targetSection: group });
-                    finishGroupDrag("cancelled-drop");
-                    return;
-                  }
-                  const sourceGroup = event.dataTransfer.getData(TODOIST_GROUP_DRAG_TYPE);
-                  const target = groupDropTargetRef.current;
-                  if (sourceGroup && target) {
-                    if (target.edge === "inside") {
-                      logFolderReorder("drop:nest", {
-                        sourceGroup,
-                        targetGroup: target.group,
-                      });
-                      const nextParent = target.group === TODOIST_ROOT_GROUP
-                        ? null
-                        : target.group;
-                      setGroupParent(sourceGroup, nextParent);
-                      if (nextParent && collapsedGroups.has(nextParent)) {
-                        toggleGroup(nextParent);
-                      }
-                    } else {
-                      const displayedOrder = taskGroups
-                        .map(([name]) => name)
-                        .filter((name) => name !== TODOIST_ROOT_GROUP);
-                      const nextParent = todoistGroupParent(target.group, groupParents);
-                      const nextOrder = reorderTodoistGroupNames(
-                        displayedOrder,
-                        sourceGroup,
-                        target.group,
-                        target.edge,
-                        groupParents,
-                      );
-                      logFolderReorder("drop:reorder-persist", {
-                        displayedOrder,
-                        nextOrder,
-                        nextParent,
-                        sourceGroup,
-                        target,
-                      });
-                      setGroupParent(
-                        sourceGroup,
-                        nextParent,
-                      );
-                      saveGroupOrder(nextOrder);
-                    }
-                  } else {
-                    logFolderReorder("drop:missing-source-or-target", {
-                      sourceGroup,
-                      target,
-                      targetSection: group,
-                    });
-                  }
-                  finishGroupDrag("drop");
-                  return;
-                }
                 try {
                   const task = JSON.parse(event.dataTransfer.getData(TODOIST_DRAG_TYPE)) as TodoistTask;
                   if (!task?.id) return;
