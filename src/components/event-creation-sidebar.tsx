@@ -33,7 +33,10 @@ import type {
   CalendarSource,
 } from "@/lib/calendar-types";
 import { shouldAutoCreateEventConference } from "@/lib/event-participants";
-import { isEventDetailsSubmitShortcut } from "@/lib/event-keyboard-navigation";
+import {
+  eventTitleEditAction,
+  isEventDetailsSubmitShortcut,
+} from "@/lib/event-keyboard-navigation";
 import { googleMeetCode } from "@/lib/google-conference-client";
 import {
   recentEventEditDurationMinutes,
@@ -195,6 +198,9 @@ function EventDetailsEditor({
   const endInputRef = React.useRef<HTMLInputElement>(null);
   const startInputRef = React.useRef<HTMLInputElement>(null);
   const titleRef = React.useRef<HTMLTextAreaElement>(null);
+  const skipTitleBlurCommitRef = React.useRef(false);
+  const titleCommittedRef = React.useRef(event.title);
+  const [titleDraft, setTitleDraft] = React.useState(event.title);
   const start = new Date(edited.start);
   const end = new Date(edited.end);
   const zone = edited.timeZone || Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -209,6 +215,11 @@ function EventDetailsEditor({
   const editableCalendars = calendars.filter(
     (item) => !calendar?.accountId || item.accountId === calendar.accountId,
   );
+
+  React.useEffect(() => {
+    titleCommittedRef.current = event.title;
+    if (document.activeElement !== titleRef.current) setTitleDraft(event.title);
+  }, [event.id, event.title]);
 
   React.useLayoutEffect(() => {
     if (!titleFocusMode) return;
@@ -230,6 +241,26 @@ function EventDetailsEditor({
 
   const change = (patch: Partial<CalendarEvent>) => {
     updateDraft((current) => ({ ...current, ...patch }));
+  };
+
+  const commitTitle = async () => {
+    const nextTitle = titleDraft.trim();
+    const previousTitle = titleCommittedRef.current;
+    if (nextTitle === previousTitle) return true;
+    titleCommittedRef.current = nextTitle;
+    setTitleDraft(nextTitle);
+    updateDraft((current) => ({ ...current, title: nextTitle }));
+    const saved = await flushUpdate();
+    if (!saved && titleCommittedRef.current === nextTitle) {
+      titleCommittedRef.current = previousTitle;
+      setTitleDraft(previousTitle);
+    }
+    return saved;
+  };
+
+  const cancelTitle = () => {
+    skipTitleBlurCommitRef.current = true;
+    setTitleDraft(titleCommittedRef.current);
   };
 
   const openTimeField = (field: "end" | "start") => {
@@ -345,6 +376,7 @@ function EventDetailsEditor({
     <div
       className="event-details event-editor"
       onKeyDownCapture={(keyboardEvent) => {
+        if (keyboardEvent.target === titleRef.current) return;
         if (
           keyboardEvent.nativeEvent.isComposing
           || !isEventDetailsSubmitShortcut({
@@ -374,9 +406,31 @@ function EventDetailsEditor({
           onRecentTitleUsed(entry);
         }}
         recentTitles={recentTitles}
-        value={edited.title}
-        onValueChange={(title) => change({ title })}
+        submitOnEnter
+        value={titleDraft}
+        onBlur={() => {
+          if (skipTitleBlurCommitRef.current) {
+            skipTitleBlurCommitRef.current = false;
+            return;
+          }
+          void commitTitle();
+        }}
+        onValueChange={setTitleDraft}
         onKeyDown={(keyboardEvent) => {
+            const titleAction = eventTitleEditAction({
+              altKey: keyboardEvent.altKey,
+              isComposing: keyboardEvent.nativeEvent.isComposing,
+              key: keyboardEvent.key,
+              shiftKey: keyboardEvent.shiftKey,
+            });
+            if (titleAction) {
+              keyboardEvent.preventDefault();
+              keyboardEvent.stopPropagation();
+              if (titleAction === "cancel") cancelTitle();
+              else void commitTitle();
+              onFocusEvent(edited);
+              return;
+            }
             if (
               keyboardEvent.key === "Tab"
               && !keyboardEvent.shiftKey

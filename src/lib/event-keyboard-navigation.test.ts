@@ -6,6 +6,7 @@ import {
   eventMoveShortcut,
   eventNavigationRangeKeys,
   eventResizeShortcut,
+  eventTitleEditAction,
   findClosestEventKey,
   findEventNavigationBacktrackKey,
   findEventClosestToTime,
@@ -15,6 +16,7 @@ import {
   isEventCalendarPickerShortcut,
   isEventMoveAtOrigin,
   isEventMoveToPresentShortcut,
+  isPastEventDuplicateShortcut,
   isEventTitleFocusShortcut,
   isEventDetailsSubmitShortcut,
   isLeftSidebarToggleShortcut,
@@ -237,6 +239,35 @@ test("Option+Command+Down targets one timed calendar event at the present", () =
   assert.equal(shortcut({ modalOpen: true }), false);
 });
 
+test("S duplicates one selected calendar event at the present", () => {
+  const shortcut = (
+    overrides: Partial<Parameters<typeof isPastEventDuplicateShortcut>[0]> = {},
+  ) => isPastEventDuplicateShortcut({
+    activeCalendar: true,
+    altKey: false,
+    ctrlKey: false,
+    editable: false,
+    key: "s",
+    metaKey: false,
+    modalOpen: false,
+    repeat: false,
+    selectedCount: 1,
+    shiftKey: false,
+    ...overrides,
+  });
+
+  assert.equal(shortcut(), true);
+  assert.equal(shortcut({ key: "S" }), true);
+  assert.equal(shortcut({ activeCalendar: false }), false);
+  assert.equal(shortcut({ selectedCount: 2 }), false);
+  assert.equal(shortcut({ editable: true }), false);
+  assert.equal(shortcut({ metaKey: true }), false);
+  assert.equal(shortcut({ altKey: true }), false);
+  assert.equal(shortcut({ shiftKey: true }), false);
+  assert.equal(shortcut({ repeat: true }), false);
+  assert.equal(shortcut({ modalOpen: true }), false);
+});
+
 test("minute shortcuts do not move all-day selections", () => {
   const shortcut = (key: string) => eventMoveShortcut({
     activeCalendar: true,
@@ -387,6 +418,27 @@ test("Command or Control + Enter submits event details", () => {
   assert.equal(shortcut({ altKey: true }), false);
   assert.equal(shortcut({ shiftKey: true }), false);
   assert.equal(shortcut({ key: " " }), false);
+});
+
+test("event title editing commits Enter variants and cancels Escape", () => {
+  const action = (
+    key: string,
+    overrides: Partial<Parameters<typeof eventTitleEditAction>[0]> = {},
+  ) => eventTitleEditAction({
+    altKey: false,
+    isComposing: false,
+    key,
+    shiftKey: false,
+    ...overrides,
+  });
+
+  assert.equal(action("Enter"), "commit");
+  assert.equal(action("Escape"), "cancel");
+  assert.equal(action("Enter", { shiftKey: true }), null);
+  assert.equal(action("Enter", { altKey: true }), null);
+  assert.equal(action("Enter", { isComposing: true }), null);
+  assert.equal(action("Escape", { isComposing: true }), null);
+  assert.equal(action("Tab"), null);
 });
 
 test("sidebar horizontal arrows are suppressed", () => {

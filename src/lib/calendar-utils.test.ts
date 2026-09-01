@@ -14,6 +14,7 @@ import {
   formatTimeRange,
   latestQuarterHour,
   moveEventToStart,
+  retimePastEventToLatestQuarterHour,
   resizeEvent,
   resizeEventEnd,
   type KeyboardResizeTransform,
@@ -60,6 +61,26 @@ test("moving an event to a requested start preserves its duration", () => {
     start: requestedStart.toISOString(),
     end: new Date(2026, 7, 23, 15, 15).toISOString(),
   });
+});
+
+test("retiming a past event starts a duration-preserving copy at the latest quarter-hour", () => {
+  const present = new Date(2026, 7, 22, 14, 38, 42);
+
+  assert.deepEqual(retimePastEventToLatestQuarterHour(event, present), {
+    ...event,
+    start: new Date(2026, 7, 22, 14, 30).toISOString(),
+    end: new Date(2026, 7, 22, 15, 30).toISOString(),
+  });
+});
+
+test("ongoing, future, and all-day events cannot be retimed as past events", () => {
+  const present = new Date(2026, 7, 22, 10, 30);
+
+  assert.equal(retimePastEventToLatestQuarterHour(event, present), null);
+  assert.equal(
+    retimePastEventToLatestQuarterHour({ ...event, allDay: true }, new Date(2026, 7, 23)),
+    null,
+  );
 });
 
 test("dragging the start past the end flips the resized interval", () => {

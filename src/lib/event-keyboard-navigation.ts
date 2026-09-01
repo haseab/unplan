@@ -195,6 +195,41 @@ export const isEventMoveToPresentShortcut = ({
   && !shiftKey
 );
 
+export const isPastEventDuplicateShortcut = ({
+  activeCalendar,
+  altKey,
+  ctrlKey,
+  editable,
+  key,
+  metaKey,
+  modalOpen,
+  repeat,
+  selectedCount,
+  shiftKey,
+}: {
+  activeCalendar: boolean;
+  altKey: boolean;
+  ctrlKey: boolean;
+  editable: boolean;
+  key: string;
+  metaKey: boolean;
+  modalOpen: boolean;
+  repeat: boolean;
+  selectedCount: number;
+  shiftKey: boolean;
+}) => (
+  activeCalendar
+  && !altKey
+  && !ctrlKey
+  && !editable
+  && key.toLowerCase() === "s"
+  && !metaKey
+  && !modalOpen
+  && !repeat
+  && selectedCount === 1
+  && !shiftKey
+);
+
 export type CrossSurfaceMoveAction =
   | "schedule-sidebar-task"
   | "triage-calendar-events";
@@ -391,6 +426,23 @@ export const isEventDetailsSubmitShortcut = ({
   && !altKey
   && !shiftKey
 );
+
+export const eventTitleEditAction = ({
+  altKey,
+  isComposing,
+  key,
+  shiftKey,
+}: {
+  altKey: boolean;
+  isComposing: boolean;
+  key: string;
+  shiftKey: boolean;
+}): "cancel" | "commit" | null => {
+  if (isComposing) return null;
+  if (key === "Escape") return "cancel";
+  if (key === "Enter" && !altKey && !shiftKey) return "commit";
+  return null;
+};
 
 export const sidebarHorizontalArrowAction = ({
   altKey,

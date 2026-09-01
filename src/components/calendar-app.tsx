@@ -178,6 +178,7 @@ import {
   isEventTitleFocusShortcut,
   isHorizontalEventNavigationCandidate,
   isLeftSidebarToggleShortcut,
+  isPastEventDuplicateShortcut,
   isSettingsShortcut,
   KEYBOARD_RESIZE_TOAST_DEBOUNCE_MS,
   restartKeyboardMoveIdleTimer,
@@ -210,6 +211,7 @@ import {
   latestQuarterHour,
   moveEvent,
   moveEventToStart,
+  retimePastEventToLatestQuarterHour,
   resizeEvent,
   snapMinutes,
   startOfCalendarWeek,
@@ -310,6 +312,17 @@ const eventNavigationRectForElement = (
     startMinute: Number(element.dataset.eventStartMinute),
     top: rect.top,
   };
+};
+
+const renderedCalendarEventElements = () => [
+  ...document.querySelectorAll<HTMLElement>(
+    ".calendar-event[data-event-key], .all-day-event[data-event-key]",
+  ),
+].filter((element) => element.getClientRects().length > 0);
+
+const clearDocumentTextSelection = () => {
+  const selection = window.getSelection();
+  if (selection?.rangeCount) selection.removeAllRanges();
 };
 
 type ResizeSession = {
@@ -2531,7 +2544,10 @@ export function CalendarApp() {
     setMarquee(point);
   };
 
-  const duplicateEvents = React.useCallback(async (source: CalendarEvent[]) => {
+  const duplicateEvents = React.useCallback(async (
+    source: CalendarEvent[],
+    options: { revealCopy?: boolean } = {},
+  ) => {
     if (!source.length) return;
     const confirmed = await confirmBulkAction({ action: "create", count: source.length });
     if (!confirmed) return;
@@ -2558,6 +2574,17 @@ export function CalendarApp() {
         eventId: copies[0].id,
         eventKey,
       };
+      if (options.revealCopy) {
+        pendingRenderedEventScrollRef.current = {
+          edge: null,
+          eventId: copies[0].id,
+          eventKey,
+        };
+        const copyStart = parseISO(copies[0].start);
+        if (!renderedDays.some((day) => isSameDay(day, copyStart))) {
+          setWeekStart(startOfCalendarWeek(copyStart));
+        }
+      }
     }
     setEvents((current) => [...current, ...copies]);
     setSelected(new Set(copyIds));
@@ -2655,7 +2682,7 @@ export function CalendarApp() {
         submittingMessage: "Creating duplicated events…",
       },
     );
-  }, [activeSelectionSurface, chooseGuestNotifications, clearPendingEventCreation, confirmBulkAction, registerPendingEventCreation, selected, toastDuration]);
+  }, [activeSelectionSurface, chooseGuestNotifications, clearPendingEventCreation, confirmBulkAction, registerPendingEventCreation, renderedDays, selected, toastDuration]);
 
   const deleteEvents = React.useCallback(async (
     source: CalendarEvent[],
@@ -2663,6 +2690,60 @@ export function CalendarApp() {
   ) => {
     if (!source.length) return;
     const requestedIds = new Set(source.map(({ id }) => id));
+    const renderedBeforeDeletion = renderedCalendarEventElements();
+    const focusedEventElement = document.activeElement instanceof Element
+      ? document.activeElement.closest<HTMLElement>("[data-event-key]")
+      : null;
+    const requestedElements = renderedBeforeDeletion.filter((element) =>
+      requestedIds.has(element.dataset.calendarEventId ?? "")
+    );
+    const deletionAnchorElement = focusedEventElement
+      && requestedIds.has(focusedEventElement.dataset.calendarEventId ?? "")
+      ? focusedEventElement
+      : requestedElements.find((element) =>
+        element.dataset.eventKey === selectionAnchorRef.current
+      ) ?? requestedElements[0] ?? null;
+    const deletionAnchor = deletionAnchorElement
+      ? eventNavigationRectForElement(deletionAnchorElement)
+      : null;
+    const deletedAnchorEventId = deletionAnchorElement?.dataset.calendarEventId ?? null;
+    const deletedAnchorEventKey = deletionAnchorElement?.dataset.eventKey ?? null;
+
+    const focusNearestRemainingEvent = (removedIds: ReadonlySet<string>) => {
+      const nearestEventKey = deletionAnchor
+        ? findClosestEventKey(
+            deletionAnchor,
+            renderedBeforeDeletion
+              .filter((element) =>
+                !removedIds.has(element.dataset.calendarEventId ?? "")
+              )
+              .map(eventNavigationRectForElement),
+          )
+        : null;
+      const nearestElement = nearestEventKey
+        ? renderedBeforeDeletion.find((element) =>
+            element.dataset.eventKey === nearestEventKey
+          )
+        : null;
+      const nearestEventId = nearestElement?.dataset.calendarEventId;
+      if (nearestEventKey && nearestEventId) {
+        pendingRenderedEventFocusRef.current = {
+          eventId: nearestEventId,
+          eventKey: nearestEventKey,
+        };
+        selectionAnchorRef.current = nearestEventKey;
+        eventNavigationHistoryRef.current.length = 0;
+        setSelected(new Set([nearestEventId]));
+        return;
+      }
+
+      setSelected(new Set());
+      window.requestAnimationFrame(() => {
+        document.querySelector<HTMLElement>(".calendar-workspace")
+          ?.focus({ preventScroll: true });
+      });
+    };
+
     const cancelledCreationIds = cancelPendingEventCreations(requestedIds);
     if (cancelledCreationIds.size) {
       setEvents((current) => current.filter(({ id }) => !cancelledCreationIds.has(id)));
@@ -2671,7 +2752,10 @@ export function CalendarApp() {
       ));
     }
     const durableSource = source.filter(({ id }) => !cancelledCreationIds.has(id));
-    if (!durableSource.length) return;
+    if (!durableSource.length) {
+      focusNearestRemainingEvent(cancelledCreationIds);
+      return;
+    }
 
     const confirmed = await confirmBulkAction({ action: "delete", count: durableSource.length });
     if (!confirmed) return;
@@ -2685,6 +2769,7 @@ export function CalendarApp() {
       deleteScope,
     );
     const ids = deletionPlan.removedIds;
+    const removedIds = new Set([...cancelledCreationIds, ...ids]);
     const previousSelection = new Set(
       [...selected].filter((eventId) => !cancelledCreationIds.has(eventId)),
     );
@@ -2694,9 +2779,7 @@ export function CalendarApp() {
     if (!deleted.length) return;
 
     setEvents((current) => current.filter((event) => !ids.has(event.id)));
-    setSelected((current) =>
-      new Set([...current].filter((eventId) => !ids.has(eventId))),
-    );
+    focusNearestRemainingEvent(removedIds);
 
     queueActionToast(
       deleteScope === "following" && durableSource.length === 1 && durableSource[0].recurringEventId
@@ -2707,6 +2790,17 @@ export function CalendarApp() {
         onUndo: () => {
           setEvents((current) => restoreDeletedEvents(current, deleted));
           setSelected(previousSelection);
+          if (
+            deletedAnchorEventId
+            && deletedAnchorEventKey
+            && previousSelection.has(deletedAnchorEventId)
+          ) {
+            pendingRenderedEventFocusRef.current = {
+              eventId: deletedAnchorEventId,
+              eventKey: deletedAnchorEventKey,
+            };
+            selectionAnchorRef.current = deletedAnchorEventKey;
+          }
         },
         onSubmit: async (reportProgress) => {
           const googleOperations = deletionPlan.operations.filter(
@@ -2820,11 +2914,10 @@ export function CalendarApp() {
     toast(`Copied ${source.length === 1 ? source[0].title : `${source.length} events`}`);
   }, [selected]);
 
-  const renderedEventElements = React.useCallback(() => [
-    ...document.querySelectorAll<HTMLElement>(
-      ".calendar-event[data-event-key], .all-day-event[data-event-key]",
-    ),
-  ].filter((element) => element.getClientRects().length > 0), []);
+  const renderedEventElements = React.useCallback(
+    () => renderedCalendarEventElements(),
+    [],
+  );
 
   const focusRenderedEvent = React.useCallback((
     eventKey: string,
@@ -3300,6 +3393,15 @@ export function CalendarApp() {
   }, [openDateCommand, setEventSearchOpen, travelCalendarPosition]);
 
   React.useEffect(() => {
+    const clearTextSelectionOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") clearDocumentTextSelection();
+    };
+    window.addEventListener("keydown", clearTextSelectionOnEscape, true);
+    return () =>
+      window.removeEventListener("keydown", clearTextSelectionOnEscape, true);
+  }, []);
+
+  React.useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape" && showVisibleEventFinder) {
         event.preventDefault();
@@ -3487,6 +3589,26 @@ export function CalendarApp() {
       ) {
         if (createAdjacentEvent(event.altKey ? "before" : "after")) {
           event.preventDefault();
+        }
+      } else if (isPastEventDuplicateShortcut({
+        activeCalendar: activeSelectionSurface === "calendar",
+        altKey: event.altKey,
+        ctrlKey: event.ctrlKey,
+        editable: isEditableTarget(event.target),
+        key: event.key,
+        metaKey: event.metaKey,
+        modalOpen: Boolean(document.querySelector(".modal-backdrop")),
+        repeat: event.repeat,
+        selectedCount: selected.size,
+        shiftKey: event.shiftKey,
+      })) {
+        const source = eventsRef.current.find((item) => selected.has(item.id));
+        const retimed = source
+          ? retimePastEventToLatestQuarterHour(source, new Date())
+          : null;
+        if (retimed) {
+          event.preventDefault();
+          void duplicateEvents([retimed], { revealCopy: true });
         }
       } else if (
         !modifier
@@ -4794,11 +4916,7 @@ export function CalendarApp() {
       if (session.sendUpdates === null) {
         scheduleKeyboardMoveIdleAction(session, idleDelay);
       } else if (session.action === null) {
-        if (resizeShortcut) {
-          scheduleKeyboardMoveIdleAction(session, idleDelay);
-        } else {
-          queueKeyboardMoveToast(session);
-        }
+        scheduleKeyboardMoveIdleAction(session, idleDelay);
       }
       return true;
     };
@@ -5009,7 +5127,10 @@ export function CalendarApp() {
       data-active-selection-surface={activeSelectionSurface}
       data-event-dragging={activeEventDrag ? "true" : undefined}
       onFocusCapture={(event) => activateSelectionSurfaceFromTarget(event.target)}
-      onPointerDownCapture={(event) => activateSelectionSurfaceFromTarget(event.target)}
+      onPointerDownCapture={(event) => {
+        activateSelectionSurfaceFromTarget(event.target);
+        if (event.button === 0) clearDocumentTextSelection();
+      }}
     >
       <aside className={`sidebar ${sidebarOpen ? "sidebar-open" : "sidebar-closed"}`}>
         <div className="brand-row">
@@ -5481,6 +5602,7 @@ export function CalendarApp() {
               <span>Go to today</span><kbd>T</kbd>
               <span>New time entry</span><kbd>⌘ N</kbd>
               <span>New event after / before selected event</span><span><kbd>N</kbd> <kbd>⌥ N</kbd></span>
+              <span>Duplicate a past event at the latest 15-minute block</span><kbd>S</kbd>
               <span>Sync calendars</span><kbd>R</kbd>
               <span>Previous / next period</span><span><kbd>K</kbd> <kbd>J</kbd></span>
               <span>Navigate between events</span><span><kbd>↑</kbd> <kbd>↓</kbd> <kbd>←</kbd> <kbd>→</kbd></span>

@@ -183,6 +183,14 @@ export const moveEventToStart = (
   };
 };
 
+export const retimePastEventToLatestQuarterHour = (
+  event: CalendarEvent,
+  present: Date,
+) => {
+  if (event.allDay || parseISO(event.end).getTime() > present.getTime()) return null;
+  return moveEventToStart(event, latestQuarterHour(present));
+};
+
 export const resizeEvent = (
   event: CalendarEvent,
   edge: "start" | "end",
