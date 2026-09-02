@@ -45,6 +45,28 @@ export const eventColorChange = (
   };
 };
 
+export const eventColorGridNavigationIndex = ({
+  columns,
+  currentIndex,
+  key,
+  length,
+}: {
+  columns: number;
+  currentIndex: number;
+  key: "ArrowDown" | "ArrowLeft" | "ArrowRight" | "ArrowUp";
+  length: number;
+}) => {
+  if (length <= 0 || currentIndex < 0 || currentIndex >= length) return null;
+  const offset = key === "ArrowRight"
+    ? 1
+    : key === "ArrowLeft"
+      ? -1
+      : key === "ArrowDown"
+        ? columns
+        : -columns;
+  return (currentIndex + offset + length) % length;
+};
+
 const EVENT_PALETTES = {
   red: { accent: "#ff453a", darkSurface: "#7a3028", lightSurface: "#f1c4bf" },
   amber: { accent: "#ffb23f", darkSurface: "#69481f", lightSurface: "#efd7b8" },

@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   EVENT_COLOR_OPTIONS,
   eventColorChange,
+  eventColorGridNavigationIndex,
   getCalendarEventPalette,
 } from "./event-color";
 
@@ -25,6 +26,29 @@ test("clears a custom color back to the calendar defaults", () => {
 test("exposes each supported Google event color once", () => {
   assert.equal(EVENT_COLOR_OPTIONS.length, 11);
   assert.equal(new Set(EVENT_COLOR_OPTIONS.map(({ colorId }) => colorId)).size, 11);
+});
+
+test("navigates compact and expanded color grids in two dimensions", () => {
+  const navigate = (
+    key: Parameters<typeof eventColorGridNavigationIndex>[0]["key"],
+    overrides: Partial<Parameters<typeof eventColorGridNavigationIndex>[0]> = {},
+  ) => eventColorGridNavigationIndex({
+    columns: 3,
+    currentIndex: 1,
+    key,
+    length: 6,
+    ...overrides,
+  });
+
+  assert.equal(navigate("ArrowLeft"), 0);
+  assert.equal(navigate("ArrowRight"), 2);
+  assert.equal(navigate("ArrowDown"), 4);
+  assert.equal(navigate("ArrowUp"), 4);
+  assert.equal(navigate("ArrowDown", { columns: 6, length: 12 }), 7);
+  assert.equal(navigate("ArrowUp", { columns: 6, currentIndex: 7, length: 12 }), 1);
+  assert.equal(navigate("ArrowLeft", { currentIndex: 0 }), 5);
+  assert.equal(navigate("ArrowRight", { currentIndex: 5 }), 0);
+  assert.equal(navigate("ArrowRight", { length: 0 }), null);
 });
 
 test("uses the event color for the surface and calendar color for the accent", () => {

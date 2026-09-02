@@ -382,6 +382,32 @@ export const isEventCalendarPickerShortcut = ({
   && key.toLowerCase() === "c"
 );
 
+export const isEventColorPickerShortcut = ({
+  altKey,
+  key,
+  modifier,
+  modalOpen,
+  repeat,
+  selectedCount,
+  shiftKey,
+}: {
+  altKey: boolean;
+  key: string;
+  modifier: boolean;
+  modalOpen: boolean;
+  repeat: boolean;
+  selectedCount: number;
+  shiftKey: boolean;
+}) => (
+  !altKey
+  && !modifier
+  && !modalOpen
+  && !repeat
+  && selectedCount === 1
+  && !shiftKey
+  && key.toLowerCase() === "p"
+);
+
 export const isEventTitleFocusShortcut = ({
   activeCalendar,
   altKey,

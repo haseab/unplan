@@ -173,6 +173,7 @@ import {
   findEventNavigationBacktrackKey,
   findDirectionalEventKey,
   isEventCalendarPickerShortcut,
+  isEventColorPickerShortcut,
   isEventMoveAtOrigin,
   isEventMoveToPresentShortcut,
   isEventTitleFocusShortcut,
@@ -530,6 +531,8 @@ export function CalendarApp() {
   const [rightSidebarTab, setRightSidebarTab] = React.useState<RightSidebarTab>("todos");
   const [eventDetailsFocused, setEventDetailsFocused] = React.useState(false);
   const [openSelectedEventCalendarPicker, setOpenSelectedEventCalendarPicker] = React.useState(false);
+  const [selectedEventColorPickerFocusRequested, setSelectedEventColorPickerFocusRequested] =
+    React.useState(false);
   const [selectedEventTitleFocusMode, setSelectedEventTitleFocusMode] =
     React.useState<EventTitleFocusMode>(null);
   const closeSelectedEventCalendarPicker = React.useCallback(() => {
@@ -537,6 +540,9 @@ export function CalendarApp() {
   }, []);
   const consumeSelectedEventTitleAutoFocus = React.useCallback(() => {
     setSelectedEventTitleFocusMode(null);
+  }, []);
+  const consumeSelectedEventColorPickerAutoFocus = React.useCallback(() => {
+    setSelectedEventColorPickerFocusRequested(false);
   }, []);
   const [todoistCustomGroups, setTodoistCustomGroups] = React.useState<string[]>(() => {
     if (typeof window === "undefined") return [];
@@ -3579,6 +3585,18 @@ export function CalendarApp() {
         event.preventDefault();
         setOpenSelectedEventCalendarPicker(true);
         setRightSidebarTab("events");
+      } else if (isEventColorPickerShortcut({
+        altKey: event.altKey,
+        key: event.key,
+        modifier,
+        modalOpen: Boolean(document.querySelector(".modal-backdrop")),
+        repeat: event.repeat,
+        selectedCount: selected.size,
+        shiftKey: event.shiftKey,
+      })) {
+        event.preventDefault();
+        setSelectedEventColorPickerFocusRequested(true);
+        setRightSidebarTab("events");
       } else if (
         event.altKey
         && !modifier
@@ -6212,6 +6230,7 @@ export function CalendarApp() {
         ) : (
           <EventCreationSidebar
             openSelectedEventCalendarPicker={openSelectedEventCalendarPicker}
+            selectedEventColorPickerFocusRequested={selectedEventColorPickerFocusRequested}
             selectedEventTitleFocusMode={selectedEventTitleFocusMode}
             key={creationDraft
               ? creationDraft.start.toISOString()
@@ -6297,6 +6316,7 @@ export function CalendarApp() {
             onSelectedEventCalendarPickerOpen={() => {
               setOpenSelectedEventCalendarPicker(true);
             }}
+            onSelectedEventColorPickerAutoFocused={consumeSelectedEventColorPickerAutoFocus}
             onSelectedEventTitleAutoFocused={consumeSelectedEventTitleAutoFocus}
             onPreviewEvent={setEventDetailsPreview}
             onRespondToEvent={respondToEventInvitation}

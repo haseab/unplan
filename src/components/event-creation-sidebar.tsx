@@ -55,6 +55,7 @@ export type EventTitleFocusMode = "caret-end" | "select-all" | null;
 
 type EventCreationSidebarProps = {
   openSelectedEventCalendarPicker: boolean;
+  selectedEventColorPickerFocusRequested: boolean;
   selectedEventTitleFocusMode: EventTitleFocusMode;
   calendarSources: CalendarSource[];
   calendars: CalendarSource[];
@@ -75,6 +76,7 @@ type EventCreationSidebarProps = {
   onCreateFromRecent: (entry: RecentEventTitle) => void;
   onSelectedEventCalendarPickerClose: () => void;
   onSelectedEventCalendarPickerOpen: () => void;
+  onSelectedEventColorPickerAutoFocused: () => void;
   onSelectedEventTitleAutoFocused: () => void;
   onRespondToEvent: (
     event: CalendarEvent,
@@ -126,6 +128,7 @@ function GoogleMeetMark() {
 
 function EventDetailsEditor({
   openCalendarPicker,
+  colorPickerFocusRequested,
   titleFocusMode,
   calendar,
   calendars,
@@ -138,11 +141,13 @@ function EventDetailsEditor({
   onRespond,
   onCalendarPickerClose,
   onCalendarPickerOpen,
+  onColorPickerAutoFocused,
   onUpdate,
   pendingCreation,
   recentTitles,
 }: {
   openCalendarPicker: boolean;
+  colorPickerFocusRequested: boolean;
   titleFocusMode: EventTitleFocusMode;
   calendar: CalendarSource | null;
   calendars: CalendarSource[];
@@ -158,6 +163,7 @@ function EventDetailsEditor({
   ) => Promise<boolean>;
   onCalendarPickerClose: () => void;
   onCalendarPickerOpen: () => void;
+  onColorPickerAutoFocused: () => void;
   onUpdate: (event: CalendarEvent) => Promise<boolean>;
   pendingCreation: boolean;
   recentTitles: RecentEventTitle[];
@@ -266,6 +272,17 @@ function EventDetailsEditor({
   const cancelTitle = () => {
     skipTitleBlurCommitRef.current = true;
     previewTitle(titleCommittedRef.current);
+  };
+
+  const previewDescription = (description: string) => {
+    onPreview({ ...edited, description });
+  };
+
+  const commitDescription = async (nextDescription: string) => {
+    const previousDescription = edited.description ?? "";
+    if (nextDescription === previousDescription) return true;
+    updateDraft((current) => ({ ...current, description: nextDescription }));
+    return flushUpdate();
   };
 
   const openTimeField = (field: "end" | "start") => {
@@ -377,25 +394,45 @@ function EventDetailsEditor({
     }
   };
 
+  const submitAndFocusEvent = (keyboardEvent: React.KeyboardEvent<HTMLDivElement>) => {
+    if (
+      keyboardEvent.nativeEvent.isComposing
+      || !isEventDetailsSubmitShortcut({
+        altKey: keyboardEvent.altKey,
+        ctrlKey: keyboardEvent.ctrlKey,
+        key: keyboardEvent.key,
+        metaKey: keyboardEvent.metaKey,
+        shiftKey: keyboardEvent.shiftKey,
+      })
+    ) return;
+    keyboardEvent.preventDefault();
+    keyboardEvent.stopPropagation();
+    if (keyboardEvent.target instanceof Element) {
+      keyboardEvent.target
+        .closest<HTMLElement>(".event-description-content")
+        ?.blur();
+    }
+    onFocusEvent(edited);
+    void flushUpdate();
+  };
+
   return (
     <div
       className="event-details event-editor"
       onKeyDownCapture={(keyboardEvent) => {
         if (keyboardEvent.target === titleRef.current) return;
         if (
-          keyboardEvent.nativeEvent.isComposing
-          || !isEventDetailsSubmitShortcut({
-            altKey: keyboardEvent.altKey,
-            ctrlKey: keyboardEvent.ctrlKey,
-            key: keyboardEvent.key,
-            metaKey: keyboardEvent.metaKey,
-            shiftKey: keyboardEvent.shiftKey,
-          })
+          keyboardEvent.target instanceof Element
+          && keyboardEvent.target.closest(".calendar-picker-search-input")
         ) return;
-        keyboardEvent.preventDefault();
-        keyboardEvent.stopPropagation();
-        onFocusEvent(edited);
-        void flushUpdate();
+        submitAndFocusEvent(keyboardEvent);
+      }}
+      onKeyDown={(keyboardEvent) => {
+        if (
+          !(keyboardEvent.target instanceof Element)
+          || !keyboardEvent.target.closest(".calendar-picker-search-input")
+        ) return;
+        submitAndFocusEvent(keyboardEvent);
       }}
     >
       <EventTitleEditor
@@ -574,7 +611,7 @@ function EventDetailsEditor({
           )}
         </div>}
         {showNotes ? (
-          <div className="event-editor-description"><AlignLeft size={15} /><EventDescriptionEditor autoFocus={focusedOptionalField === "notes"} value={edited.description ?? ""} onChange={(description) => change({ description })} onSubmit={flushUpdate} /></div>
+          <div className="event-editor-description"><AlignLeft size={15} /><EventDescriptionEditor autoFocus={focusedOptionalField === "notes"} value={edited.description ?? ""} onChange={previewDescription} onBlur={commitDescription} /></div>
         ) : (
           <button className="event-editor-optional-trigger" onClick={() => { setFocusedOptionalField("notes"); setShowNotes(true); }} type="button"><AlignLeft size={15} />Add notes</button>
         )}
@@ -608,10 +645,12 @@ function EventDetailsEditor({
 
       <section className="event-details-section event-editor-preferences">
         <EventColorPicker
+          autoFocus={colorPickerFocusRequested}
           calendarColor={editedCalendar?.backgroundColor ?? edited.calendarColor}
           calendarTextColor={editedCalendar?.foregroundColor ?? "#ffffff"}
           colorId={edited.colorId}
           onChange={change}
+          onAutoFocused={onColorPickerAutoFocused}
         />
         <button
           aria-expanded={showAdvancedPreferences}
@@ -648,6 +687,7 @@ function EventDetailsEditor({
 
 export function EventCreationSidebar({
   openSelectedEventCalendarPicker,
+  selectedEventColorPickerFocusRequested,
   selectedEventTitleFocusMode,
   calendarSources,
   calendars,
@@ -666,6 +706,7 @@ export function EventCreationSidebar({
   onRemoveSelection,
   onSelectedEventCalendarPickerClose,
   onSelectedEventCalendarPickerOpen,
+  onSelectedEventColorPickerAutoFocused,
   onSelectedEventTitleAutoFocused,
   onPreviewEvent,
   onCreateFromRecent,
@@ -799,6 +840,7 @@ export function EventCreationSidebar({
       ) : selectedEvent ? (
         <EventDetailsEditor
           openCalendarPicker={openSelectedEventCalendarPicker}
+          colorPickerFocusRequested={selectedEventColorPickerFocusRequested}
           titleFocusMode={selectedEventTitleFocusMode}
           calendar={selectedCalendar}
           calendars={calendars}
@@ -811,6 +853,7 @@ export function EventCreationSidebar({
           onRespond={onRespondToEvent}
           onCalendarPickerClose={onSelectedEventCalendarPickerClose}
           onCalendarPickerOpen={onSelectedEventCalendarPickerOpen}
+          onColorPickerAutoFocused={onSelectedEventColorPickerAutoFocused}
           onUpdate={onUpdateEvent}
           pendingCreation={selectedEventPendingCreation}
           recentTitles={recentTitles}

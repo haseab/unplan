@@ -9,26 +9,26 @@ import { eventDescriptionContentType } from "@/lib/event-description-format";
 
 type EventDescriptionEditorProps = {
   autoFocus?: boolean;
+  onBlur: (description: string) => void | Promise<unknown>;
   onChange: (description: string) => void;
-  onSubmit: () => void | Promise<unknown>;
   value: string;
 };
 
 export function EventDescriptionEditor({
   autoFocus = false,
+  onBlur,
   onChange,
-  onSubmit,
   value,
 }: EventDescriptionEditorProps) {
+  const onBlurRef = React.useRef(onBlur);
   const onChangeRef = React.useRef(onChange);
-  const onSubmitRef = React.useRef(onSubmit);
   const appliedValueRef = React.useRef(value);
   const emittedValueRef = React.useRef<string | null>(null);
 
   React.useEffect(() => {
+    onBlurRef.current = onBlur;
     onChangeRef.current = onChange;
-    onSubmitRef.current = onSubmit;
-  }, [onChange, onSubmit]);
+  }, [onBlur, onChange]);
 
   const editor = useEditor({
     content: value,
@@ -40,18 +40,6 @@ export function EventDescriptionEditor({
         class: "event-description-content",
         role: "textbox",
         spellcheck: "true",
-      },
-      handleKeyDown: (_, event) => {
-        if (
-          event.key !== "Enter"
-          || !(event.metaKey || event.ctrlKey)
-          || event.altKey
-          || event.shiftKey
-          || event.isComposing
-        ) return false;
-        event.preventDefault();
-        void onSubmitRef.current();
-        return true;
       },
     },
     extensions: [
@@ -72,6 +60,10 @@ export function EventDescriptionEditor({
       }),
     ],
     immediatelyRender: false,
+    onBlur: ({ editor: blurredEditor }) => {
+      const description = blurredEditor.isEmpty ? "" : blurredEditor.getHTML();
+      void onBlurRef.current(description);
+    },
     onUpdate: ({ editor: updatedEditor }) => {
       const nextDescription = updatedEditor.isEmpty ? "" : updatedEditor.getHTML();
       appliedValueRef.current = nextDescription;
@@ -81,7 +73,12 @@ export function EventDescriptionEditor({
   });
 
   React.useEffect(() => {
-    if (!editor || value === appliedValueRef.current || value === emittedValueRef.current) return;
+    if (
+      !editor
+      || editor.isFocused
+      || value === appliedValueRef.current
+      || value === emittedValueRef.current
+    ) return;
     appliedValueRef.current = value;
     editor.commands.setContent(value, {
       contentType: eventDescriptionContentType(value),
