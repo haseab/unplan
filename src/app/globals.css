@@ -1361,12 +1361,16 @@ kbd {
 .event-editor-color-field > svg { margin-top: 3px; }
 .event-editor-color-field > div { display: grid; min-width: 0; gap: 8px; }
 .event-editor-color-field small { color: var(--text-soft); font-size: 11px; font-weight: 650; letter-spacing: 0.04em; text-transform: uppercase; }
-.event-editor-color-options { display: grid; grid-template-columns: repeat(3, 25px); gap: 7px; width: fit-content; }
-.event-editor-color-options[data-expanded="true"] { grid-template-columns: repeat(6, 25px); }
+.event-editor-color-options { display: grid; width: fit-content; gap: 9px; }
+.event-editor-color-quick-row { display: grid; grid-template-columns: repeat(6, 25px); gap: 7px; }
+.event-editor-color-options[data-expanded="true"] { gap: 7px; }
+.event-editor-color-palette-row { display: grid; grid-template-columns: 38px auto; align-items: center; gap: 8px; }
+.event-editor-color-palette-row > span { color: var(--text-soft); font-size: 10px; font-weight: 650; letter-spacing: 0.02em; }
+.event-editor-color-palette-row > div { display: grid; grid-template-columns: repeat(8, 25px); gap: 7px; }
 .event-editor-color-options button { display: grid; width: 25px; height: 25px; padding: 0; place-items: center; border: 2px solid transparent; border-radius: 50%; outline: 0; background: var(--event-option-color); color: var(--event-option-text); cursor: pointer; box-shadow: 0 0 0 1px color-mix(in oklab, var(--event-option-color) 65%, var(--line-strong)); transition: border-color 120ms ease, box-shadow 120ms ease, transform 120ms ease; }
 .event-editor-color-options button:hover { transform: scale(1.08); }
-.event-editor-color-options button:focus-visible { box-shadow: 0 0 0 3px var(--blue-soft), 0 0 0 1px var(--blue-border); }
-.event-editor-color-options .event-editor-color-active { border-color: var(--surface); box-shadow: 0 0 0 2px var(--ink); }
+.event-editor-color-options .event-editor-color-active { box-shadow: 0 0 0 1px color-mix(in oklab, var(--event-option-color) 65%, var(--line-strong)); }
+.event-editor-color-options button:focus-visible { border-color: var(--surface); box-shadow: 0 0 0 2px var(--ink); }
 .event-editor-color-more { display: inline-flex; width: fit-content; align-items: center; gap: 4px; padding: 2px 0; border: 0; background: transparent; color: var(--text-soft); font: inherit; font-size: 12px; font-weight: 650; cursor: pointer; }
 .event-editor-color-more:hover, .event-editor-color-more:focus-visible { color: var(--ink); }
 .event-editor-color-more:focus-visible { outline: 2px solid var(--blue-border); outline-offset: 3px; border-radius: 2px; }
@@ -1404,6 +1408,7 @@ kbd {
 [data-sonner-toaster] { --width: 340px; }
 [data-sonner-toast] { border-color: var(--line-strong) !important; border-radius: 10px !important; background: var(--surface-elevated) !important; color: var(--ink) !important; font-family: var(--font-geist-sans), sans-serif !important; font-size: 11px !important; box-shadow: 0 12px 34px var(--shadow-color) !important; backdrop-filter: blur(14px); }
 [data-sonner-toast] [data-button] { border-radius: 6px !important; background: var(--blue-soft) !important; color: var(--blue-ink) !important; font-size: 10px !important; }
+.action-toast-hidden { display: none !important; }
 .action-toast-icon { flex: 0 0 auto; stroke-width: 2.25; }
 .action-toast-icon-queued { color: var(--blue-ink); }
 .action-toast-icon-paused { color: #d79a3f; }

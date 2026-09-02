@@ -3,7 +3,9 @@ import test from "node:test";
 import type { CalendarEvent } from "./calendar-types";
 import {
   calendarEventViews,
+  preservePendingCalendarEventUpdates,
   reconcileOptimisticCalendarEvents,
+  reconcileRefreshedEventSelection,
   withCalendarEventPreview,
 } from "./optimistic-calendar-events";
 
@@ -96,4 +98,78 @@ test("keeps the editor selection committed while displaying its live preview", (
   assert.equal(views.displayedEvents[0].title, "Live title");
   assert.equal(views.selectedEvents[0].title, "Original title");
   assert.equal(views.selectedEvents[0], committed[0]);
+});
+
+test("keeps a submitted event update when an older provider refresh finishes", () => {
+  const staleProviderEvent = event("editing", "Send progress");
+  const submittedEvent = event("editing", "Timetracking");
+
+  const reconciled = preservePendingCalendarEventUpdates(
+    [staleProviderEvent, event("other")],
+    [submittedEvent, event("other")],
+    [submittedEvent.id],
+  );
+
+  assert.equal(reconciled[0], submittedEvent);
+  assert.equal(reconciled[0].title, "Timetracking");
+});
+
+test("retains a pending event update missing from the provider refresh", () => {
+  const submittedEvent = event("editing", "Timetracking");
+
+  const reconciled = preservePendingCalendarEventUpdates(
+    [event("other")],
+    [submittedEvent, event("other")],
+    [submittedEvent.id],
+  );
+
+  assert.deepEqual(reconciled.map(({ id }) => id), ["other", "editing"]);
+  assert.equal(reconciled[1], submittedEvent);
+});
+
+test("retains a selected event through a transiently incomplete refresh", () => {
+  const selected = event("selected", "Keep my place");
+  const result = reconcileRefreshedEventSelection(
+    [selected, event("other")],
+    [event("other")],
+    new Set([selected.id]),
+  );
+
+  assert.deepEqual(result.events.map(({ id }) => id), ["other", "selected"]);
+  assert.deepEqual([...result.selectedIds], ["selected"]);
+  assert.equal(result.events[1], selected);
+});
+
+test("remaps selection when a provider event receives a new local ID", () => {
+  const previous = {
+    ...event("old-local-id"),
+    calendarId: "calendar-1",
+    providerEventId: "stable-provider-id",
+  };
+  const refreshed = {
+    ...event("new-local-id"),
+    calendarId: "calendar-2",
+    providerEventId: "stable-provider-id",
+  };
+  const result = reconcileRefreshedEventSelection(
+    [previous],
+    [refreshed],
+    new Set([previous.id]),
+  );
+
+  assert.deepEqual(result.events, [refreshed]);
+  assert.deepEqual([...result.selectedIds], [refreshed.id]);
+  assert.equal(result.selectedIdReplacements.get(previous.id), refreshed.id);
+});
+
+test("does not retain unselected events missing from a refresh", () => {
+  const refreshed = [event("remaining")];
+  const result = reconcileRefreshedEventSelection(
+    [event("removed"), ...refreshed],
+    refreshed,
+    new Set(),
+  );
+
+  assert.equal(result.events, refreshed);
+  assert.deepEqual([...result.selectedIds], []);
 });

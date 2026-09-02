@@ -38,6 +38,7 @@ import {
   isEventDetailsSubmitShortcut,
 } from "@/lib/event-keyboard-navigation";
 import { googleMeetCode } from "@/lib/google-conference-client";
+import { type EventColorChange, getEventTextColor } from "@/lib/event-color";
 import {
   recentEventEditDurationMinutes,
   type RecentEventTitle,
@@ -247,6 +248,59 @@ function EventDetailsEditor({
 
   const change = (patch: Partial<CalendarEvent>) => {
     updateDraft((current) => ({ ...current, ...patch }));
+  };
+
+  const applyColorChange = (current: CalendarEvent, colorChange: EventColorChange) => {
+    const next = { ...current, ...colorChange };
+    if (!colorChange.customColor) delete next.customColor;
+    return next;
+  };
+
+  const previewColor = (colorChange: EventColorChange) => {
+    let candidate = edited;
+    updateLocalDraft((current) => {
+      candidate = applyColorChange(current, colorChange);
+      return candidate;
+    });
+    onPreview(candidate);
+    console.debug("[BUG:COLOR-PICKER-NAV] [SIDEBAR:PREVIEW] applied optimistic color", {
+      color: colorChange.color,
+      colorId: colorChange.colorId ?? null,
+      customColor: colorChange.customColor ?? null,
+      eventId: candidate.id,
+    });
+  };
+
+  const cancelColorPreview = () => {
+    const originalColor: EventColorChange = {
+      color: event.color,
+      colorId: event.colorId,
+      ...(event.customColor ? { customColor: event.customColor } : {}),
+      textColor: event.textColor ?? getEventTextColor(event.color),
+    };
+    let candidate = edited;
+    updateLocalDraft((current) => {
+      candidate = applyColorChange(current, originalColor);
+      return candidate;
+    });
+    onPreview(candidate);
+    console.debug("[BUG:COLOR-PICKER-NAV] [SIDEBAR:CANCEL] restored saved color", {
+      color: originalColor.color,
+      eventId: candidate.id,
+    });
+  };
+
+  const commitColor = (colorChange: EventColorChange, restoreFocus: boolean) => {
+    updateDraft((current) => applyColorChange(current, colorChange));
+    console.debug("[BUG:COLOR-PICKER-NAV] [SIDEBAR:COMMIT] queued color update", {
+      color: colorChange.color,
+      colorId: colorChange.colorId ?? null,
+      customColor: colorChange.customColor ?? null,
+      eventId: edited.id,
+      restoreFocus,
+    });
+    if (restoreFocus) onFocusEvent(edited);
+    void flushUpdate();
   };
 
   const previewTitle = (title: string) => {
@@ -648,9 +702,13 @@ function EventDetailsEditor({
           autoFocus={colorPickerFocusRequested}
           calendarColor={editedCalendar?.backgroundColor ?? edited.calendarColor}
           calendarTextColor={editedCalendar?.foregroundColor ?? "#ffffff"}
-          colorId={edited.colorId}
-          onChange={change}
+          colorId={event.colorId}
+          customColor={event.customColor}
           onAutoFocused={onColorPickerAutoFocused}
+          onCancel={cancelColorPreview}
+          onCommit={commitColor}
+          onExit={() => onFocusEvent(event)}
+          onPreview={previewColor}
         />
         <button
           aria-expanded={showAdvancedPreferences}

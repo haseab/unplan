@@ -55,6 +55,7 @@ const EMPTY_SYNC_SNAPSHOT: ActionToastSyncSnapshot = {
   pendingResourceIds: [],
 };
 let syncSnapshot = EMPTY_SYNC_SNAPSHOT;
+let nextToastId = 0;
 
 type ActionToastVisualState = "paused" | "queued" | "updated" | "updating";
 
@@ -108,13 +109,10 @@ const latestPendingAction = () => {
   return latest;
 };
 
-const oldestPendingAction = () => pendingActions.values().next().value ?? null;
-
 /**
  * Shows an optimistic action immediately while delaying its durable mutation.
  * Undo and submit are mutually exclusive. Keyboard undo targets the newest
- * action, while keyboard submit targets the oldest so dependent mutations are
- * committed in the same order they were queued.
+ * action, while keyboard submit commits every queued action in insertion order.
  */
 export function queueActionToast(
   message: string,
@@ -166,6 +164,7 @@ export function queueActionToast(
     toast(currentMessage, {
       id: toastId,
       action: { label: "Undo (⌘Z)", onClick: undo },
+      className: paused ? "action-toast-hidden" : "",
       closeButton: true,
       description: paused ? "Unsynced while this event is being edited" : undefined,
       duration: Infinity,
@@ -250,6 +249,7 @@ export function queueActionToast(
     publishSyncSnapshot();
     toast.loading(currentOptions.submittingMessage ?? "Saving to Google…", {
       action: undefined,
+      className: "",
       closeButton: false,
       description: undefined,
       id: toastId,
@@ -262,6 +262,7 @@ export function queueActionToast(
       if (state !== "submitting") return;
       toast.loading(progressMessage, {
         action: undefined,
+        className: "",
         closeButton: false,
         description: undefined,
         duration: Infinity,
@@ -294,6 +295,7 @@ export function queueActionToast(
         activeActions.delete(toastId);
         toast.success(currentMessage, {
           action: undefined,
+          className: "",
           closeButton: false,
           description: undefined,
           duration: 1_800,
@@ -319,25 +321,32 @@ export function queueActionToast(
     return true;
   };
 
-  const toastId: ToastId = options.submitImmediately
-    ? toast.loading(options.submittingMessage ?? "Saving to Google…", {
-        action: undefined,
-        closeButton: false,
-        description: undefined,
-        duration: Infinity,
-        icon: actionToastIcon("updating"),
-        onDismiss: undefined,
-      })
-    : toast(message, {
-        action: { label: "Undo (⌘Z)", onClick: undo },
-        closeButton: true,
-        duration: Infinity,
-        icon: actionToastIcon("queued"),
-        onDismiss: () => {
-          // Closing an actionable toast means “keep it”, so commit immediately.
-          submit();
-        },
-      });
+  const toastId: ToastId = `action-toast-${++nextToastId}`;
+  if (options.submitImmediately) {
+    toast.loading(options.submittingMessage ?? "Saving to Google…", {
+      action: undefined,
+      className: "",
+      closeButton: false,
+      description: undefined,
+      id: toastId,
+      duration: Infinity,
+      icon: actionToastIcon("updating"),
+      onDismiss: undefined,
+    });
+  } else {
+    toast(message, {
+      action: { label: "Undo (⌘Z)", onClick: undo },
+      className: "",
+      closeButton: true,
+      duration: Infinity,
+      id: toastId,
+      icon: actionToastIcon("queued"),
+      onDismiss: () => {
+        // Closing an actionable toast means “keep it”, so commit immediately.
+        submit();
+      },
+    });
+  }
   const controls: ActionToastController = { cancel, toastId, submit, undo };
   const refresh = (nextMessage: string, nextDuration: number) => {
     if (state !== "pending") return;
@@ -407,13 +416,24 @@ export const refreshActionToast = (
 
 export const triggerToastUndo = () => latestPendingAction()?.undo() ?? false;
 
-export const triggerToastSubmit = () =>
-  oldestPendingAction()?.submit() ?? false;
+export const triggerToastSubmit = () => {
+  let submitted = false;
+  [...pendingActions.values()].forEach((action) => {
+    submitted = action.submit() || submitted;
+  });
+  return submitted;
+};
 
 export const hasPendingActionToast = () => pendingActions.size > 0;
 
 /** True for both the undo window and the durable mutation that follows it. */
 export const hasActiveActionToast = () => activeActions.size > 0;
+
+/** True while a queued or submitting action is creating this resource. */
+export const hasActiveResourceCreation = (resourceId: string) =>
+  [...activeCreationActions].some((action) =>
+    action.createdResourceIds.has(resourceId)
+  );
 
 /**
  * Holds pending mutations that touch the supplied resources. Reusing a scope

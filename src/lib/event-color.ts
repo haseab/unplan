@@ -3,6 +3,12 @@ import tinycolor from "tinycolor2";
 const LIGHT_EVENT_TEXT = "#ffffff";
 const DARK_EVENT_TEXT = "#171714";
 
+export const getEventTextColor = (backgroundColor: string) => {
+  const background = tinycolor(backgroundColor);
+  if (!background.isValid()) return LIGHT_EVENT_TEXT;
+  return background.isDark() ? LIGHT_EVENT_TEXT : DARK_EVENT_TEXT;
+};
+
 export type EventPalette = {
   accent: string;
   darkSurface: string;
@@ -13,6 +19,22 @@ export type EventColorOption = {
   color: string;
   colorId: string;
   name: string;
+};
+
+export type EventColorChoice = {
+  color: string;
+  colorId?: string;
+  customColor?: string;
+  key: string;
+  name: string;
+  textColor: string;
+};
+
+export type EventColorChange = {
+  color: string;
+  colorId?: string;
+  customColor?: string;
+  textColor: string;
 };
 
 // Google Calendar's event color IDs are stable provider values. The API's
@@ -44,6 +66,115 @@ export const eventColorChange = (
     textColor: option ? getEventTextColor(color) : calendarTextColor,
   };
 };
+
+const customChoice = (
+  name: string,
+  color: string,
+  colorId: string,
+): EventColorChoice => ({
+  color,
+  colorId,
+  customColor: color,
+  key: `custom:${color.toLowerCase()}`,
+  name,
+  textColor: getEventTextColor(color),
+});
+
+const providerChoice = (colorId: string): EventColorChoice => {
+  const option = EVENT_COLOR_OPTIONS.find((candidate) => candidate.colorId === colorId)!;
+  return {
+    ...option,
+    key: `provider:${colorId}`,
+    textColor: getEventTextColor(option.color),
+  };
+};
+
+export const EVENT_COLOR_PALETTE_ROWS: Array<{
+  label: string;
+  options: EventColorChoice[];
+}> = [
+  {
+    label: "Neutral",
+    options: [
+      customChoice("Ink", "#202124", "8"),
+      customChoice("Charcoal", "#474747", "8"),
+      customChoice("Slate", "#737373", "8"),
+      customChoice("Silver", "#a3a3a3", "8"),
+      providerChoice("8"),
+      customChoice("Frost", "#f2f2f2", "8"),
+      customChoice("White", "#ffffff", "8"),
+    ],
+  },
+  {
+    label: "Soft",
+    options: [
+      providerChoice("4"),
+      providerChoice("6"),
+      providerChoice("5"),
+      providerChoice("2"),
+      providerChoice("7"),
+      providerChoice("1"),
+      providerChoice("3"),
+      customChoice("Rose", "#efb5d0", "3"),
+    ],
+  },
+  {
+    label: "Bright",
+    options: [
+      customChoice("Scarlet", "#ff3b30", "11"),
+      customChoice("Orange", "#ff9500", "6"),
+      customChoice("Lemon", "#ffdf3d", "5"),
+      customChoice("Lime", "#82d94c", "10"),
+      customChoice("Aqua", "#24c7c9", "7"),
+      customChoice("Azure", "#3d8df5", "9"),
+      customChoice("Violet", "#8b5cf6", "3"),
+      customChoice("Magenta", "#e648a8", "3"),
+    ],
+  },
+  {
+    label: "Rich",
+    options: [
+      providerChoice("11"),
+      customChoice("Copper", "#d8782d", "6"),
+      customChoice("Gold", "#d6a928", "5"),
+      providerChoice("10"),
+      customChoice("Teal", "#278c91", "7"),
+      providerChoice("9"),
+      customChoice("Plum", "#714bb1", "3"),
+      customChoice("Berry", "#ae497b", "3"),
+    ],
+  },
+  {
+    label: "Deep",
+    options: [
+      customChoice("Oxblood", "#7d2419", "11"),
+      customChoice("Umber", "#7b4618", "6"),
+      customChoice("Ochre", "#826b13", "5"),
+      customChoice("Forest", "#285f2a", "10"),
+      customChoice("Deep teal", "#174f56", "7"),
+      customChoice("Navy", "#244b89", "9"),
+      customChoice("Indigo", "#3e2b78", "3"),
+      customChoice("Wine", "#681d45", "3"),
+    ],
+  },
+];
+
+export const eventColorChoiceChange = ({
+  color,
+  colorId,
+  customColor,
+  textColor,
+}: EventColorChoice): EventColorChange => ({
+  color,
+  colorId,
+  ...(customColor ? { customColor } : {}),
+  textColor,
+});
+
+export const eventColorSelectionKey = (
+  colorId: string | undefined,
+  customColor: string | undefined,
+) => customColor ? `custom:${customColor.toLowerCase()}` : colorId ? `provider:${colorId}` : "default";
 
 export const eventColorGridNavigationIndex = ({
   columns,
@@ -110,10 +241,4 @@ export const getCalendarEventPalette = (
     ...getEventPalette(eventColor),
     accent: getCalendarAccent(calendarColor),
   };
-};
-
-export const getEventTextColor = (backgroundColor: string) => {
-  const background = tinycolor(backgroundColor);
-  if (!background.isValid()) return LIGHT_EVENT_TEXT;
-  return background.isDark() ? LIGHT_EVENT_TEXT : DARK_EVENT_TEXT;
 };

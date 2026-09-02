@@ -51,7 +51,11 @@ const mutationQueue = new MutationQueue({
 const mutationKey = (event: CalendarEvent) =>
   `${event.calendarId}:${event.id}`;
 
-const responseError = async (response: Response, fallback: string) => {
+const responseError = async (
+  response: Response,
+  fallback: string,
+  retryNotFound = false,
+) => {
   const data = (await response.json().catch(() => ({}))) as GoogleErrorPayload;
   const error = data.error;
   const message = typeof error === "string" ? error : error?.message;
@@ -59,6 +63,7 @@ const responseError = async (response: Response, fallback: string) => {
     ? []
     : error?.errors?.flatMap(({ reason }) => reason ? [reason] : []) ?? [];
   const retryable = data.retryable === true
+    || (retryNotFound && response.status === 404)
     || response.status === 429
     || response.status >= 500
     || reasons.some((reason) => retryableReasons.has(reason));
@@ -73,6 +78,7 @@ const mutateGoogleEvent = async (
   event: CalendarEvent,
   sendUpdates: GoogleSendUpdates = "none",
   sourceCalendarSourceId?: string,
+  retryNotFound = false,
 ) => {
   const response = await googleCalendarAuthorizedFetch(event.calendarId, "/api/google/events", {
     method,
@@ -86,6 +92,7 @@ const mutateGoogleEvent = async (
       end: event.end,
       allDay: event.allDay,
       colorId: method === "PATCH" ? event.colorId ?? null : event.colorId,
+      customColor: event.customColor ?? "",
       description: event.description ?? "",
       location: event.location ?? "",
       timeZone: event.timeZone,
@@ -100,7 +107,11 @@ const mutateGoogleEvent = async (
     }),
   });
   if (!response.ok) {
-    throw await responseError(response, "Google Calendar rejected the change");
+    throw await responseError(
+      response,
+      "Google Calendar rejected the change",
+      retryNotFound,
+    );
   }
   return readJsonResponse<GoogleEventResult>(
     response,
@@ -112,9 +123,16 @@ export const updateGoogleEvent = (
   event: CalendarEvent,
   sendUpdates: GoogleSendUpdates = "none",
   sourceCalendarSourceId?: string,
+  retryNotFound = false,
 ) =>
   mutationQueue.enqueue(mutationKey(event), () =>
-    mutateGoogleEvent("PATCH", event, sendUpdates, sourceCalendarSourceId),
+    mutateGoogleEvent(
+      "PATCH",
+      event,
+      sendUpdates,
+      sourceCalendarSourceId,
+      retryNotFound,
+    ),
   );
 
 export const respondToGoogleEvent = (

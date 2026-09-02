@@ -23,6 +23,7 @@ export type CalendarEvent = {
   calendarColor: string;
   color: string;
   colorId?: string;
+  customColor?: string;
   textColor?: string;
   allDay?: boolean;
   description?: string;
@@ -76,6 +77,7 @@ export type GoogleCalendarEventPayload = {
   end: string;
   allDay?: boolean;
   colorId?: string | null;
+  customColor?: string;
   description?: string;
   location?: string;
   timeZone?: string;

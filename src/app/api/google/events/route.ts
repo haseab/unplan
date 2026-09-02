@@ -22,6 +22,7 @@ type GoogleEvent = {
   start: { dateTime?: string; date?: string; timeZone?: string };
   end: { dateTime?: string; date?: string; timeZone?: string };
   colorId?: string;
+  extendedProperties?: { private?: Record<string, string> };
   description?: string;
   location?: string;
   htmlLink?: string;
@@ -84,6 +85,9 @@ const eventTimes = (body: GoogleCalendarEventPayload) => body.allDay
 const editableEventFields = (body: GoogleCalendarEventPayload) => ({
   ...(body.title !== undefined ? { summary: body.title } : {}),
   ...(body.colorId !== undefined ? { colorId: body.colorId } : {}),
+  ...(body.customColor !== undefined ? {
+    extendedProperties: { private: { unplanColor: body.customColor } },
+  } : {}),
   ...(body.description !== undefined ? { description: body.description } : {}),
   ...(body.location !== undefined ? { location: body.location } : {}),
   ...(body.attendees !== undefined ? { attendees: body.attendees } : {}),
@@ -173,6 +177,11 @@ const mapGoogleEvent = (
   eventColors: Record<string, GoogleColor>,
 ): CalendarEvent => {
   const eventColor = event.colorId ? eventColors[event.colorId] : undefined;
+  const storedCustomColor = event.extendedProperties?.private?.unplanColor;
+  const customColor = storedCustomColor && /^#[0-9a-f]{6}$/i.test(storedCustomColor)
+    ? storedCustomColor
+    : undefined;
+  const color = customColor ?? eventColor?.background ?? calendarColor;
   return {
     id: `${calendarSourceId}:${event.id}`,
     providerEventId: event.id,
@@ -183,10 +192,11 @@ const mapGoogleEvent = (
     createdAt: event.created,
     allDay: Boolean(event.start.date),
     calendarColor,
-    color: eventColor?.background ?? calendarColor,
+    color,
     colorId: event.colorId,
+    customColor,
     description: event.description,
-    textColor: getEventTextColor(eventColor?.background ?? calendarColor),
+    textColor: getEventTextColor(color),
     location: event.location,
     htmlLink: event.htmlLink,
     conferenceLink: event.hangoutLink,

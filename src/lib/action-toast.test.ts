@@ -4,6 +4,7 @@ import {
   clearActionToastResourceHold,
   getActionToastSyncSnapshot,
   hasPendingActionToast,
+  hasActiveResourceCreation,
   queueActionToast,
   setActionToastResourceHold,
   triggerToastSubmit,
@@ -24,7 +25,7 @@ const pendingOptions = (
   onUndo,
 });
 
-test("keyboard submit commits pending actions from oldest to newest", async () => {
+test("keyboard submit commits all pending actions from oldest to newest", async () => {
   const submitted: string[] = [];
   queueActionToast(
     "Created event",
@@ -44,8 +45,8 @@ test("keyboard submit commits pending actions from oldest to newest", async () =
   );
 
   assert.equal(triggerToastSubmit(), true);
-  assert.equal(triggerToastSubmit(), true);
   assert.deepEqual(submitted, ["create", "update"]);
+  assert.equal(triggerToastSubmit(), false);
   assert.equal(hasPendingActionToast(), false);
 
   await Promise.resolve();
@@ -88,6 +89,7 @@ test("a dependent event mutation waits for its pending creation", async () => {
     createsResourceIds: ["dependent-event"],
     resourceIds: ["dependent-event"],
   });
+  assert.equal(hasActiveResourceCreation("dependent-event"), true);
   queueActionToast("Moved event", {
     ...pendingOptions(
       () => { submitted.push("move"); },
@@ -95,16 +97,19 @@ test("a dependent event mutation waits for its pending creation", async () => {
       "event-change:dependent-event",
     ),
     resourceIds: ["dependent-event"],
-    submitImmediately: true,
   });
+
+  assert.equal(triggerToastSubmit(), true);
 
   await Promise.resolve();
   await Promise.resolve();
   assert.deepEqual(submitted, ["create-start"]);
+  assert.equal(hasActiveResourceCreation("dependent-event"), true);
 
   releaseCreation();
   await new Promise((resolve) => setTimeout(resolve, 0));
   assert.deepEqual(submitted, ["create-start", "create-end", "move"]);
+  assert.equal(hasActiveResourceCreation("dependent-event"), false);
   assert.equal(hasPendingActionToast(), false);
 });
 
