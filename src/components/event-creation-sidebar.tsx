@@ -475,6 +475,7 @@ function EventDetailsEditor({
         accentColor={edited.color}
         aria-label="Event title"
         calendars={calendars}
+        currentCalendarId={edited.calendarId}
         data-sidebar-primary-focus
         excludeCurrentTitle
         onRecentTitleNavigation={deferUpdate}
@@ -815,6 +816,7 @@ export function EventCreationSidebar({
             aria-label="Event name"
             autoFocus
             calendars={calendars}
+            currentCalendarId={calendarId}
             onRecentTitleUsed={(entry) => {
               onRecentTitleUsed(entry);
               onCreateFromRecent(entry);

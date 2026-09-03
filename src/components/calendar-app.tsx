@@ -165,6 +165,7 @@ import {
 import { taskTriageShortcutMode } from "@/lib/task-triage";
 import {
   crossSurfaceMoveShortcut,
+  eventIdsForKeyboardAction,
   eventGapFillShortcut,
   eventMoveShortcut,
   eventNavigationRangeKeys,
@@ -214,6 +215,7 @@ import {
   latestQuarterHour,
   moveEvent,
   moveEventToStart,
+  nextAvailableEventStart,
   retimePastEventToLatestQuarterHour,
   resolveKeyboardResizeEdge,
   resizeEvent,
@@ -283,6 +285,8 @@ type GoogleStatus = {
 };
 
 type DragSession = {
+  clickedElement: HTMLElement;
+  clickedEventId: string;
   copiesCreated: boolean;
   duplicateOnDrag: boolean;
   hasDragged: boolean;
@@ -490,6 +494,7 @@ export function CalendarApp() {
   const {
     entries: recentEventTitles,
     recordUse: recordRecentEventTitleUse,
+    rememberEvent: rememberRecentEventTitle,
     rememberEvents: rememberRecentEventTitles,
   } = useRecentEventTitles(events);
   const [eventDetailsPreview, setEventDetailsPreview] = React.useState<CalendarEvent | null>(null);
@@ -2088,9 +2093,8 @@ export function CalendarApp() {
         clearTodoistDropFeedback();
         if (!drag.hasDragged) {
           if (!drag.duplicateOnDrag) {
-            setSelected((current) =>
-              current.has(drag.ids[0]) ? current : new Set([drag.ids[0]]),
-            );
+            setSelected(new Set([drag.clickedEventId]));
+            drag.clickedElement.focus({ preventScroll: true });
           }
         } else if (drag.duplicateOnDrag) {
           const copies = drag.originals.map((event) =>
@@ -2568,6 +2572,8 @@ export function CalendarApp() {
       } satisfies DragOverlayItem];
     });
     dragRef.current = {
+      clickedElement: pointer.currentTarget as HTMLElement,
+      clickedEventId: event.id,
       copiesCreated: false,
       duplicateOnDrag,
       hasDragged: false,
@@ -3075,6 +3081,7 @@ export function CalendarApp() {
     const eventKey = calendarEventKey(event.calendarId, event.id);
     selectionAnchorRef.current = eventKey;
     dismissCreationDraft();
+    setActiveSelectionSurface("calendar");
     setSelected(new Set([event.id]));
   }, [dismissCreationDraft]);
 
@@ -3728,7 +3735,7 @@ export function CalendarApp() {
         repeat: event.repeat,
         shiftKey: event.shiftKey,
       });
-      if (isEventCalendarPickerShortcut({
+      if (activeSelectionSurface === "calendar" && isEventCalendarPickerShortcut({
         altKey: event.altKey,
         key: event.key,
         modifier,
@@ -4035,19 +4042,7 @@ export function CalendarApp() {
       textColor: calendar.foregroundColor,
       provider: calendar.provider,
     };
-    const rememberCreatedTitle = (event: CalendarEvent) => recordRecentEventTitleUse({
-      calendarColor: event.color,
-      calendarId: event.calendarId,
-      durationMinutes: Math.max(
-        0,
-        Math.round((new Date(event.end).getTime() - new Date(event.start).getTime()) / 60_000),
-      ),
-      historyCount: 0,
-      lastUsedAt: Date.now(),
-      normalizedTitle: event.title.trim().replace(/\s+/g, " ").toLocaleLowerCase(),
-      selectionCount: 0,
-      title: event.title,
-    });
+    const rememberCreatedTitle = (event: CalendarEvent) => rememberRecentEventTitle(event);
     const removeTemporaryEvent = () => {
       setEvents((current) => current.filter((event) => event.id !== temporaryId));
       setSelected((current) => {
@@ -4192,7 +4187,8 @@ export function CalendarApp() {
       ...current,
       ...moves.map(({ calendar }) => calendar.id),
     ]));
-    setSelected(new Set());
+    setActiveSelectionSurface("calendar");
+    setSelected(eventIds);
     removeLocalTodoistTasks(moves.map(({ task }) => task.id));
 
     queueActionToast(
@@ -4409,7 +4405,6 @@ export function CalendarApp() {
     } else {
       setSelected(new Set());
     }
-    setRightSidebarTab("todos");
     if (!keyboardFocusKey) {
       window.requestAnimationFrame(() => {
         document.querySelector<HTMLElement>(".calendar-workspace")
@@ -4528,11 +4523,14 @@ export function CalendarApp() {
         if (!task) return;
         event.preventDefault();
         event.stopPropagation();
-        const start = new Date();
-        start.setSeconds(0, 0);
-        start.setMinutes(Math.floor(start.getMinutes() / 15) * 15);
+        const present = latestQuarterHour(new Date());
         const details = calendarEventDetailsFromTodoistContent(task.content);
         const durationMinutes = details.durationMinutes ?? 30;
+        const start = nextAvailableEventStart(
+          eventsRef.current,
+          present,
+          durationMinutes,
+        );
         try {
           const moves = scheduleTodoistTasks([{
             draft: {
@@ -4564,23 +4562,27 @@ export function CalendarApp() {
 
       const focusedEventId = target?.closest<HTMLElement>("[data-calendar-event-id]")
         ?.dataset.calendarEventId;
-      const eventIds = focusedEventId && selected.has(focusedEventId)
-        ? selected
-        : focusedEventId
-          ? new Set([focusedEventId])
-          : selected;
+      const eventIds = eventIdsForKeyboardAction(selected, focusedEventId ?? null);
       const requestedEvents = eventsRef.current.filter(({ id }) => eventIds.has(id));
       if (!requestedEvents.length) return;
       event.preventDefault();
       event.stopPropagation();
-      const keyboardAnchorKey = target
+      const requestedEventIds = new Set(requestedEvents.map(({ id }) => id));
+      const requestedEventKeys = renderedEventElements().flatMap((element) =>
+        element.dataset.eventKey
+          && requestedEventIds.has(element.dataset.calendarEventId ?? "")
+          ? [element.dataset.eventKey]
+          : []
+      );
+      const focusedEventKey = target
         ?.closest<HTMLElement>("[data-event-key]")
         ?.dataset.eventKey
-        ?? selectionAnchorRef.current
-        ?? renderedEventElements().find((element) =>
-          requestedEvents.some(({ id }) => id === element.dataset.calendarEventId)
-        )?.dataset.eventKey
         ?? null;
+      const keyboardAnchorKey = resolveEventNavigationAnchorKey(
+        selectionAnchorRef.current,
+        focusedEventKey,
+        requestedEventKeys,
+      ) ?? requestedEventKeys[0] ?? null;
       void moveCalendarEventsToTriage(requestedEvents, keyboardAnchorKey);
     };
     document.addEventListener("keydown", handleCrossSurfaceMove, true);
@@ -4809,6 +4811,7 @@ export function CalendarApp() {
           : "Saving event changes…",
       },
     );
+    setRightSidebarTab("todos");
     return true;
   }, [calendars, chooseGuestNotifications, clearEventMutationOrigins, confirmBulkAction, persistMovedEvents, rememberEventMutationOrigins, toastDuration]);
 
@@ -5260,6 +5263,42 @@ export function CalendarApp() {
     todoistContentWithGroup(task.content, group),
     "Event group could not be updated",
   ), [updateSidebarTodoistTask]);
+
+  const changeSidebarTodoistTasksCalendar = React.useCallback(async (
+    tasks: TodoistTask[],
+    calendarId: string,
+  ) => {
+    const moves = tasks.flatMap((task) => {
+      const currentCalendarId = calendarEventDetailsFromTodoistContent(task.content).calendarId;
+      if (currentCalendarId === calendarId) return [];
+      return [{
+        original: task,
+        updated: { ...task, content: todoistContentWithCalendar(task.content, calendarId) },
+      }];
+    });
+    if (!moves.length) return true;
+
+    moves.forEach(({ updated }) => replaceLocalTodoistTask(updated));
+    const { failed } = await runMutationBatch(
+      moves,
+      ({ updated }) => updateTodoistTask(updated.id, {
+        content: updated.content,
+        description: updated.description,
+      }),
+    );
+    failed.forEach(({ item }) => replaceLocalTodoistTask(item.original));
+    if (failed.length > 0) {
+      toast.error(failed.length === moves.length
+        ? "Event task calendars could not be updated"
+        : `${failed.length} ${failed.length === 1 ? "task" : "tasks"} could not be updated`);
+      return false;
+    }
+
+    const calendarName = writableCalendars.find(({ id }) => id === calendarId)?.name
+      ?? "the selected calendar";
+    toast.success(`Moved ${moves.length} ${moves.length === 1 ? "task" : "tasks"} to ${calendarName}`);
+    return true;
+  }, [replaceLocalTodoistTask, updateTodoistTask, writableCalendars]);
 
   const moveSidebarTodoistTasksToTriage = React.useCallback((
     tasks: TodoistTask[],
@@ -6199,6 +6238,7 @@ export function CalendarApp() {
               setDraggedTodoistTasks(tasks);
               setTodoistCalendarDropPoint(null);
             }}
+            onChangeTasksCalendar={changeSidebarTodoistTasksCalendar}
             onCreateGroup={(group) => setTodoistCustomGroups((current) => {
               const next = current.some(
                 (candidate) => candidate.toLocaleLowerCase() === group.toLocaleLowerCase(),

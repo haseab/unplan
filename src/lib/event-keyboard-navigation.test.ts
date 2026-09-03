@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   crossSurfaceMoveShortcut,
+  eventIdsForKeyboardAction,
   eventGapFillShortcut,
   eventMoveShortcut,
   eventNavigationRangeKeys,
@@ -757,6 +758,10 @@ test("vertical navigation leaves a cross-midnight event for the next task", () =
 });
 
 test("the selected event wins over stale browser focus", () => {
+  assert.deepEqual(
+    [...eventIdsForKeyboardAction(new Set(["clicked"]), "previously-focused")],
+    ["clicked"],
+  );
   assert.equal(
     resolveEventNavigationAnchorKey(
       "selected",

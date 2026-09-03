@@ -37,6 +37,32 @@ export const latestQuarterHour = (date: Date) => {
   return latest;
 };
 
+export const nextAvailableEventStart = (
+  events: CalendarEvent[],
+  requestedStart: Date,
+  durationMinutes: number,
+) => {
+  const durationMs = Math.max(durationMinutes, SNAP_MINUTES) * 60_000;
+  let candidateStart = requestedStart.getTime();
+  const occupiedIntervals = events
+    .filter((event) => !event.allDay)
+    .map((event) => ({
+      end: parseISO(event.end).getTime(),
+      start: parseISO(event.start).getTime(),
+    }))
+    .filter(({ end, start }) => Number.isFinite(start) && Number.isFinite(end) && end > start)
+    .sort((left, right) => left.start - right.start);
+
+  for (const interval of occupiedIntervals) {
+    const candidateEnd = candidateStart + durationMs;
+    if (interval.end <= candidateStart) continue;
+    if (interval.start >= candidateEnd) break;
+    candidateStart = interval.end;
+  }
+
+  return new Date(candidateStart);
+};
+
 export const clamp = (value: number, min: number, max: number) =>
   Math.min(Math.max(value, min), max);
 

@@ -235,6 +235,16 @@ export type CrossSurfaceMoveAction =
   | "triage-sidebar-tasks"
   | "triage-calendar-events";
 
+export const eventIdsForKeyboardAction = (
+  selectedIds: ReadonlySet<string>,
+  focusedId: string | null,
+) => new Set(selectedIds.size > 0
+  ? selectedIds
+  : focusedId
+    ? [focusedId]
+    : []
+);
+
 export const crossSurfaceMoveShortcut = ({
   activeSurface,
   altKey,

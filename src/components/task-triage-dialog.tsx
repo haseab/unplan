@@ -99,6 +99,7 @@ function ExtractedTaskReview({
 
 type NormalTaskReviewProps = {
   error: string | null;
+  folderScrollTop: number;
   folders: TaskTriageFolder[];
   highlightedFolder: number;
   onAssign: (group: string) => void;
@@ -107,6 +108,7 @@ type NormalTaskReviewProps = {
   onOpenOriginal: () => void;
   onQueryChange: (query: string) => void;
   onRename: (title: string) => Promise<void>;
+  onFolderScroll: (scrollTop: number) => void;
   query: string;
   resolving: boolean;
   searchInputRef: React.RefObject<HTMLInputElement | null>;
@@ -116,6 +118,7 @@ type NormalTaskReviewProps = {
 
 function NormalTaskReview({
   error,
+  folderScrollTop,
   folders,
   highlightedFolder,
   onAssign,
@@ -124,6 +127,7 @@ function NormalTaskReview({
   onOpenOriginal,
   onQueryChange,
   onRename,
+  onFolderScroll,
   query,
   resolving,
   searchInputRef,
@@ -136,6 +140,8 @@ function NormalTaskReview({
   const [titleDraft, setTitleDraft] = React.useState(title);
   const [savingTitle, setSavingTitle] = React.useState(false);
   const titleFieldRef = React.useRef<HTMLTextAreaElement>(null);
+  const folderListRef = React.useRef<HTMLDivElement>(null);
+  const folderOptionRefs = React.useRef<Array<HTMLButtonElement | null>>([]);
   const titleFocusAtEndRef = React.useRef(false);
   const titleCommitRef = React.useRef(false);
   const titleCancelRef = React.useRef(false);
@@ -151,6 +157,18 @@ function NormalTaskReview({
       field.setSelectionRange(field.value.length, field.value.length);
     }
   }, [editingTitle, titleDraft]);
+
+  React.useLayoutEffect(() => {
+    if (!folderListRef.current) return;
+    folderListRef.current.scrollTop = folderScrollTop;
+  }, [folderScrollTop]);
+
+  const highlightFolder = (index: number) => {
+    onHighlight(index);
+    window.requestAnimationFrame(() => {
+      folderOptionRefs.current[index]?.scrollIntoView({ block: "nearest" });
+    });
+  };
 
   const beginTitleEdit = (focusAtEnd = false) => {
     if (resolving || savingTitle) return;
@@ -250,7 +268,11 @@ function NormalTaskReview({
             aria-autocomplete="list"
             aria-controls="task-triage-folders"
             aria-label="Search folders"
-            onChange={(event) => onQueryChange(event.target.value)}
+            onChange={(event) => {
+              onFolderScroll(0);
+              if (folderListRef.current) folderListRef.current.scrollTop = 0;
+              onQueryChange(event.target.value);
+            }}
             onKeyDown={(event) => {
               if (
                 event.key === "Tab"
@@ -265,10 +287,10 @@ function NormalTaskReview({
                 beginTitleEdit(true);
               } else if (event.key === "ArrowDown" && folders.length) {
                 event.preventDefault();
-                onHighlight((highlightedFolder + 1) % folders.length);
+                highlightFolder((highlightedFolder + 1) % folders.length);
               } else if (event.key === "ArrowUp" && folders.length) {
                 event.preventDefault();
-                onHighlight((highlightedFolder - 1 + folders.length) % folders.length);
+                highlightFolder((highlightedFolder - 1 + folders.length) % folders.length);
               } else if (event.key === "Enter" && folders.length) {
                 event.preventDefault();
                 onAssign(folders[Math.min(highlightedFolder, folders.length - 1)].name);
@@ -280,7 +302,12 @@ function NormalTaskReview({
           />
           {resolving && <LoaderCircle className="spin" size={14} />}
         </label>
-        <div id="task-triage-folders" role="listbox">
+        <div
+          id="task-triage-folders"
+          onScroll={(event) => onFolderScroll(event.currentTarget.scrollTop)}
+          ref={folderListRef}
+          role="listbox"
+        >
           {folders.length ? folders.map((folder, index) => (
             <button
               aria-label={`Move to ${folder.path}`}
@@ -290,6 +317,7 @@ function NormalTaskReview({
               onClick={() => onAssign(folder.name)}
               onMouseDown={(event) => event.preventDefault()}
               onMouseEnter={() => onHighlight(index)}
+              ref={(element) => { folderOptionRefs.current[index] = element; }}
               role="option"
               style={{ paddingLeft: 12 + folder.depth * 18 }}
               type="button"
@@ -350,6 +378,7 @@ export function TaskTriageDialog({
   const [error, setError] = React.useState<string | null>(null);
   const [folderQuery, setFolderQuery] = React.useState("");
   const [highlightedFolder, setHighlightedFolder] = React.useState(0);
+  const [folderScrollTop, setFolderScrollTop] = React.useState(0);
   const [folderPreferences, setFolderPreferences] = React.useState<ReturnType<typeof readTodoistFolderPreferences>>({
     groupOrder: [],
     groupParents: {},
@@ -377,6 +406,7 @@ export function TaskTriageDialog({
     setError(null);
     setFolderQuery("");
     setHighlightedFolder(0);
+    setFolderScrollTop(0);
     onOpenChange(false);
   }, [onOpenChange]);
 
@@ -573,6 +603,7 @@ export function TaskTriageDialog({
         ) : (
           <NormalTaskReview
             error={error}
+            folderScrollTop={folderScrollTop}
             folders={folders}
             highlightedFolder={highlightedFolder}
             key={`${currentTask.id}:${currentTask.content}`}
@@ -580,6 +611,7 @@ export function TaskTriageDialog({
             onDelete={() => void deleteNormalTask()}
             onHighlight={setHighlightedFolder}
             onOpenOriginal={openOriginalTask}
+            onFolderScroll={setFolderScrollTop}
             onQueryChange={(query) => {
               setFolderQuery(query);
               setHighlightedFolder(0);

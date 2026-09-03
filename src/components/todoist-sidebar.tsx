@@ -16,11 +16,15 @@ import * as React from "react";
 import { TodoistEventCard } from "@/components/todoist-event-card";
 import { TodoistGroupDeleteBlockedDialog } from "@/components/todoist-group-delete-blocked-dialog";
 import { TaskTriageCard } from "@/components/task-triage-card";
+import { TaskCalendarPickerDialog } from "@/components/task-calendar-picker-dialog";
 import { useListMarqueeSelection } from "@/hooks/use-list-marquee-selection";
 import { useTodoistGroupPreferences } from "@/hooks/use-todoist-group-preferences";
 import type { CalendarSource } from "@/lib/calendar-types";
 import { getEventPalette } from "@/lib/event-color";
-import { crossSurfaceMoveShortcut } from "@/lib/event-keyboard-navigation";
+import {
+  crossSurfaceMoveShortcut,
+  isEventCalendarPickerShortcut,
+} from "@/lib/event-keyboard-navigation";
 import {
   adjacentListItemId,
   listItemIdAfterRemoval,
@@ -42,6 +46,7 @@ import {
   type TodoistTaskDropTarget,
 } from "@/lib/todoist";
 import {
+  calendarEventDetailsFromTodoistContent,
   flattenTodoistGroupTree,
   groupTodoistTasks,
   isTodoistGroupDescendant,
@@ -238,6 +243,7 @@ type TodoistSidebarProps = {
   onDeleteGroup: (group: string) => void;
   onCalendarDragEnd: () => void;
   onCalendarDragStart: (tasks: TodoistTask[]) => void;
+  onChangeTasksCalendar: (tasks: TodoistTask[], calendarId: string) => Promise<boolean>;
   onMoveTaskToGroup: (task: TodoistTask, group: string) => Promise<void>;
   onMoveTasksToTriage: (tasks: TodoistTask[], focusedTaskId: string) => void;
   onQueueTaskKeyboardMove: (
@@ -300,6 +306,7 @@ export function TodoistSidebar({
   loading,
   onCalendarDragEnd,
   onCalendarDragStart,
+  onChangeTasksCalendar,
   onCreateGroup,
   onDeleteTasks,
   onDuplicateTask,
@@ -340,6 +347,7 @@ export function TodoistSidebar({
   const [deletingGroups, setDeletingGroups] = React.useState<Set<string>>(new Set());
   const [moving, setMoving] = React.useState<Set<string>>(new Set());
   const [selectedTaskIds, setSelectedTaskIds] = React.useState<Set<string>>(new Set());
+  const [calendarPickerOpen, setCalendarPickerOpen] = React.useState(false);
   const [taskQueueReturnPoints, setTaskQueueReturnPoints] = React.useState<
     TaskQueueReturnPoint[]
   >([]);
@@ -693,6 +701,46 @@ export function TodoistSidebar({
     deleteSidebarTasks(selectedTasks);
   }, [deleteSidebarTasks, orderedVisibleTasks, selectedTaskIds]);
 
+  const selectedTasks = React.useMemo(
+    () => orderedVisibleTasks.filter(({ id }) => selectedTaskIds.has(id)),
+    [orderedVisibleTasks, selectedTaskIds],
+  );
+
+  const selectedTasksCalendarId = React.useMemo(() => {
+    const calendarIds = new Set(selectedTasks.map((task) =>
+      calendarEventDetailsFromTodoistContent(task.content).calendarId ?? ""
+    ));
+    return calendarIds.size === 1 ? [...calendarIds][0] || null : null;
+  }, [selectedTasks]);
+
+  React.useEffect(() => {
+    if (selectedTaskIds.size === 0) return;
+    const openCalendarPicker = (event: KeyboardEvent) => {
+      const target = event.target instanceof HTMLElement ? event.target : null;
+      const sidebarActive = Boolean(target?.closest(".right-sidebar"));
+      const editable = Boolean(target?.isContentEditable
+        || target?.matches("input, textarea, select"));
+      if (
+        !sidebarActive
+        || editable
+        || !isEventCalendarPickerShortcut({
+          altKey: event.altKey,
+          key: event.key,
+          modifier: event.metaKey || event.ctrlKey,
+          modalOpen: Boolean(document.querySelector(".modal-backdrop")),
+          repeat: event.repeat,
+          selectedCount: selectedTaskIds.size,
+          shiftKey: event.shiftKey,
+        })
+      ) return;
+      event.preventDefault();
+      event.stopPropagation();
+      setCalendarPickerOpen(true);
+    };
+    document.addEventListener("keydown", openCalendarPicker, true);
+    return () => document.removeEventListener("keydown", openCalendarPicker, true);
+  }, [selectedTaskIds.size]);
+
   React.useEffect(() => {
     if (selectedTaskIds.size === 0) return;
     const deleteWithKeyboard = (event: KeyboardEvent) => {
@@ -717,6 +765,7 @@ export function TodoistSidebar({
   React.useEffect(() => {
     if (selectedTaskIds.size === 0) return;
     const dismissSelection = (event: KeyboardEvent | PointerEvent) => {
+      if (calendarPickerOpen) return;
       if (event instanceof KeyboardEvent) {
         const nativeFocusNavigation = event.key === "Tab"
           && !event.altKey
@@ -738,7 +787,7 @@ export function TodoistSidebar({
       document.removeEventListener("keydown", dismissSelection, true);
       document.removeEventListener("pointerdown", dismissSelection, true);
     };
-  }, [selectedTaskIds.size]);
+  }, [calendarPickerOpen, selectedTaskIds.size]);
 
   const draggedItem = taskGroups
     .flatMap(([, items]) => items)
@@ -2125,6 +2174,15 @@ export function TodoistSidebar({
         onClose={() => setDeleteBlocked(null)}
         taskCount={deleteBlocked?.taskCount ?? 0}
       />
+      {calendarPickerOpen && selectedTasks.length > 0 && (
+        <TaskCalendarPickerDialog
+          calendars={calendars.filter(({ writable }) => writable !== false)}
+          currentCalendarId={selectedTasksCalendarId}
+          onChange={(calendarId) => onChangeTasksCalendar(selectedTasks, calendarId)}
+          onClose={() => setCalendarPickerOpen(false)}
+          taskCount={selectedTasks.length}
+        />
+      )}
     </div>
   );
 }

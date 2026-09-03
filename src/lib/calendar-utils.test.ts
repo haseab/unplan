@@ -14,6 +14,7 @@ import {
   formatTimeRange,
   latestQuarterHour,
   moveEventToStart,
+  nextAvailableEventStart,
   retimePastEventToLatestQuarterHour,
   resolveKeyboardResizeEdge,
   resizeEvent,
@@ -52,6 +53,33 @@ test("the latest quarter-hour floors the present time", () => {
     new Date(2026, 7, 22, 10, 45),
   );
   assert.equal(present.getMinutes(), 14);
+});
+
+test("present scheduling starts after contiguous occupied events", () => {
+  const requestedStart = new Date(2026, 7, 22, 10, 30);
+  const occupied = [
+    { ...event, id: "current", start: new Date(2026, 7, 22, 10).toISOString(), end: new Date(2026, 7, 22, 11).toISOString() },
+    { ...event, id: "first-scheduled", start: new Date(2026, 7, 22, 11).toISOString(), end: new Date(2026, 7, 22, 11, 30).toISOString() },
+  ];
+
+  assert.deepEqual(
+    nextAvailableEventStart(occupied, requestedStart, 30),
+    new Date(2026, 7, 22, 11, 30),
+  );
+});
+
+test("present scheduling uses an earlier gap when the task fits", () => {
+  const requestedStart = new Date(2026, 7, 22, 10, 30);
+  const laterEvent = {
+    ...event,
+    start: new Date(2026, 7, 22, 11, 30).toISOString(),
+    end: new Date(2026, 7, 22, 12).toISOString(),
+  };
+
+  assert.deepEqual(
+    nextAvailableEventStart([laterEvent], requestedStart, 30),
+    requestedStart,
+  );
 });
 
 test("moving an event to a requested start preserves its duration", () => {

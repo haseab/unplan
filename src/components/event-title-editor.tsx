@@ -9,12 +9,14 @@ import {
 } from "@/components/event-title-field";
 import type { CalendarSource } from "@/lib/calendar-types";
 import {
+  recentEventTitleKey,
   searchRecentEventTitles,
   type RecentEventTitle,
 } from "@/lib/recent-event-titles";
 
 type EventTitleEditorProps = EventTitleFieldProps & {
   calendars: CalendarSource[];
+  currentCalendarId?: string;
   excludeCurrentTitle?: boolean;
   onRecentTitleNavigation?: () => void;
   onRecentTitleUsed: (entry: RecentEventTitle) => void;
@@ -37,6 +39,7 @@ export const EventTitleEditor = React.forwardRef<
   EventTitleEditorProps
 >(function EventTitleEditor({
   calendars,
+  currentCalendarId,
   excludeCurrentTitle = false,
   onBlur,
   onFocus,
@@ -61,10 +64,11 @@ export const EventTitleEditor = React.forwardRef<
     recentTitles,
     value,
     {
+      excludeCalendarId: currentCalendarId,
       excludeTitle: excludeCurrentTitle && !touched ? value : undefined,
       limit: 5,
     },
-  ), [excludeCurrentTitle, recentTitles, touched, value]);
+  ), [currentCalendarId, excludeCurrentTitle, recentTitles, touched, value]);
   const open = focused && !dismissed && results.length > 0;
   const calendarNames = React.useMemo(
     () => new Map(calendars.map((calendar) => [calendar.id, calendar.name])),
@@ -167,7 +171,7 @@ export const EventTitleEditor = React.forwardRef<
                 aria-selected={index === activeIndex}
                 className="recent-event-title-option"
                 id={`${listboxId}-option-${index}`}
-                key={entry.normalizedTitle}
+                key={recentEventTitleKey(entry.calendarId, entry.normalizedTitle)}
                 onClick={() => choose(entry)}
                 onMouseDown={(event) => event.preventDefault()}
                 onMouseEnter={() => setActiveIndex(index)}
