@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { CalendarEvent } from "./calendar-types";
 import {
+  applyRecentEventTitleSelection,
   normalizeRecentEventTitle,
   reconcileRecentEventTitles,
   recentEventEditDurationMinutes,
@@ -52,6 +53,38 @@ test("only pending-created events inherit a recent title's duration", () => {
     pendingCreation: false,
     recentDurationMinutes: 90,
   }), 30);
+});
+
+test("applies a selected recent title and its metadata in one event update", () => {
+  const current = event("current", "Original title", "2026-08-23T10:00:00.000Z");
+  const recent = {
+    calendarColor: "#c061d6",
+    calendarId: "recent-calendar",
+    durationMinutes: 30,
+    historyCount: 2,
+    lastUsedAt: Date.now(),
+    normalizedTitle: "mike shin",
+    selectionCount: 1,
+    title: "Mike Shin",
+  };
+  const selected = applyRecentEventTitleSelection({
+    calendar: {
+      accountId: "account-1",
+      backgroundColor: "#c061d6",
+      foregroundColor: "#ffffff",
+      id: "recent-calendar",
+      name: "Work",
+      provider: "google",
+    },
+    current,
+    pendingCreation: false,
+    recent,
+  });
+
+  assert.equal(selected.title, "Mike Shin");
+  assert.equal(selected.calendarId, "recent-calendar");
+  assert.equal(selected.color, "#c061d6");
+  assert.equal(selected.end, current.end);
 });
 
 test("normalizes whitespace and casing for title identity", () => {

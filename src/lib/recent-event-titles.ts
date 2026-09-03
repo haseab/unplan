@@ -1,4 +1,4 @@
-import type { CalendarEvent } from "./calendar-types";
+import type { CalendarEvent, CalendarSource } from "./calendar-types";
 
 export type RecentEventTitle = {
   calendarColor: string;
@@ -184,3 +184,41 @@ export const recentEventEditDurationMinutes = ({
 }) => pendingCreation
   ? recentEventPreviewDurationMinutes(durations)
   : durations.currentDurationMinutes;
+
+export const applyRecentEventTitleSelection = ({
+  calendar,
+  current,
+  pendingCreation,
+  recent,
+}: {
+  calendar?: CalendarSource;
+  current: CalendarEvent;
+  pendingCreation: boolean;
+  recent: RecentEventTitle;
+}): CalendarEvent => {
+  const start = new Date(current.start);
+  const currentDurationMinutes = Math.max(
+    0,
+    Math.round((new Date(current.end).getTime() - start.getTime()) / 60_000),
+  );
+  const nextDurationMinutes = recentEventEditDurationMinutes({
+    allDay: current.allDay === true,
+    currentDurationMinutes,
+    pendingCreation,
+    recentDurationMinutes: recent.durationMinutes,
+  });
+
+  return {
+    ...current,
+    title: recent.title,
+    ...(calendar ? {
+      calendarId: calendar.id,
+      calendarColor: calendar.backgroundColor,
+      color: current.colorId ? current.color : calendar.backgroundColor,
+      textColor: current.colorId ? current.textColor : calendar.foregroundColor,
+    } : {}),
+    end: pendingCreation
+      ? new Date(start.getTime() + nextDurationMinutes * 60_000).toISOString()
+      : current.end,
+  };
+};

@@ -40,7 +40,7 @@ export function TaskTriageCard({
     <div className="task-triage-card-triggers">
       {extractedCount > 0 && (
         <button
-          aria-label={`Review extracted tasks, ${extractedCount} remaining`}
+          aria-label={`Extracte triage, ${extractedCount} remaining`}
           className="task-triage-card-trigger"
           data-sidebar-navigation-id={sidebarTriageNavigationId("extracted")}
           data-sidebar-navigation-kind="action"
@@ -53,12 +53,12 @@ export function TaskTriageCard({
         >
           <span>{extractedCount}</span>
           <Sparkles aria-hidden="true" size={14} />
-          <strong>Review extracted</strong>
+          <strong>Extracte triage</strong>
         </button>
       )}
       {normalCount > 0 && (
         <button
-          aria-label={`File tasks, ${normalCount} remaining`}
+          aria-label={`Task triage, ${normalCount} remaining`}
           className="task-triage-card-trigger task-triage-card-trigger-normal"
           data-sidebar-navigation-id={sidebarTriageNavigationId("normal")}
           data-sidebar-navigation-kind="action"
@@ -71,7 +71,7 @@ export function TaskTriageCard({
         >
           <span>{normalCount}</span>
           <FolderInput aria-hidden="true" size={14} />
-          <strong>File tasks</strong>
+          <strong>Task triage</strong>
         </button>
       )}
     </div>

@@ -536,7 +536,7 @@ export function TaskTriageDialog({
 
   return (
     <div
-      aria-label={phase === "extracted" ? "Review extracted tasks" : "File tasks"}
+      aria-label={phase === "extracted" ? "Extracte triage" : "Task triage"}
       aria-modal="true"
       className="modal-backdrop task-triage-backdrop"
       onMouseDown={(event) => {

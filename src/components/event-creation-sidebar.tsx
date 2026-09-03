@@ -40,7 +40,7 @@ import {
 import { googleMeetCode } from "@/lib/google-conference-client";
 import { type EventColorChange, getEventTextColor } from "@/lib/event-color";
 import {
-  recentEventEditDurationMinutes,
+  applyRecentEventTitleSelection,
   type RecentEventTitle,
 } from "@/lib/recent-event-titles";
 import { buildTimeZoneGroups, timeZoneDisplayName } from "@/lib/time-zones";
@@ -363,31 +363,12 @@ function EventDetailsEditor({
 
   const applyRecentTitleMetadata = (entry: RecentEventTitle) => {
     const nextCalendar = calendars.find((item) => item.id === entry.calendarId);
-    updateDraft((current) => {
-      const start = new Date(current.start);
-      const currentDurationMinutes = Math.max(
-        0,
-        Math.round((new Date(current.end).getTime() - start.getTime()) / 60_000),
-      );
-      const durationMinutes = recentEventEditDurationMinutes({
-        allDay: current.allDay === true,
-        currentDurationMinutes,
-        pendingCreation,
-        recentDurationMinutes: entry.durationMinutes,
-      });
-      return {
-        ...current,
-        ...(nextCalendar ? {
-          calendarId: nextCalendar.id,
-          calendarColor: nextCalendar.backgroundColor,
-          color: current.colorId ? current.color : nextCalendar.backgroundColor,
-          textColor: current.colorId ? current.textColor : nextCalendar.foregroundColor,
-        } : {}),
-        end: pendingCreation
-          ? new Date(start.getTime() + durationMinutes * 60_000).toISOString()
-          : current.end,
-      };
-    });
+    updateDraft((current) => applyRecentEventTitleSelection({
+      calendar: nextCalendar,
+      current,
+      pendingCreation,
+      recent: entry,
+    }));
   };
 
   const toggleAllDay = (allDay: boolean) => {

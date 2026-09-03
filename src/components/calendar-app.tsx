@@ -1390,10 +1390,15 @@ export function CalendarApp() {
           suppressedRemovalIds: reconciliation.suppressedRemovalIds,
         });
       }
+      const queuedToastEventIds = getActionToastSyncSnapshot().pendingResourceIds;
+      const syncProtectedEventIds = new Set([
+        ...pendingEventMutationOriginsRef.current.keys(),
+        ...queuedToastEventIds,
+      ]);
       const eventsWithPendingUpdates = preservePendingCalendarEventUpdates(
         reconciliation.events,
         eventsRef.current,
-        pendingEventMutationOriginsRef.current.keys(),
+        syncProtectedEventIds,
       );
       const refreshedSelection = reconcileRefreshedEventSelection(
         eventsRef.current,

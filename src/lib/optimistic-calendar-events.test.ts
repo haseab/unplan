@@ -114,6 +114,24 @@ test("keeps a submitted event update when an older provider refresh finishes", (
   assert.equal(reconciled[0].title, "Timetracking");
 });
 
+test("keeps a queued toast event when an in-flight provider refresh finishes", () => {
+  const staleProviderEvent = event("queued-event", "Old position");
+  const optimisticEvent = {
+    ...staleProviderEvent,
+    end: "2026-08-23T11:30:00.000Z",
+    start: "2026-08-23T11:00:00.000Z",
+  };
+
+  const reconciled = preservePendingCalendarEventUpdates(
+    [staleProviderEvent, event("other")],
+    [optimisticEvent, event("other")],
+    [optimisticEvent.id],
+  );
+
+  assert.equal(reconciled[0], optimisticEvent);
+  assert.equal(reconciled[0].start, "2026-08-23T11:00:00.000Z");
+});
+
 test("retains a pending event update missing from the provider refresh", () => {
   const submittedEvent = event("editing", "Timetracking");
 
