@@ -63,7 +63,7 @@ test("dragging farther preserves the snapped event duration", () => {
   });
 });
 
-test("places a 30-minute draft immediately after or before an event", () => {
+test("places a 15-minute draft immediately after or before an event", () => {
   const event = {
     start: new Date(2026, 7, 30, 10, 0).toISOString(),
     end: new Date(2026, 7, 30, 11, 15).toISOString(),
@@ -71,10 +71,10 @@ test("places a 30-minute draft immediately after or before an event", () => {
 
   const after = adjacentEventCreationDates(event, "after");
   assert.deepEqual(parts(after.start), [2026, 8, 30, 11, 15]);
-  assert.deepEqual(parts(after.end), [2026, 8, 30, 11, 45]);
+  assert.deepEqual(parts(after.end), [2026, 8, 30, 11, 30]);
 
   const before = adjacentEventCreationDates(event, "before");
-  assert.deepEqual(parts(before.start), [2026, 8, 30, 9, 30]);
+  assert.deepEqual(parts(before.start), [2026, 8, 30, 9, 45]);
   assert.deepEqual(parts(before.end), [2026, 8, 30, 10, 0]);
 });
 

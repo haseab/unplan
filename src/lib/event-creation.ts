@@ -19,7 +19,7 @@ export type AdjacentEventCreationEdge = "after" | "before";
 export const adjacentEventCreationDates = (
   event: Pick<CalendarEvent, "end" | "start">,
   edge: AdjacentEventCreationEdge,
-  durationMinutes = 30,
+  durationMinutes = 15,
 ) => {
   const anchor = new Date(edge === "after" ? event.end : event.start);
   return edge === "after"
