@@ -8,6 +8,7 @@ import {
   Folder,
   FolderOpen,
   LoaderCircle,
+  RefreshCw,
   Search,
   Trash2,
   X,
@@ -15,7 +16,11 @@ import {
 import * as React from "react";
 import { InlineMarkdownLinks } from "@/components/inline-markdown-links";
 import { todoistTaskUrl, type TodoistTask } from "@/lib/todoist";
-import { calendarEventDetailsFromTodoistContent } from "@/lib/todoist-calendar";
+import {
+  calendarEventDetailsFromTodoistContent,
+  isPriorityTodoistGroup,
+  todoistGroupDisplayName,
+} from "@/lib/todoist-calendar";
 import { readTodoistFolderPreferences } from "@/lib/todoist-folder-backup";
 import {
   taskTriageFolders,
@@ -136,6 +141,9 @@ function NormalTaskReview({
 }: NormalTaskReviewProps) {
   const details = calendarEventDetailsFromTodoistContent(task.content);
   const title = details.title || task.content;
+  const refreshedFromPriority = details.triageSourceGroup
+    ? isPriorityTodoistGroup(details.triageSourceGroup)
+    : false;
   const [editingTitle, setEditingTitle] = React.useState(false);
   const [titleDraft, setTitleDraft] = React.useState(title);
   const [savingTitle, setSavingTitle] = React.useState(false);
@@ -213,6 +221,19 @@ function NormalTaskReview({
     <div className="task-triage-normal">
       <article className="task-triage-task-preview">
         <span>Task to file</span>
+        {details.triageSourceGroup && (
+          <div className="task-triage-refresh-context">
+            <RefreshCw aria-hidden="true" size={14} />
+            <span>
+              <strong>
+                {refreshedFromPriority ? "Refreshed priority task" : "Refreshed task"}
+              </strong>
+              <small>
+                Returned from {todoistGroupDisplayName(details.triageSourceGroup)} after {refreshedFromPriority ? "3 days" : "1 month"}
+              </small>
+            </span>
+          </div>
+        )}
         {editingTitle ? (
           <textarea
             aria-label="Task title"

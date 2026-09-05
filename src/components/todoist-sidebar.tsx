@@ -68,6 +68,10 @@ export const TODOIST_DRAG_TYPE = "application/x-unplan-todoist-task";
 export const TODOIST_MULTI_DRAG_TYPE = "application/x-unplan-todoist-tasks";
 const TODOIST_GROUP_DRAG_TYPE = "application/x-unplan-todoist-group";
 const GROUP_HOVER_EXPAND_DELAY_MS = 750;
+const PRIORITY_SCHEDULING_GROUPS = new Set([
+  "priority right now",
+  "priority today",
+]);
 
 const REORDER_BUG_FLAG = "[BUG:SIDEBAR-REORDER]";
 const FOLDER_REORDER_BUG_FLAG = "[BUG:FOLDER-REORDER]";
@@ -262,6 +266,7 @@ type TodoistSidebarProps = {
   onRenameGroup: (group: string, nextGroup: string) => Promise<void>;
   onReorderTasks: (orderedTaskIds: string[]) => Promise<void>;
   onResizeTask: (task: TodoistTask, durationMinutes: number) => Promise<void>;
+  onSelectionChange: (taskIds: ReadonlySet<string>) => void;
   onOpenExtractedTriage: () => void;
   onOpenNormalTriage: () => void;
   pixelsPerMinute: number;
@@ -324,6 +329,7 @@ export function TodoistSidebar({
   onRenameGroup,
   onReorderTasks,
   onResizeTask,
+  onSelectionChange,
   onOpenExtractedTriage,
   onOpenNormalTriage,
   pixelsPerMinute,
@@ -400,6 +406,12 @@ export function TodoistSidebar({
   React.useEffect(() => {
     calendarDropProjectionRef.current = calendarDropProjection;
   }, [calendarDropProjection]);
+  React.useEffect(() => {
+    onSelectionChange(selectedTaskIds);
+  }, [onSelectionChange, selectedTaskIds]);
+  React.useEffect(() => () => {
+    onSelectionChange(new Set());
+  }, [onSelectionChange]);
   const cancelGroupHoverExpand = React.useCallback((group?: string) => {
     if (group && groupHoverExpandTargetRef.current !== group) return;
     if (groupHoverExpandTimerRef.current !== null) {
@@ -1912,6 +1924,10 @@ export function TodoistSidebar({
               >
                 <span
                   className="todo-event-group-count"
+                  data-needs-scheduling={folderItemCount > 0
+                    && PRIORITY_SCHEDULING_GROUPS.has(groupLabel.trim().toLocaleLowerCase())
+                    ? "true"
+                    : undefined}
                   title={`${folderItemCount} total events`}
                 >
                   {folderItemCount}

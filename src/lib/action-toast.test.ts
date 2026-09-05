@@ -1,11 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  actionToastSyncIntersectsResources,
   clearActionToastResourceHold,
   getActionToastSyncSnapshot,
   hasPendingActionToast,
   hasActiveResourceCreation,
   queueActionToast,
+  reconcileActionToastSyncProtection,
   setActionToastResourceHold,
   triggerToastSubmit,
   triggerToastUndo,
@@ -185,4 +187,79 @@ test("a pending resource is paused only while an editing hold is active", async 
   assert.equal(triggerToastSubmit(), true);
 
   await Promise.resolve();
+});
+
+test("pending sync protection applies only to selected resources", async () => {
+  queueActionToast("Updated task", {
+    ...pendingOptions(() => {}, () => {}, "task-change:selected-task"),
+    resourceIds: ["selected-task"],
+  });
+
+  const snapshot = getActionToastSyncSnapshot();
+  assert.equal(
+    actionToastSyncIntersectsResources(snapshot, new Set(["selected-task"])),
+    true,
+  );
+  assert.equal(
+    actionToastSyncIntersectsResources(snapshot, new Set(["another-task"])),
+    false,
+  );
+  assert.equal(triggerToastSubmit(), true);
+
+  await Promise.resolve();
+});
+
+test("sync protection remains active while a mutation submits", async () => {
+  let releaseSubmit!: () => void;
+  const submitGate = new Promise<void>((resolve) => {
+    releaseSubmit = resolve;
+  });
+  queueActionToast("Updated task", {
+    ...pendingOptions(() => submitGate, () => {}, "task-change:submitting-task"),
+    resourceIds: ["submitting-task"],
+  });
+
+  assert.equal(triggerToastSubmit(), true);
+  assert.equal(
+    actionToastSyncIntersectsResources(
+      getActionToastSyncSnapshot(),
+      new Set(["submitting-task"]),
+    ),
+    true,
+  );
+
+  releaseSubmit();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(
+    actionToastSyncIntersectsResources(
+      getActionToastSyncSnapshot(),
+      new Set(["submitting-task"]),
+    ),
+    false,
+  );
+});
+
+test("sync protection stays latched if selection moves during a mutation", () => {
+  const pendingSnapshot = {
+    pausedResourceIds: [],
+    pendingResourceIds: ["selected-task"],
+  };
+  const initiallyProtected = reconcileActionToastSyncProtection(
+    pendingSnapshot,
+    new Set(["selected-task"]),
+    new Set(),
+  );
+  const protectedAfterSelectionMoves = reconcileActionToastSyncProtection(
+    pendingSnapshot,
+    new Set(["another-task"]),
+    initiallyProtected,
+  );
+  const protectedAfterMutationSettles = reconcileActionToastSyncProtection(
+    { pausedResourceIds: [], pendingResourceIds: [] },
+    new Set(["another-task"]),
+    protectedAfterSelectionMoves,
+  );
+
+  assert.deepEqual([...protectedAfterSelectionMoves], ["selected-task"]);
+  assert.deepEqual([...protectedAfterMutationSettles], []);
 });

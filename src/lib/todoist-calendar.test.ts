@@ -14,6 +14,7 @@ import {
   todoistGroupDropEdgeAtPointer,
   todoistGroupDropTargetsShareBoundary,
   isTodoistCalendarName,
+  isPriorityTodoistGroup,
   moveCalendarEventToTodoist,
   partitionCalendarEventsForTodoist,
   searchTodoistTasks,
@@ -21,6 +22,7 @@ import {
   TODOIST_ROOT_GROUP,
   todoistKeyboardTaskMoveChanges,
   todoistContentWithGroup,
+  todoistContentWithGroupChange,
   todoistTaskFolderMoveOrder,
   todoistTaskFolderMoveTarget,
   todoistCalendarDropSegments,
@@ -92,14 +94,18 @@ test("separates Todoist calendar events from eligible task candidates", () => {
 });
 
 test("encodes calendar event duration and calendar without setting a Todoist due time", () => {
+  const groupChangedAt = new Date("2026-08-22T08:00:00.000Z");
   const calendarEvent = {
     ...event("planning", "work-calendar"),
     end: "2026-08-22T10:15:00.000Z",
     description: "Outline the launch plan",
   };
 
-  assert.deepEqual(todoistTaskInputFromCalendarEvent(calendarEvent, { group: "Launch work" }), {
-    content: "planning [[unplan:v1;duration=75;calendar=work-calendar;color=%23000;group=Launch%20work]]",
+  assert.deepEqual(todoistTaskInputFromCalendarEvent(calendarEvent, {
+    group: "Launch work",
+    groupChangedAt,
+  }), {
+    content: "planning [[unplan:v1;duration=75;calendar=work-calendar;color=%23000;group=Launch%20work;groupChangedAt=2026-08-22T08%3A00%3A00.000Z]]",
     description: "Outline the launch plan",
   });
 });
@@ -221,6 +227,43 @@ test("adds group metadata to ordinary Todoist task content", () => {
   assert.equal(
     todoistContentWithGroup("Plan launch", "Later"),
     "Plan launch [[unplan:v1;group=Later]]",
+  );
+});
+
+test("records an exact folder-change timestamp without discarding task metadata", () => {
+  const changedAt = new Date("2026-09-05T18:30:00.000Z");
+  const updated = todoistContentWithGroupChange(
+    "Plan [[unplan:v1;duration=45;calendar=work;group=Inbox]]",
+    "Priority Later",
+    changedAt,
+  );
+
+  assert.deepEqual(calendarEventDetailsFromTodoistContent(updated), {
+    title: "Plan",
+    durationMinutes: 45,
+    calendarId: "work",
+    group: "Priority Later",
+    groupChangedAt: changedAt.toISOString(),
+  });
+});
+
+test("recognizes priority folders at the root or within a saved hierarchy", () => {
+  assert.equal(isPriorityTodoistGroup("Priority Later"), true);
+  assert.equal(isPriorityTodoistGroup("Work / Priority Today"), true);
+  assert.equal(isPriorityTodoistGroup("Priorities"), false);
+  assert.equal(isPriorityTodoistGroup("Work / Later"), false);
+});
+
+test("timestamps calendar events created directly inside a priority folder", () => {
+  const changedAt = new Date("2026-09-05T18:30:00.000Z");
+  const input = todoistTaskInputFromCalendarEvent(event("planning", "work"), {
+    group: "Priority Later",
+    groupChangedAt: changedAt,
+  });
+
+  assert.equal(
+    calendarEventDetailsFromTodoistContent(input.content).groupChangedAt,
+    changedAt.toISOString(),
   );
 });
 

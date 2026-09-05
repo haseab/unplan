@@ -73,6 +73,7 @@ import { normalizeDayCount, useDayCount } from "@/hooks/use-day-count";
 import { useGuestNotificationConfirmation } from "@/hooks/use-guest-notification-confirmation";
 import { useGoogleCalendarRefresh } from "@/hooks/use-google-calendar-refresh";
 import { useKeyboardRepeat } from "@/hooks/use-keyboard-repeat";
+import { useTaskAgingReconciliation } from "@/hooks/use-task-aging-reconciliation";
 import { useRecentEventHistory } from "@/hooks/use-recent-event-history";
 import { useRecentEventTitles } from "@/hooks/use-recent-event-titles";
 import {
@@ -278,6 +279,7 @@ import {
   todoistContentWithCalendar,
   todoistContentWithDuration,
   todoistContentWithGroup,
+  todoistContentWithGroupChange,
   todoistContentWithTitle,
   todoistEventRenderedHeight,
   todoistKeyboardTaskMoveChanges,
@@ -553,6 +555,8 @@ export function CalendarApp() {
     React.useState<ReadonlySet<string>>(() => new Set());
   const [pendingTodoistFocusTaskId, setPendingTodoistFocusTaskId] =
     React.useState<string | null>(null);
+  const [selectedTodoistTaskIds, setSelectedTodoistTaskIds] =
+    React.useState<ReadonlySet<string>>(() => new Set());
   const [showShortcuts, setShowShortcuts] = React.useState(false);
   const [showSettings, setShowSettings] = React.useState(false);
   const [showDateCommandDialog, setShowDateCommandDialog] = React.useState(false);
@@ -649,7 +653,7 @@ export function CalendarApp() {
     tasks: todoistTasks,
     token: todoistToken,
     updateTask: updateTodoistTask,
-  } = useTodoist();
+  } = useTodoist({ syncProtectedTaskIds: selectedTodoistTaskIds });
   const {
     destinationProject: taskExtractionDestination,
     extractionProject,
@@ -1013,6 +1017,11 @@ export function CalendarApp() {
     });
     return [...groups.values()].sort((left, right) => left.localeCompare(right));
   }, [todoistCustomGroups, visibleTodoistTasks]);
+  useTaskAgingReconciliation({
+    enabled: todoistConnected,
+    tasks: visibleTodoistTasks,
+    updateTask: updateTodoistTask,
+  });
 
   const setDefaultCalendarId = React.useCallback((calendarId: string) => {
     setPreferredCalendarId(calendarId);
@@ -3181,6 +3190,7 @@ export function CalendarApp() {
         onError: (error) => {
           toast.error(error instanceof Error ? error.message : "Task deletion could not be saved");
         },
+        resourceIds: source.map(({ id }) => id),
         submittingMessage: "Deleting tasks…",
       },
     );
@@ -4452,6 +4462,7 @@ export function CalendarApp() {
               : "Todoist task could not be scheduled",
           );
         },
+        resourceIds: moves.map(({ task }) => task.id),
         submittingMessage: moves.length === 1
           ? "Creating calendar event…"
           : "Creating calendar events…",
@@ -5429,7 +5440,7 @@ export function CalendarApp() {
     group: string,
   ) => updateSidebarTodoistTask(
     task,
-    todoistContentWithGroup(task.content, group),
+    todoistContentWithGroupChange(task.content, group),
     "Event group could not be updated",
   ), [updateSidebarTodoistTask]);
 
@@ -5531,7 +5542,7 @@ export function CalendarApp() {
             original: task,
             updated: {
               ...task,
-              content: todoistContentWithGroup(task.content, "Ungrouped"),
+              content: todoistContentWithGroupChange(task.content, "Ungrouped"),
             },
           }];
     });
@@ -5579,6 +5590,7 @@ export function CalendarApp() {
           if (!failedTaskIds) restoreTasks();
           toast.error(error instanceof Error ? error.message : "Tasks could not be moved to Triage");
         },
+        resourceIds: moves.map(({ original }) => original.id),
         submittingMessage: moves.length === 1
           ? "Moving task to Triage…"
           : "Moving tasks to Triage…",
@@ -5606,6 +5618,7 @@ export function CalendarApp() {
         replaceLocalTodoistTask(task);
         toast.error(error instanceof Error ? error.message : "Event could not be renamed");
       },
+      resourceIds: [task.id],
       submittingMessage: "Saving event name…",
     });
     return Promise.resolve();
@@ -5619,9 +5632,11 @@ export function CalendarApp() {
         { edge: "after", taskId: task.id },
       );
       queueActionToast(`Duplicated ${title}`, {
+        createsResourceIds: [duplicatedTask.id],
         duration: toastDuration,
         onUndo: () => removeLocalTodoistTasks([duplicatedTask.id]),
         onSubmit: async () => undefined,
+        resourceIds: [task.id],
       });
       return Promise.resolve();
     }
@@ -5637,6 +5652,7 @@ export function CalendarApp() {
     if (!stagedTask) return Promise.resolve();
 
     queueActionToast(`Duplicated ${title}`, {
+      createsResourceIds: [stagedTask.id],
       duration: toastDuration,
       onUndo: () => removeLocalTodoistTasks([stagedTask.id]),
       onSubmit: async () => {
@@ -5652,6 +5668,7 @@ export function CalendarApp() {
         removeLocalTodoistTasks([stagedTask.id]);
         toast.error(error instanceof Error ? error.message : "Event could not be duplicated");
       },
+      resourceIds: [task.id],
       submittingMessage: "Duplicating event…",
     });
     return Promise.resolve();
@@ -6310,7 +6327,7 @@ export function CalendarApp() {
           ) ?? defaultTaskCalendar;
           const groupedTask = {
             ...task,
-            content: todoistContentWithGroup(
+            content: todoistContentWithGroupChange(
               taskCalendar
                 ? todoistContentWithCalendar(task.content, taskCalendar.id)
                 : task.content,
@@ -6341,6 +6358,7 @@ export function CalendarApp() {
               setShowTaskTriage(true);
               toast.error(error instanceof Error ? error.message : "Task group could not be updated");
             },
+            resourceIds: [task.id],
             submittingMessage: `Moving task to ${group}…`,
           });
         }}
@@ -6363,7 +6381,7 @@ export function CalendarApp() {
           const returnDirection = resolution === "keep" ? "right" : "left";
           const stagedTask = resolution === "keep" ? {
             ...task,
-            content: todoistContentWithGroup(
+            content: todoistContentWithGroupChange(
               todoistContentWithCalendar(task.content, defaultTaskCalendar!.id),
               "Ungrouped",
             ),
@@ -6406,6 +6424,7 @@ export function CalendarApp() {
                     : "Extracted task could not be triaged",
                 );
               },
+              resourceIds: [task.id],
               submittingMessage: resolution === "keep"
                 ? "Moving extracted task to Ungrouped…"
                 : "Deleting extracted task…",
@@ -6501,7 +6520,7 @@ export function CalendarApp() {
                 ? task
                 : {
                     ...task,
-                    content: todoistContentWithGroup(task.content, group),
+                    content: todoistContentWithGroupChange(task.content, group),
                   };
               let session = keyboardTaskGroupMoveSessionRef.current;
               let continuingSession = session?.taskId === task.id;
@@ -6604,6 +6623,7 @@ export function CalendarApp() {
                           : "Task group could not be updated",
                       );
                     },
+                    resourceIds: [session.taskId],
                     submittingMessage: folderChanged
                       ? `Moving task to ${todoistGroupDisplayName(destinationGroup)}…`
                       : "Saving task position…",
@@ -6672,6 +6692,7 @@ export function CalendarApp() {
               todoistContentWithDuration(task.content, durationMinutes),
               "Event duration could not be updated",
             )}
+            onSelectionChange={setSelectedTodoistTaskIds}
             pixelsPerMinute={pixelsPerMinute}
             tasks={visibleTodoistTasks}
             extractedTriageCount={extractedTasks.length}

@@ -233,6 +233,21 @@ export const normalizeTodoistTask = (task: TodoistTaskPayload): TodoistTask => (
 
 type TodoistErrorPayload = { error?: string; message?: string };
 
+export const todoistRequestErrorMessage = (
+  status: number,
+  retryAfterSeconds: number,
+  providerMessage?: string,
+) => {
+  if (status !== 429) return providerMessage || "Todoist rejected the request";
+  if (!Number.isFinite(retryAfterSeconds) || retryAfterSeconds <= 0) {
+    return "Todoist rate limit exceeded. Try again shortly.";
+  }
+  const wait = retryAfterSeconds >= 60
+    ? `${Math.ceil(retryAfterSeconds / 60)} ${Math.ceil(retryAfterSeconds / 60) === 1 ? "minute" : "minutes"}`
+    : `${Math.ceil(retryAfterSeconds)} ${Math.ceil(retryAfterSeconds) === 1 ? "second" : "seconds"}`;
+  return `Todoist rate limit exceeded. Try again in ${wait}.`;
+};
+
 export type TodoistPage<Result> =
   | Result[]
   | {
@@ -285,7 +300,11 @@ const todoistRequest = async <Result>(
   if (!response.ok) {
     const retryAfterSeconds = Number(response.headers.get("retry-after"));
     throw Object.assign(
-      new Error(data?.error ?? data?.message ?? "Todoist rejected the request"),
+      new Error(todoistRequestErrorMessage(
+        response.status,
+        retryAfterSeconds,
+        data?.error ?? data?.message,
+      )),
       {
         status: response.status,
         ...(Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0
@@ -297,12 +316,17 @@ const todoistRequest = async <Result>(
   return data as Result;
 };
 
-export const loadTodoistTasks = async (token: string, projectId: string) => {
+export const loadTodoistTasks = async (
+  token: string,
+  projectId: string,
+  signal?: AbortSignal,
+) => {
   if (!projectId) return [];
   const params = new URLSearchParams({ projectId });
   const data = await todoistRequest<{ tasks: TodoistTaskPayload[] }>(
     `/api/todoist/tasks?${params}`,
     token,
+    { signal },
   );
   return data.tasks
     .map(normalizeTodoistTask)
@@ -312,11 +336,14 @@ export const loadTodoistTasks = async (token: string, projectId: string) => {
     );
 };
 
-export const loadTodoistDestinations = async (token: string) => {
+export const loadTodoistDestinations = async (
+  token: string,
+  signal?: AbortSignal,
+) => {
   const data = await todoistRequest<{
     projects: TodoistProjectPayload[];
     sections: TodoistSectionPayload[];
-  }>("/api/todoist/destinations", token);
+  }>("/api/todoist/destinations", token, { signal });
   return {
     projects: data.projects.map((project) => ({
       id: String(project.id),

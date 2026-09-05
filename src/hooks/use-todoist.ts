@@ -44,6 +44,11 @@ import {
   serializeLocalTasks,
 } from "@/lib/local-tasks";
 import { TodoistStagedTaskCoordinator } from "@/lib/todoist-staged-task-coordinator";
+import {
+  getActionToastSyncSnapshot,
+  reconcileActionToastSyncProtection,
+  subscribeActionToastSync,
+} from "@/lib/action-toast";
 
 export type TodoistBucketSelectionRequest = {
   error: string | null;
@@ -74,7 +79,11 @@ const todoistOrderRetryDelay = (error: unknown, attempt: number) => {
     : Math.min(750 * 2 ** (attempt - 1), 6_000);
 };
 
-export function useTodoist() {
+export function useTodoist({
+  syncProtectedTaskIds = new Set<string>(),
+}: {
+  syncProtectedTaskIds?: ReadonlySet<string>;
+} = {}) {
   const [token, setToken] = React.useState("");
   const [tasks, setTasks] = React.useState<TodoistTask[]>([]);
   const [projects, setProjects] = React.useState<TodoistProject[]>([]);
@@ -87,6 +96,9 @@ export function useTodoist() {
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const taskLoadVersionRef = React.useRef(0);
+  const taskLoadControllerRef = React.useRef<AbortController | null>(null);
+  const syncProtectedTaskIdsRef = React.useRef(syncProtectedTaskIds);
+  const protectedPendingTaskIdsRef = React.useRef<ReadonlySet<string>>(new Set());
   const tasksRef = React.useRef(tasks);
   const projectsRef = React.useRef(projects);
   const bucketProjectIdsRef = React.useRef(bucketProjectIds);
@@ -121,7 +133,36 @@ export function useTodoist() {
 
   React.useEffect(() => () => {
     taskOrderQueueRef.current?.dispose();
+    taskLoadControllerRef.current?.abort();
   }, []);
+
+  React.useEffect(() => {
+    syncProtectedTaskIdsRef.current = syncProtectedTaskIds;
+  }, [syncProtectedTaskIds]);
+
+  const hasProtectedPendingMutation = React.useCallback(() => {
+    protectedPendingTaskIdsRef.current = reconcileActionToastSyncProtection(
+      getActionToastSyncSnapshot(),
+      syncProtectedTaskIdsRef.current,
+      protectedPendingTaskIdsRef.current,
+    );
+    return protectedPendingTaskIdsRef.current.size > 0;
+  }, []);
+
+  React.useEffect(() => subscribeActionToastSync(() => {
+    if (!hasProtectedPendingMutation()) return;
+    const controller = taskLoadControllerRef.current;
+    if (!controller) return;
+    taskLoadVersionRef.current += 1;
+    taskLoadControllerRef.current = null;
+    controller.abort();
+    setLoading(false);
+    console.debug(
+      "[TODOIST:SYNC-PROTECTION]",
+      "Cancelled task sync because a selected task has a pending mutation",
+      { taskIds: [...protectedPendingTaskIdsRef.current] },
+    );
+  }), [hasProtectedPendingMutation]);
 
   React.useEffect(() => {
     tasksRef.current = tasks;
@@ -194,11 +235,22 @@ export function useTodoist() {
       setLoading(false);
       return [];
     }
+    if (hasProtectedPendingMutation()) {
+      console.debug(
+        "[TODOIST:SYNC-PROTECTION]",
+        "Skipped task sync because a selected task has a pending mutation",
+        { taskIds: [...protectedPendingTaskIdsRef.current] },
+      );
+      return tasksRef.current;
+    }
+    taskLoadControllerRef.current?.abort();
+    const controller = new AbortController();
+    taskLoadControllerRef.current = controller;
     const loadVersion = ++taskLoadVersionRef.current;
     setLoading(true);
     setError(null);
     try {
-      const destinations = await loadTodoistDestinations(activeToken);
+      const destinations = await loadTodoistDestinations(activeToken, controller.signal);
       const storedProjectId = window.localStorage.getItem(TODOIST_PROJECT_STORAGE_KEY) ?? "";
       const storedSectionId = window.localStorage.getItem(TODOIST_SECTION_STORAGE_KEY) ?? "";
       const { projectId: nextProjectId, sectionId: nextSectionId } = resolveTodoistDestination(
@@ -216,9 +268,14 @@ export function useTodoist() {
         storedProjectIds: storedBucketIds,
       });
       const nextTasks = (await Promise.all(
-        nextBucketProjectIds.map((projectId) => loadTodoistTasks(activeToken, projectId)),
+        nextBucketProjectIds.map((projectId) =>
+          loadTodoistTasks(activeToken, projectId, controller.signal)
+        ),
       )).flat();
-      if (loadVersion !== taskLoadVersionRef.current) return nextTasks;
+      if (
+        loadVersion !== taskLoadVersionRef.current
+        || hasProtectedPendingMutation()
+      ) return nextTasks;
       const localTasks = tasksRef.current.filter(isLocalTask);
       const optimisticTasks = tasksRef.current.filter(
         (task) => task.optimistic && nextBucketProjectIds.includes(task.projectId),
@@ -245,13 +302,17 @@ export function useTodoist() {
       return nextTasks;
     } catch (caught) {
       if (loadVersion !== taskLoadVersionRef.current) return [];
+      if (caught instanceof DOMException && caught.name === "AbortError") return [];
       const message = caught instanceof Error ? caught.message : "Todoist could not be loaded";
       setError(message);
       throw caught;
     } finally {
+      if (taskLoadControllerRef.current === controller) {
+        taskLoadControllerRef.current = null;
+      }
       if (loadVersion === taskLoadVersionRef.current) setLoading(false);
     }
-  }, [storeBucketProjectIds, token]);
+  }, [hasProtectedPendingMutation, storeBucketProjectIds, token]);
 
   React.useEffect(() => {
     const frame = window.requestAnimationFrame(() => {
@@ -295,6 +356,8 @@ export function useTodoist() {
 
   const disconnect = React.useCallback(() => {
     taskLoadVersionRef.current += 1;
+    taskLoadControllerRef.current?.abort();
+    taskLoadControllerRef.current = null;
     pendingBucketSelectionRef.current?.reject(new Error("Todoist was disconnected"));
     pendingBucketSelectionRef.current = null;
     setBucketSelectionRequest(null);
@@ -653,9 +716,16 @@ export function useTodoist() {
       setLoading(false);
       return;
     }
+    if (hasProtectedPendingMutation()) {
+      setLoading(false);
+      return;
+    }
+    taskLoadControllerRef.current?.abort();
+    const controller = new AbortController();
+    taskLoadControllerRef.current = controller;
     setLoading(true);
     setError(null);
-    void loadTodoistTasks(token, projectId)
+    void loadTodoistTasks(token, projectId, controller.signal)
       .then((nextTasks) => {
         if (loadVersion === taskLoadVersionRef.current) {
           mergeLoadedTasks([projectId], nextTasks);
@@ -663,12 +733,16 @@ export function useTodoist() {
       })
       .catch((caught) => {
         if (loadVersion !== taskLoadVersionRef.current) return;
+        if (caught instanceof DOMException && caught.name === "AbortError") return;
         setError(caught instanceof Error ? caught.message : "Todoist could not be loaded");
       })
       .finally(() => {
+        if (taskLoadControllerRef.current === controller) {
+          taskLoadControllerRef.current = null;
+        }
         if (loadVersion === taskLoadVersionRef.current) setLoading(false);
       });
-  }, [mergeLoadedTasks, preferredProjectId, sections, storeBucketProjectIds, token]);
+  }, [hasProtectedPendingMutation, mergeLoadedTasks, preferredProjectId, sections, storeBucketProjectIds, token]);
 
   const completeTask = React.useCallback(async (taskId: string) => {
     if (isLocalTaskId(taskId)) {

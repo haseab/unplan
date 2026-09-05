@@ -805,6 +805,11 @@ kbd {
 .task-triage-task-card h3 a:hover,
 .task-triage-markdown-title a:hover { text-decoration-color: currentColor; }
 .task-triage-task-card > p { display: -webkit-box; max-width: 390px; margin: 0 auto 2px; overflow: hidden; color: var(--muted); font-size: 10.5px; line-height: 1.45; text-align: center; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.task-triage-refresh-context { display: flex; align-items: center; gap: 8px; margin: 8px 0 12px; padding: 8px 10px; border-radius: 8px; background: rgba(255, 159, 10, 0.12); color: #ffb85c; }
+.task-triage-refresh-context > svg { flex: 0 0 auto; }
+.task-triage-refresh-context > span { display: grid; gap: 1px; min-width: 0; }
+.task-triage-refresh-context strong { font-size: 10px; font-weight: 680; letter-spacing: 0.015em; }
+.task-triage-refresh-context small { overflow: hidden; color: var(--text-soft); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
 .task-triage-error { margin: 10px 5px 0; color: #ef8982; font-size: 10px; text-align: center; }
 .task-triage-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; margin-top: 12px; }
 .task-triage-actions button { display: grid; height: 43px; grid-template-columns: 17px auto 25px; align-items: center; justify-content: center; gap: 8px; border: 1px solid var(--line-strong); border-radius: 11px; background: var(--surface-muted); color: var(--muted); font-size: 11px; font-weight: 620; cursor: pointer; }
@@ -1041,6 +1046,7 @@ kbd {
 .todo-event-group-toggle > svg:nth-child(2) { flex: 0 0 auto; color: var(--text-faint); }
 .todo-event-group-heading strong { overflow: hidden; font-size: 11px; font-weight: 680; letter-spacing: 0.035em; text-overflow: ellipsis; text-transform: uppercase; white-space: nowrap; }
 .todo-event-group-heading > .todo-event-group-count { display: grid; min-width: 22px; height: 20px; justify-self: start; place-items: center; padding: 0 6px; border-radius: 99px; background: var(--hover-strong); color: var(--muted); font-size: 8px; font-weight: 560; font-variant-numeric: tabular-nums; }
+.todo-event-group-heading > .todo-event-group-count[data-needs-scheduling="true"] { background: #ff3b30; color: #fff; font-weight: 650; }
 .todo-event-group-delete-button { width: 22px; flex: 0 0 22px; justify-content: center; padding: 0; color: #e8736b; }
 .todo-event-group-delete-button:hover { background: color-mix(in oklab, #e75a50 13%, transparent); color: #f38a83; }
 .todo-event-group-rename { display: flex; min-width: 0; height: 25px; align-items: center; gap: 5px; padding: 0 4px 0 calc(4px + var(--folder-depth, 0) * 13px); transform-origin: left center; animation: todo-folder-editor-in 160ms cubic-bezier(0.2, 0.8, 0.2, 1); }

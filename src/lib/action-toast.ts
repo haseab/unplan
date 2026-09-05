@@ -46,6 +46,7 @@ export type ActionToastSyncSnapshot = {
 
 const pendingActions = new Map<ToastId, PendingAction>();
 const pendingCoalescedActions = new Map<string, PendingAction>();
+const submittingActions = new Set<PendingAction>();
 const activeActions = new Set<ToastId>();
 const activeCreationActions = new Set<PendingAction>();
 const resourceHolds = new Map<string, ReadonlySet<string>>();
@@ -87,6 +88,9 @@ const publishSyncSnapshot = () => {
     if (action.isPaused()) {
       action.resourceIds.forEach((resourceId) => pausedResourceIds.add(resourceId));
     }
+  });
+  submittingActions.forEach((action) => {
+    action.resourceIds.forEach((resourceId) => pendingResourceIds.add(resourceId));
   });
   syncSnapshot = {
     pausedResourceIds: [...pausedResourceIds],
@@ -246,6 +250,7 @@ export function queueActionToast(
     if (currentOptions.coalesceKey) {
       pendingCoalescedActions.delete(currentOptions.coalesceKey);
     }
+    submittingActions.add(action);
     publishSyncSnapshot();
     toast.loading(currentOptions.submittingMessage ?? "Saving to Google…", {
       action: undefined,
@@ -292,7 +297,9 @@ export function queueActionToast(
     void submission
       .then(() => {
         state = "complete";
+        submittingActions.delete(action);
         activeActions.delete(toastId);
+        publishSyncSnapshot();
         toast.success(currentMessage, {
           action: undefined,
           className: "",
@@ -308,7 +315,9 @@ export function queueActionToast(
       })
       .catch((error: unknown) => {
         state = "failed";
+        submittingActions.delete(action);
         activeActions.delete(toastId);
+        publishSyncSnapshot();
         toast.dismiss(toastId);
         if (currentOptions.onError) currentOptions.onError(error);
         else
@@ -457,8 +466,34 @@ export const clearActionToastResourceHold = (scope: string) => {
 
 export const subscribeActionToastSync = (listener: () => void) => {
   syncListeners.add(listener);
-  return () => syncListeners.delete(listener);
+  return () => {
+    syncListeners.delete(listener);
+  };
 };
 
 export const getActionToastSyncSnapshot = () => syncSnapshot;
 export const getActionToastServerSyncSnapshot = () => EMPTY_SYNC_SNAPSHOT;
+
+export const actionToastSyncIntersectsResources = (
+  snapshot: ActionToastSyncSnapshot,
+  resourceIds: ReadonlySet<string>,
+) => snapshot.pendingResourceIds.some((resourceId) => resourceIds.has(resourceId));
+
+/**
+ * Latches selected pending resources until their mutation settles. This keeps
+ * sync protected when an optimistic mutation moves selection to another task.
+ */
+export const reconcileActionToastSyncProtection = (
+  snapshot: ActionToastSyncSnapshot,
+  selectedResourceIds: ReadonlySet<string>,
+  protectedResourceIds: ReadonlySet<string>,
+) => {
+  const pendingResourceIds = new Set(snapshot.pendingResourceIds);
+  const nextProtectedResourceIds = new Set(
+    [...protectedResourceIds].filter((resourceId) => pendingResourceIds.has(resourceId)),
+  );
+  snapshot.pendingResourceIds.forEach((resourceId) => {
+    if (selectedResourceIds.has(resourceId)) nextProtectedResourceIds.add(resourceId);
+  });
+  return nextProtectedResourceIds;
+};

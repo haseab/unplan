@@ -8,6 +8,7 @@ import {
   collectTodoistPages,
   reorderTodoistTaskIds,
   todoistTaskDropTargetAtPointer,
+  todoistRequestErrorMessage,
   todoistTaskUrl,
   resolveTodoistDestination,
   type TodoistProject,
@@ -36,6 +37,21 @@ test("builds the current Todoist task URL", () => {
   assert.equal(
     todoistTaskUrl("6XGgmFVcrG5RRjVr"),
     "https://app.todoist.com/app/task/6XGgmFVcrG5RRjVr",
+  );
+});
+
+test("turns rate-limit failures into an actionable toast message", () => {
+  assert.equal(
+    todoistRequestErrorMessage(429, 42, "Too many requests"),
+    "Todoist rate limit exceeded. Try again in 42 seconds.",
+  );
+  assert.equal(
+    todoistRequestErrorMessage(429, 60, "Too many requests"),
+    "Todoist rate limit exceeded. Try again in 1 minute.",
+  );
+  assert.equal(
+    todoistRequestErrorMessage(500, 0, "Provider unavailable"),
+    "Provider unavailable",
   );
 });
 

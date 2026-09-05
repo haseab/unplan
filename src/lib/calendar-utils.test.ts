@@ -303,7 +303,7 @@ test("keyboard resize keeps the first or remembered edge when both sides are fre
   }), "start");
 });
 
-test("keyboard resize keeps the first or remembered edge when both sides are locked", () => {
+test("the first keyboard resize only contracts when both sides are locked", () => {
   const previous = {
     ...event,
     id: "previous",
@@ -323,22 +323,28 @@ test("keyboard resize keeps the first or remembered edge when both sides are loc
     events: [event],
     minuteDelta: -15,
     preferredEdge: null,
-  }), "start");
-  assert.equal(resolveKeyboardResizeEdge({
-    candidates,
-    events: [event],
-    minuteDelta: 15,
-    preferredEdge: null,
   }), "end");
   assert.equal(resolveKeyboardResizeEdge({
     candidates,
     events: [event],
     minuteDelta: 15,
+    preferredEdge: null,
+  }), "start");
+  assert.equal(resolveKeyboardResizeEdge({
+    candidates,
+    events: [event],
+    minuteDelta: -15,
     preferredEdge: "start",
   }), "start");
+  assert.equal(resolveKeyboardResizeEdge({
+    candidates,
+    events: [event],
+    minuteDelta: 15,
+    preferredEdge: "end",
+  }), "end");
 });
 
-test("a collision overrides a remembered keyboard resize edge", () => {
+test("keyboard resize stays committed to its remembered edge", () => {
   const next = {
     ...event,
     id: "next",
@@ -351,7 +357,7 @@ test("a collision overrides a remembered keyboard resize edge", () => {
     events: [event],
     minuteDelta: 15,
     preferredEdge: "end",
-  }), "start");
+  }), "end");
 });
 
 test("fills the gap to the nearest timed event on the same day", () => {

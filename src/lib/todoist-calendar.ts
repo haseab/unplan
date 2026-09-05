@@ -16,6 +16,20 @@ export const TODOIST_ROOT_GROUP = "__unplan_root__";
 export const todoistGroupDisplayName = (group: string) =>
   group === TODOIST_ROOT_GROUP ? "Root" : group;
 
+const normalizedTodoistGroupLeaf = (group: string) =>
+  group.split("/").at(-1)?.trim().toLocaleLowerCase() ?? "";
+
+export const isPriorityTodoistGroup = (group: string) => {
+  const leaf = normalizedTodoistGroupLeaf(group);
+  return leaf === "priority" || leaf.startsWith("priority ");
+};
+
+export const isPriorityLaterTodoistGroup = (group: string) =>
+  normalizedTodoistGroupLeaf(group) === "priority later";
+
+export const isTodoistTriageGroup = (group: string | undefined) =>
+  !group?.trim() || group.trim().toLocaleLowerCase() === "ungrouped";
+
 const todoistTaskGroupFromContent = (content: string) =>
   calendarEventDetailsFromTodoistContent(content).group?.trim() || "Ungrouped";
 
@@ -89,20 +103,32 @@ const metadataTokenFromFields = (fields: Map<string, string>) =>
 export const todoistContentFromTaskTitle = (
   title: string,
   group = "Ungrouped",
+  groupChangedAt: Date = new Date(),
 ) => {
+  const normalizedGroup = group.trim() || "Ungrouped";
   const fields = new Map([
     ["duration", "30"],
-    ["group", group.trim() || "Ungrouped"],
+    ["group", normalizedGroup],
   ]);
+  if (!isTodoistTriageGroup(normalizedGroup)) {
+    fields.set("groupChangedAt", groupChangedAt.toISOString());
+  }
   return `${title.trim().replace(/\s+/g, " ")} ${metadataTokenFromFields(fields)}`;
 };
 
-const calendarEventMetadataToken = (event: CalendarEvent, group: string) => [
+const calendarEventMetadataToken = (
+  event: CalendarEvent,
+  group: string,
+  groupChangedAt?: Date,
+) => [
   "[[unplan:v1",
   `duration=${calendarEventDurationMinutes(event)}`,
   `calendar=${encodeURIComponent(event.calendarId)}`,
   `color=${encodeURIComponent(event.color)}`,
   `group=${encodeURIComponent(group)}`,
+  ...(!isTodoistTriageGroup(group)
+    ? [`groupChangedAt=${encodeURIComponent((groupChangedAt ?? new Date()).toISOString())}`]
+    : []),
 ].join(";") + "]]";
 
 export const isTodoistCalendarName = (name: string | undefined) =>
@@ -110,11 +136,15 @@ export const isTodoistCalendarName = (name: string | undefined) =>
 
 export const todoistTaskInputFromCalendarEvent = (
   event: CalendarEvent,
-  options: { group?: string } = {},
+  options: { group?: string; groupChangedAt?: Date } = {},
 ): CreateTodoistTaskInput => {
   const group = options.group?.trim() || "Ungrouped";
   return {
-    content: `${event.title} ${calendarEventMetadataToken(event, group)}`,
+    content: `${event.title} ${calendarEventMetadataToken(
+      event,
+      group,
+      options.groupChangedAt,
+    )}`,
     description: event.description,
   };
 };
@@ -136,6 +166,12 @@ export const calendarEventDetailsFromTodoistContent = (content: string) => {
     ...(fields.get("calendar") ? { calendarId: fields.get("calendar") } : {}),
     ...(fields.get("color") ? { color: fields.get("color") } : {}),
     ...(fields.get("group") ? { group: fields.get("group") } : {}),
+    ...(fields.get("groupChangedAt")
+      ? { groupChangedAt: fields.get("groupChangedAt") }
+      : {}),
+    ...(fields.get("triageSourceGroup")
+      ? { triageSourceGroup: fields.get("triageSourceGroup") }
+      : {}),
   };
 };
 
@@ -201,6 +237,52 @@ export const todoistContentWithGroup = (content: string, group: string) => {
   const metadataMatch = content.match(UNPLAN_METADATA_TOKEN);
   const fields = metadataFields(metadataMatch?.[1]);
   fields.set("group", normalizedGroup);
+  const token = metadataTokenFromFields(fields);
+  return metadataMatch
+    ? content.replace(metadataMatch[0], token)
+    : `${content.trim()} ${token}`;
+};
+
+export const todoistContentWithGroupChange = (
+  content: string,
+  group: string,
+  changedAt: Date = new Date(),
+) => {
+  const normalizedGroup = group.trim() || "Ungrouped";
+  const metadataMatch = content.match(UNPLAN_METADATA_TOKEN);
+  const fields = metadataFields(metadataMatch?.[1]);
+  fields.set("group", normalizedGroup);
+  fields.set("groupChangedAt", changedAt.toISOString());
+  fields.delete("triageSourceGroup");
+  const token = metadataTokenFromFields(fields);
+  return metadataMatch
+    ? content.replace(metadataMatch[0], token)
+    : `${content.trim()} ${token}`;
+};
+
+export const todoistContentReturnedToTriage = (
+  content: string,
+  sourceGroup: string,
+  changedAt: Date = new Date(),
+) => {
+  const metadataMatch = content.match(UNPLAN_METADATA_TOKEN);
+  const fields = metadataFields(metadataMatch?.[1]);
+  fields.set("group", "Ungrouped");
+  fields.set("groupChangedAt", changedAt.toISOString());
+  fields.set("triageSourceGroup", sourceGroup.trim());
+  const token = metadataTokenFromFields(fields);
+  return metadataMatch
+    ? content.replace(metadataMatch[0], token)
+    : `${content.trim()} ${token}`;
+};
+
+export const todoistContentWithGroupChangedAt = (
+  content: string,
+  changedAt: Date = new Date(),
+) => {
+  const metadataMatch = content.match(UNPLAN_METADATA_TOKEN);
+  const fields = metadataFields(metadataMatch?.[1]);
+  fields.set("groupChangedAt", changedAt.toISOString());
   const token = metadataTokenFromFields(fields);
   return metadataMatch
     ? content.replace(metadataMatch[0], token)
