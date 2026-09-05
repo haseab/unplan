@@ -35,6 +35,14 @@ import {
   todoistManagedBucketProjects,
 } from "@/lib/todoist-buckets";
 import { LatestMutationQueue } from "@/lib/mutation-queue";
+import {
+  isLocalTask,
+  isLocalTaskId,
+  LOCAL_TASK_PROJECT_ID,
+  LOCAL_TASKS_STORAGE_KEY,
+  parseLocalTasks,
+  serializeLocalTasks,
+} from "@/lib/local-tasks";
 import { TodoistStagedTaskCoordinator } from "@/lib/todoist-staged-task-coordinator";
 
 export type TodoistBucketSelectionRequest = {
@@ -119,6 +127,13 @@ export function useTodoist() {
     tasksRef.current = tasks;
   }, [tasks]);
 
+  const storeLocalTasks = React.useCallback((nextTasks: TodoistTask[]) => {
+    window.localStorage.setItem(
+      LOCAL_TASKS_STORAGE_KEY,
+      serializeLocalTasks(nextTasks),
+    );
+  }, []);
+
   React.useEffect(() => {
     projectsRef.current = projects;
   }, [projects]);
@@ -168,10 +183,11 @@ export function useTodoist() {
     const activeToken = candidateToken ?? token;
     if (!activeToken) {
       taskLoadVersionRef.current += 1;
-      tasksRef.current = [];
+      const localTasks = tasksRef.current.filter(isLocalTask);
+      tasksRef.current = localTasks;
       projectsRef.current = [];
       bucketProjectIdsRef.current = [];
-      setTasks([]);
+      setTasks(localTasks);
       setProjects([]);
       setSections([]);
       setBucketProjectIds([]);
@@ -203,10 +219,12 @@ export function useTodoist() {
         nextBucketProjectIds.map((projectId) => loadTodoistTasks(activeToken, projectId)),
       )).flat();
       if (loadVersion !== taskLoadVersionRef.current) return nextTasks;
+      const localTasks = tasksRef.current.filter(isLocalTask);
       const optimisticTasks = tasksRef.current.filter(
         (task) => task.optimistic && nextBucketProjectIds.includes(task.projectId),
       );
       const mergedTasks = [
+        ...localTasks,
         ...optimisticTasks,
         ...nextTasks.filter((task) => !optimisticTasks.some(({ id }) => id === task.id)),
       ];
@@ -237,6 +255,15 @@ export function useTodoist() {
 
   React.useEffect(() => {
     const frame = window.requestAnimationFrame(() => {
+      const localTasks = parseLocalTasks(
+        window.localStorage.getItem(LOCAL_TASKS_STORAGE_KEY),
+      );
+      const nextTasks = [
+        ...localTasks,
+        ...tasksRef.current.filter((task) => !isLocalTask(task)),
+      ];
+      tasksRef.current = nextTasks;
+      setTasks(nextTasks);
       setToken(
         window.localStorage.getItem(TODOIST_TOKEN_STORAGE_KEY)?.trim() ?? "",
       );
@@ -276,13 +303,14 @@ export function useTodoist() {
     window.localStorage.removeItem(TODOIST_SECTION_STORAGE_KEY);
     window.localStorage.removeItem(TODOIST_BUCKET_PROJECT_IDS_STORAGE_KEY);
     setToken("");
-    setTasks([]);
+    const localTasks = tasksRef.current.filter(isLocalTask);
+    setTasks(localTasks);
     setProjects([]);
     setSections([]);
     setPreferredProjectId("");
     setPreferredSectionId("");
     setBucketProjectIds([]);
-    tasksRef.current = [];
+    tasksRef.current = localTasks;
     projectsRef.current = [];
     bucketProjectIdsRef.current = [];
     preferredProjectIdRef.current = "";
@@ -489,6 +517,26 @@ export function useTodoist() {
     return task;
   }, [createTaskInBucket]);
 
+  const addLocalTask = React.useCallback((input: {
+    content: string;
+    description?: string;
+  }, placement?: TodoistTaskDropTarget) => {
+    const task: TodoistTask = {
+      id: `local-${crypto.randomUUID()}`,
+      content: input.content,
+      description: input.description ?? "",
+      priority: 1,
+      projectId: LOCAL_TASK_PROJECT_ID,
+      due: null,
+      source: "local",
+    };
+    const nextTasks = insertTodoistTasksAtTarget(tasksRef.current, [task], placement);
+    tasksRef.current = nextTasks;
+    setTasks(nextTasks);
+    storeLocalTasks(nextTasks);
+    return task;
+  }, [storeLocalTasks]);
+
   const stageTasks = React.useCallback((
     inputs: CreateTodoistTaskInput[],
     placement?: TodoistTaskDropTarget,
@@ -563,7 +611,8 @@ export function useTodoist() {
     const nextTasks = tasksRef.current.filter(({ id }) => !ids.has(id));
     tasksRef.current = nextTasks;
     setTasks(nextTasks);
-  }, []);
+    storeLocalTasks(nextTasks);
+  }, [storeLocalTasks]);
 
   const replaceLocalTask = React.useCallback((task: TodoistTask, placement: "end" | "start" = "start") => {
     const existingIndex = tasksRef.current.findIndex(({ id }) => id === task.id);
@@ -574,13 +623,15 @@ export function useTodoist() {
         : [task, ...tasksRef.current];
     tasksRef.current = nextTasks;
     setTasks(nextTasks);
-  }, []);
+    storeLocalTasks(nextTasks);
+  }, [storeLocalTasks]);
 
   const insertLocalTaskAt = React.useCallback((task: TodoistTask, index: number) => {
     const nextTasks = insertTodoistTaskAtIndex(tasksRef.current, task, index);
     tasksRef.current = nextTasks;
     setTasks(nextTasks);
-  }, []);
+    storeLocalTasks(nextTasks);
+  }, [storeLocalTasks]);
 
   const setDestination = React.useCallback((projectId: string, sectionId = "") => {
     const projectChanged = projectId !== preferredProjectId;
@@ -620,15 +671,31 @@ export function useTodoist() {
   }, [mergeLoadedTasks, preferredProjectId, sections, storeBucketProjectIds, token]);
 
   const completeTask = React.useCallback(async (taskId: string) => {
+    if (isLocalTaskId(taskId)) {
+      const nextTasks = tasksRef.current.filter((task) => task.id !== taskId);
+      tasksRef.current = nextTasks;
+      setTasks(nextTasks);
+      storeLocalTasks(nextTasks);
+      return;
+    }
     if (!token) throw new Error("Connect Todoist in Settings first");
     await closeTodoistTask(token, taskId);
     setTasks((current) => current.filter((task) => task.id !== taskId));
-  }, [token]);
+  }, [storeLocalTasks, token]);
 
   const updateTask = React.useCallback(async (
     taskId: string,
     input: UpdateTodoistTaskInput,
   ) => {
+    if (isLocalTaskId(taskId)) {
+      const nextTasks = tasksRef.current.map((candidate) =>
+        candidate.id === taskId ? { ...candidate, ...input } : candidate,
+      );
+      tasksRef.current = nextTasks;
+      setTasks(nextTasks);
+      storeLocalTasks(nextTasks);
+      return nextTasks.find((task) => task.id === taskId)!;
+    }
     if (!token) throw new Error("Connect Todoist in Settings first");
     const task = await updateTodoistTask(token, taskId, input);
     const nextTasks = tasksRef.current.map((candidate) =>
@@ -637,7 +704,7 @@ export function useTodoist() {
     tasksRef.current = nextTasks;
     setTasks(nextTasks);
     return task;
-  }, [token]);
+  }, [storeLocalTasks, token]);
 
   const saveTaskOrderByProject = React.useCallback(async ({
     previousTasks,
@@ -664,7 +731,6 @@ export function useTodoist() {
   saveTaskOrderRef.current = saveTaskOrderByProject;
 
   const reorderTasks = React.useCallback(async (orderedTaskIds: string[]) => {
-    if (!token) throw new Error("Connect Todoist in Settings first");
     const previousTasks = tasksRef.current;
     const reorderedTasks = applyTodoistTaskOrder(previousTasks, orderedTaskIds);
     console.debug("[BUG:SIDEBAR-REORDER]", "store:optimistic-order", {
@@ -674,10 +740,11 @@ export function useTodoist() {
     });
     tasksRef.current = reorderedTasks;
     setTasks(reorderedTasks);
+    storeLocalTasks(reorderedTasks);
     setError(null);
     try {
       const changedOrders = changedTodoistProjectOrders(previousTasks, reorderedTasks);
-      if (changedOrders.length) {
+      if (token && changedOrders.length) {
         await taskOrderQueueRef.current!.enqueue({
           previousTasks,
           tasks: reorderedTasks,
@@ -702,16 +769,17 @@ export function useTodoist() {
       setError(message);
       throw caught;
     }
-  }, [token]);
+  }, [storeLocalTasks, token]);
 
   const reorderLocalTasks = React.useCallback((orderedTaskIds: string[]) => {
     const reorderedTasks = applyTodoistTaskOrder(tasksRef.current, orderedTaskIds);
     tasksRef.current = reorderedTasks;
     setTasks(reorderedTasks);
-  }, []);
+    storeLocalTasks(reorderedTasks);
+  }, [storeLocalTasks]);
 
   const persistTaskOrder = React.useCallback(async (previousTaskIds?: string[]) => {
-    if (!token) throw new Error("Connect Todoist in Settings first");
+    if (!token) return;
     const previousTasks = previousTaskIds
       ? applyTodoistTaskOrder(tasksRef.current, previousTaskIds)
       : null;
@@ -722,6 +790,13 @@ export function useTodoist() {
   }, [token]);
 
   const deleteTask = React.useCallback(async (taskId: string) => {
+    if (isLocalTaskId(taskId)) {
+      const nextTasks = tasksRef.current.filter((task) => task.id !== taskId);
+      tasksRef.current = nextTasks;
+      setTasks(nextTasks);
+      storeLocalTasks(nextTasks);
+      return;
+    }
     if (!token) throw new Error("Connect Todoist in Settings first");
     const stagedCommit = stagedTaskCoordinatorRef.current!.cancel(taskId);
     if (stagedCommit !== undefined) {
@@ -734,9 +809,10 @@ export function useTodoist() {
       return;
     }
     await deleteTodoistTask(token, taskId);
-  }, [token]);
+  }, [storeLocalTasks, token]);
   return {
     addTask,
+    addLocalTask,
     bucketProjectIds,
     bucketSelectionRequest,
     cancelBucketSelection,

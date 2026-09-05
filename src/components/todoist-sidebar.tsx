@@ -4,12 +4,11 @@ import {
   CalendarPlus,
   ChevronRight,
   Folder,
+  FolderPlus,
   FolderOpen,
-  Inbox,
   Pencil,
   Plus,
   RefreshCw,
-  Settings,
   Trash2,
 } from "lucide-react";
 import * as React from "react";
@@ -237,13 +236,18 @@ type TodoistSidebarProps = {
   focusTaskId: string | null;
   loading: boolean;
   onCreateGroup: (group: string) => void;
+  onCreateTask: (title: string) => void;
   onDeleteTasks: (tasks: TodoistTask[]) => Promise<boolean>;
   onDuplicateTask: (task: TodoistTask) => Promise<void>;
   onFocusTaskHandled: () => void;
   onDeleteGroup: (group: string) => void;
   onCalendarDragEnd: () => void;
   onCalendarDragStart: (tasks: TodoistTask[]) => void;
-  onChangeTasksCalendar: (tasks: TodoistTask[], calendarId: string) => Promise<boolean>;
+  onChangeTasksCalendar: (
+    tasks: TodoistTask[],
+    calendarId: string,
+    onRestoreFocus: () => void,
+  ) => Promise<boolean>;
   onMoveTaskToGroup: (task: TodoistTask, group: string) => Promise<void>;
   onMoveTasksToTriage: (tasks: TodoistTask[], focusedTaskId: string) => void;
   onQueueTaskKeyboardMove: (
@@ -253,7 +257,6 @@ type TodoistSidebarProps = {
     previousOrderedTaskIds: string[],
     onUndo: () => void,
   ) => void;
-  onOpenSettings: () => void;
   onRefresh: () => Promise<unknown>;
   onRenameTask: (task: TodoistTask, title: string) => Promise<void>;
   onRenameGroup: (group: string, nextGroup: string) => Promise<void>;
@@ -308,6 +311,7 @@ export function TodoistSidebar({
   onCalendarDragStart,
   onChangeTasksCalendar,
   onCreateGroup,
+  onCreateTask,
   onDeleteTasks,
   onDuplicateTask,
   onFocusTaskHandled,
@@ -315,7 +319,6 @@ export function TodoistSidebar({
   onMoveTaskToGroup,
   onMoveTasksToTriage,
   onQueueTaskKeyboardMove,
-  onOpenSettings,
   onRefresh,
   onRenameTask,
   onRenameGroup,
@@ -329,6 +332,7 @@ export function TodoistSidebar({
   normalTriageCount,
 }: TodoistSidebarProps) {
   const triageCount = extractedTriageCount + normalTriageCount;
+  const [creatingTask, setCreatingTask] = React.useState(false);
   const [creatingGroup, setCreatingGroup] = React.useState(false);
   const [dragOverGroup, setDragOverGroup] = React.useState<string | null>(null);
   const [draggedGroup, setDraggedGroup] = React.useState<string | null>(null);
@@ -338,6 +342,7 @@ export function TodoistSidebar({
   const [creatingChildFor, setCreatingChildFor] = React.useState<string | null>(null);
   const [childGroupName, setChildGroupName] = React.useState("");
   const [groupName, setGroupName] = React.useState("");
+  const [taskName, setTaskName] = React.useState("");
   const [renamingGroup, setRenamingGroup] = React.useState<string | null>(null);
   const [renameValue, setRenameValue] = React.useState("");
   const [deleteBlocked, setDeleteBlocked] = React.useState<{
@@ -352,6 +357,8 @@ export function TodoistSidebar({
     TaskQueueReturnPoint[]
   >([]);
   const groupsRef = React.useRef<HTMLDivElement>(null);
+  const createGroupFormRef = React.useRef<HTMLFormElement>(null);
+  const createTaskFormRef = React.useRef<HTMLFormElement>(null);
   const draggedGroupRef = React.useRef<string | null>(null);
   const groupDropTargetRef = React.useRef<GroupDropTarget | null>(null);
   const groupDragCancelledRef = React.useRef(false);
@@ -372,6 +379,8 @@ export function TodoistSidebar({
   const skipNextTaskLayoutAnimationRef = React.useRef(false);
   const taskPositionsRef = React.useRef<Map<string, number>>(new Map());
   const selectionAnchorRef = React.useRef<string | null>(null);
+  const calendarPickerReturnTaskIdRef = React.useRef<string | null>(null);
+  const calendarPickerReturnSelectionRef = React.useRef<Set<string>>(new Set());
   const pendingKeyboardRevealRef = React.useRef<{
     align: "nearest" | "start";
     taskId: string;
@@ -583,8 +592,7 @@ export function TodoistSidebar({
     selectionAnchorRef.current = taskId;
     setSelectedTaskIds(new Set([taskId]));
   }, []);
-  const focusTask = React.useCallback((taskId: string) => {
-    activateTask(taskId);
+  const focusTaskElement = React.useCallback((taskId: string) => {
     window.requestAnimationFrame(() => {
       const target = groupsRef.current?.querySelector<HTMLElement>(
         `[data-sidebar-navigation-id="${CSS.escape(sidebarTaskNavigationId(taskId))}"]`,
@@ -592,7 +600,20 @@ export function TodoistSidebar({
       target?.focus({ preventScroll: true });
       target?.scrollIntoView({ behavior: "auto", block: "nearest" });
     });
-  }, [activateTask]);
+  }, []);
+  const focusTask = React.useCallback((taskId: string) => {
+    activateTask(taskId);
+    focusTaskElement(taskId);
+  }, [activateTask, focusTaskElement]);
+  const restoreTaskSelectionFocus = React.useCallback((
+    taskId: string | null,
+    selection: ReadonlySet<string>,
+  ) => {
+    if (!taskId) return;
+    selectionAnchorRef.current = taskId;
+    setSelectedTaskIds(new Set(selection));
+    focusTaskElement(taskId);
+  }, [focusTaskElement]);
 
   React.useEffect(() => {
     if (!focusTaskId) return;
@@ -735,11 +756,25 @@ export function TodoistSidebar({
       ) return;
       event.preventDefault();
       event.stopPropagation();
+      const focusedTaskId = target?.closest<HTMLElement>("[data-task-shell-id]")
+        ?.dataset.taskShellId;
+      calendarPickerReturnTaskIdRef.current = focusedTaskId
+        ?? selectionAnchorRef.current
+        ?? selectedTasks[0]?.id
+        ?? null;
+      calendarPickerReturnSelectionRef.current = new Set(selectedTaskIds);
       setCalendarPickerOpen(true);
     };
     document.addEventListener("keydown", openCalendarPicker, true);
     return () => document.removeEventListener("keydown", openCalendarPicker, true);
-  }, [selectedTaskIds.size]);
+  }, [selectedTaskIds, selectedTasks]);
+
+  const closeCalendarPicker = React.useCallback(() => {
+    const taskId = calendarPickerReturnTaskIdRef.current;
+    const selection = new Set(calendarPickerReturnSelectionRef.current);
+    setCalendarPickerOpen(false);
+    restoreTaskSelectionFocus(taskId, selection);
+  }, [restoreTaskSelectionFocus]);
 
   React.useEffect(() => {
     if (selectedTaskIds.size === 0) return;
@@ -969,6 +1004,38 @@ export function TodoistSidebar({
     onCreateGroup(normalized);
     setGroupName("");
     setCreatingGroup(false);
+  };
+
+  const cancelGroupCreation = React.useCallback(() => {
+    setGroupName("");
+    setCreatingGroup(false);
+  }, []);
+
+  const cancelTaskCreation = React.useCallback(() => {
+    setTaskName("");
+    setCreatingTask(false);
+  }, []);
+
+  React.useEffect(() => {
+    if (!creatingGroup && !creatingTask) return;
+    const cancelOnOutsidePointer = (event: PointerEvent) => {
+      const target = event.target as Node;
+      if (creatingGroup && !createGroupFormRef.current?.contains(target)) {
+        cancelGroupCreation();
+      }
+      if (creatingTask && !createTaskFormRef.current?.contains(target)) {
+        cancelTaskCreation();
+      }
+    };
+    document.addEventListener("pointerdown", cancelOnOutsidePointer);
+    return () => document.removeEventListener("pointerdown", cancelOnOutsidePointer);
+  }, [cancelGroupCreation, cancelTaskCreation, creatingGroup, creatingTask]);
+
+  const createTask = () => {
+    const normalized = taskName.trim().replace(/\s+/g, " ");
+    if (!normalized) return;
+    onCreateTask(normalized);
+    cancelTaskCreation();
   };
 
   const createChildGroup = (parentGroup: string) => {
@@ -1406,37 +1473,78 @@ export function TodoistSidebar({
       });
   };
 
-  if (!connected && triageCount <= 0) {
-    return (
-      <div className="todoist-empty">
-        <span><Inbox size={20} /></span>
-        <strong>Connect Todoist</strong>
-        <p>Use Todoist to store event tasks that are not currently on the calendar.</p>
-        <button type="button" onClick={onOpenSettings}><Settings size={14} /> Open Settings</button>
-      </div>
-    );
-  }
-
   return (
     <div className="todoist-panel">
       <div className="todo-event-list-heading">
         <span><strong>Event Storage</strong><small>{tasks.length} {tasks.length === 1 ? "event task" : "event tasks"}</small></span>
         <div>
-          <button type="button" onClick={() => setCreatingGroup((current) => !current)} aria-label="Create group">
+          <button
+            type="button"
+            onClick={() => {
+              cancelGroupCreation();
+              setCreatingTask((current) => !current);
+            }}
+            onPointerDown={(event) => event.stopPropagation()}
+            aria-label="Add task"
+            title="Add task"
+          >
             <Plus size={14} />
           </button>
-          <button type="button" onClick={() => void onRefresh()} disabled={loading} aria-label="Refresh Todoist">
+          <button
+            type="button"
+            onClick={() => {
+              cancelTaskCreation();
+              setCreatingGroup((current) => !current);
+            }}
+            onPointerDown={(event) => event.stopPropagation()}
+            aria-label="Create folder"
+            title="Create folder"
+          >
+            <FolderPlus size={14} />
+          </button>
+          <button type="button" onClick={() => void onRefresh()} disabled={!connected || loading} aria-label="Refresh Todoist">
             <RefreshCw className={loading ? "spin" : ""} size={13} />
           </button>
         </div>
       </div>
 
+      {creatingTask && (
+        <form
+          className="todo-event-group-form"
+          onSubmit={(event) => { event.preventDefault(); createTask(); }}
+          ref={createTaskFormRef}
+        >
+          <input
+            aria-label="Task name"
+            autoFocus
+            onChange={(event) => setTaskName(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key !== "Escape") return;
+              event.preventDefault();
+              cancelTaskCreation();
+            }}
+            placeholder="Task name…"
+            value={taskName}
+          />
+          <button disabled={!taskName.trim()} type="submit">Add</button>
+        </form>
+      )}
+
       {creatingGroup && (
-        <form className="todo-event-group-form" onSubmit={(event) => { event.preventDefault(); createGroup(); }}>
+        <form
+          className="todo-event-group-form"
+          onSubmit={(event) => { event.preventDefault(); createGroup(); }}
+          ref={createGroupFormRef}
+        >
           <input
             aria-label="Group name"
             autoFocus
             onChange={(event) => setGroupName(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key !== "Escape") return;
+              event.preventDefault();
+              cancelGroupCreation();
+            }}
             placeholder="Folder name…"
             value={groupName}
           />
@@ -1453,7 +1561,7 @@ export function TodoistSidebar({
 
       {error && <div className="todoist-error">{error}</div>}
       {!loading && tasks.length === 0 && customGroups.length === 0 && triageCount <= 0 ? (
-        <div className="todoist-list-empty"><CalendarPlus size={19} /><strong>No stored event tasks</strong><span>Drag an event here to take it off the calendar and store it as a task.</span></div>
+        <div className="todoist-list-empty"><CalendarPlus size={19} /><strong>No stored event tasks</strong><span>Add a task here or drag an event from the calendar to store it for later.</span></div>
       ) : (
         <div
           className="todo-event-groups"
@@ -2178,8 +2286,16 @@ export function TodoistSidebar({
         <TaskCalendarPickerDialog
           calendars={calendars.filter(({ writable }) => writable !== false)}
           currentCalendarId={selectedTasksCalendarId}
-          onChange={(calendarId) => onChangeTasksCalendar(selectedTasks, calendarId)}
-          onClose={() => setCalendarPickerOpen(false)}
+          onChange={(calendarId) => {
+            const taskId = calendarPickerReturnTaskIdRef.current;
+            const selection = new Set(calendarPickerReturnSelectionRef.current);
+            return onChangeTasksCalendar(
+              selectedTasks,
+              calendarId,
+              () => restoreTaskSelectionFocus(taskId, selection),
+            );
+          }}
+          onClose={closeCalendarPicker}
           taskCount={selectedTasks.length}
         />
       )}

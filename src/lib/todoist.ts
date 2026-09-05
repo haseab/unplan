@@ -40,6 +40,7 @@ export type TodoistTask = {
   optimistic?: boolean;
   priority: number;
   projectId: string;
+  source?: "local";
   due: {
     date: string;
     datetime?: string;
@@ -159,7 +160,7 @@ export const applyTodoistTaskOrder = (
 const persistedTaskIdsByProject = (tasks: TodoistTask[]) => {
   const result = new Map<string, string[]>();
   tasks.forEach((task) => {
-    if (task.optimistic) return;
+    if (task.optimistic || task.source === "local") return;
     const taskIds = result.get(task.projectId) ?? [];
     taskIds.push(task.id);
     result.set(task.projectId, taskIds);

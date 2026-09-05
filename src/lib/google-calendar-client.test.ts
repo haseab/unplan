@@ -3,6 +3,7 @@ import test from "node:test";
 import type { CalendarEvent, CalendarSource } from "./calendar-types";
 import {
   mergeGoogleEventsAfterPartialSync,
+  mergeGoogleEventsForRange,
   reconcileImportedGoogleCalendars,
   reconcileImportedGoogleVisibility,
   retainEventsForFailedGoogleAccounts,
@@ -37,6 +38,57 @@ test("partial event syncs keep the last known events from failed accounts", () =
       new Set(["failed-account"]),
     ).map(({ id }) => id),
     ["healthy-event", "failed-event"],
+  );
+});
+
+test("range loads replace only events overlapping the loaded slice", () => {
+  const healthyCalendar = calendar("healthy-account", "work");
+  const inside = {
+    ...event("inside", healthyCalendar),
+    end: "2026-09-11T10:00:00.000Z",
+    start: "2026-09-11T09:00:00.000Z",
+  };
+  const outside = {
+    ...event("outside", healthyCalendar),
+    end: "2026-09-03T10:00:00.000Z",
+    start: "2026-09-03T09:00:00.000Z",
+  };
+  const replacement = { ...inside, title: "Updated" };
+
+  assert.deepEqual(
+    mergeGoogleEventsForRange(
+      [inside, outside],
+      [replacement],
+      new Set(),
+      new Set([healthyCalendar.id]),
+      new Date("2026-09-08T00:00:00.000Z").getTime(),
+      new Date("2026-09-15T00:00:00.000Z").getTime(),
+    ).map(({ id, title }) => ({ id, title })),
+    [
+      { id: "inside", title: "Updated" },
+      { id: "outside", title: "outside" },
+    ],
+  );
+});
+
+test("range loads preserve stale slice events for a failed account", () => {
+  const failedCalendar = calendar("failed-account", "personal");
+  const stale = {
+    ...event("stale", failedCalendar),
+    end: "2026-09-11T10:00:00.000Z",
+    start: "2026-09-11T09:00:00.000Z",
+  };
+
+  assert.deepEqual(
+    mergeGoogleEventsForRange(
+      [stale],
+      [],
+      new Set(["failed-account"]),
+      new Set([failedCalendar.id]),
+      new Date("2026-09-08T00:00:00.000Z").getTime(),
+      new Date("2026-09-15T00:00:00.000Z").getTime(),
+    ).map(({ id }) => id),
+    ["stale"],
   );
 });
 

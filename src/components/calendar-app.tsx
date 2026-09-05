@@ -243,10 +243,17 @@ import {
   loadBrowserGoogleCalendars,
   loadBrowserGoogleEvents,
   mergeGoogleEventsAfterPartialSync,
+  mergeGoogleEventsForRange,
   reconcileImportedGoogleCalendars,
   reconcileImportedGoogleVisibility,
   retainEventsForFailedGoogleAccounts,
 } from "@/lib/google-calendar-client";
+import {
+  includeCalendarEventLoadRange,
+  planCalendarEventLoad,
+  type CalendarEventLoadCoverage,
+  type CalendarEventLoadRange,
+} from "@/lib/calendar-event-load-range";
 import { createGoogleMeet } from "@/lib/google-conference-client";
 import { isEventPast } from "@/lib/event-time";
 import {
@@ -260,12 +267,14 @@ import {
   todoistTaskDropTargetAtPointer,
   type TodoistTask,
 } from "@/lib/todoist";
+import { isLocalTask } from "@/lib/local-tasks";
 import { TODOIST_CUSTOM_GROUPS_STORAGE_KEY } from "@/lib/todoist-folder-backup";
 import {
   calendarEventDurationMinutes,
   calendarEventDetailsFromTodoistContent,
   partitionCalendarEventsForTodoist,
   todoistCalendarDropSegments,
+  todoistContentFromTaskTitle,
   todoistContentWithCalendar,
   todoistContentWithDuration,
   todoistContentWithGroup,
@@ -275,6 +284,7 @@ import {
   todoistTaskInputFromCalendarEvent,
   todoistTaskDisplayTitle,
   todoistGroupDisplayName,
+  TODOIST_ROOT_GROUP,
 } from "@/lib/todoist-calendar";
 import { findTechnicalitiesCalendar } from "@/lib/task-extraction";
 
@@ -376,6 +386,19 @@ type EventSearchCacheEntry = {
   events: CalendarEvent[] | null;
   expiresAt: number;
   promise: Promise<CalendarEvent[]>;
+};
+
+type GoogleEventLoadRequest = {
+  key: string;
+  mode: "merge" | "replace";
+  range: CalendarEventLoadRange;
+};
+
+type GoogleEventLoadTarget = {
+  forceReplaceRevision: number | null;
+  key: string;
+  range: CalendarEventLoadRange;
+  revision: number;
 };
 
 type Marquee = { x1: number; y1: number; x2: number; y2: number };
@@ -599,6 +622,7 @@ export function CalendarApp() {
   const {
     bucketProjectIds: todoistBucketProjectIds,
     bucketSelectionRequest: todoistBucketSelectionRequest,
+    addLocalTask,
     cancelBucketSelection: cancelTodoistBucketSelection,
     chooseBucketProject: chooseTodoistBucketProject,
     commitStagedTask: commitStagedTodoistTask,
@@ -746,6 +770,12 @@ export function CalendarApp() {
   );
   const googleEventsLoadControllerRef = React.useRef<AbortController | null>(null);
   const googleEventsLoadVersionRef = React.useRef(0);
+  const googleEventsCoverageRef = React.useRef<CalendarEventLoadCoverage | null>(null);
+  const googleEventsDesiredRangeRef = React.useRef<GoogleEventLoadTarget | null>(null);
+  const googleEventsRangeWorkerRef = React.useRef<Promise<void> | null>(null);
+  const loadGoogleEventsRef = React.useRef<(
+    request: GoogleEventLoadRequest,
+  ) => Promise<boolean>>(async () => false);
   const pendingSearchNavigationRef = React.useRef<{
     calendarId: string;
     direction: DateNavigationDirection;
@@ -900,9 +930,15 @@ export function CalendarApp() {
     ),
     [eventDetailsPreview, events, selected],
   );
-  const visibleKey = React.useMemo(
-    () => [...visibleCalendars].sort().join("|"),
-    [visibleCalendars],
+  const googleEventLoadKey = React.useMemo(
+    () => calendars
+      .filter((calendar) =>
+        calendar.provider === "google" && visibleCalendars.has(calendar.id)
+      )
+      .map((calendar) => `${calendar.id}:${calendar.backgroundColor}`)
+      .sort()
+      .join("|"),
+    [calendars, visibleCalendars],
   );
   const writableCalendars = React.useMemo(
     () => calendars.filter((calendar) => calendar.writable !== false),
@@ -950,8 +986,11 @@ export function CalendarApp() {
   }, [defaultCalendar, selectedEvents]);
   const visibleTodoistTasks = React.useMemo(
     () => todoistTasks.filter((task) =>
-      todoistBucketProjectIds.includes(task.projectId)
-      && task.projectId !== extractionProject?.id
+      isLocalTask(task)
+      || (
+        todoistBucketProjectIds.includes(task.projectId)
+        && task.projectId !== extractionProject?.id
+      )
     ),
     [extractionProject?.id, todoistBucketProjectIds, todoistTasks],
   );
@@ -1323,11 +1362,13 @@ export function CalendarApp() {
     return () => window.clearTimeout(timer);
   }, [importGoogleCalendars]);
 
-  const loadGoogleEvents = React.useCallback(async () => {
-    if (!google.connected) return;
+  const loadGoogleEvents = React.useCallback(async (
+    request: GoogleEventLoadRequest,
+  ) => {
+    if (!google.connected) return false;
     if (hasActiveActionToast()) {
       console.debug("[BUG:TODOIST-CALENDAR-DROP] [CALENDAR:REFRESH] skipped while action is active");
-      return;
+      return false;
     }
     const active = calendars.filter(
       (calendar) => calendar.provider === "google" && visibleCalendars.has(calendar.id),
@@ -1337,7 +1378,7 @@ export function CalendarApp() {
       googleEventsLoadControllerRef.current = null;
       googleEventsLoadVersionRef.current += 1;
       setEvents([]);
-      return;
+      return true;
     }
     googleEventsLoadControllerRef.current?.abort();
     const controller = new AbortController();
@@ -1345,8 +1386,8 @@ export function CalendarApp() {
     const loadVersion = ++googleEventsLoadVersionRef.current;
     setSyncing(true);
     const params = new URLSearchParams({
-      timeMin: renderStart.toISOString(),
-      timeMax: addDays(renderStart, renderedDayCount).toISOString(),
+      timeMin: new Date(request.range.start).toISOString(),
+      timeMax: new Date(request.range.end).toISOString(),
     });
     active.forEach((calendar) => {
       params.append("sourceId", calendar.id);
@@ -1360,16 +1401,28 @@ export function CalendarApp() {
         timeMax: params.get("timeMax")!,
         timeMin: params.get("timeMin")!,
       });
-      if (loadVersion !== googleEventsLoadVersionRef.current) return;
+      if (
+        loadVersion !== googleEventsLoadVersionRef.current
+        || request.key !== googleEventsDesiredRangeRef.current?.key
+      ) return false;
       setGoogle(browserGoogleStatus());
       const failedAccountIds = new Set(
         data.errors?.map((error) => error.accountId) ?? [],
       );
-      const loadedEvents = mergeGoogleEventsAfterPartialSync(
-        eventsRef.current,
-        data.events ?? [],
-        failedAccountIds,
-      );
+      const loadedEvents = request.mode === "merge"
+        ? mergeGoogleEventsForRange(
+            eventsRef.current,
+            data.events ?? [],
+            failedAccountIds,
+            new Set(active.map((calendar) => calendar.id)),
+            request.range.start,
+            request.range.end,
+          )
+        : mergeGoogleEventsAfterPartialSync(
+            eventsRef.current,
+            data.events ?? [],
+            failedAccountIds,
+          );
       const reconciliation = reconcileOptimisticCalendarEvents(
         loadedEvents,
         pendingTodoistCalendarEventsRef.current.values(),
@@ -1483,29 +1536,145 @@ export function CalendarApp() {
           toast.warning(`${accountCount} Google ${accountCount === 1 ? "account" : "accounts"} could not sync`);
         }
       }
+      return true;
     } catch (error) {
-      if (loadVersion !== googleEventsLoadVersionRef.current) return;
+      if (loadVersion !== googleEventsLoadVersionRef.current) return false;
+      if (error instanceof DOMException && error.name === "AbortError") return false;
       toast.error(error instanceof Error ? error.message : "Calendar sync failed");
+      return false;
     } finally {
       if (googleEventsLoadControllerRef.current === controller) {
         googleEventsLoadControllerRef.current = null;
       }
       if (loadVersion === googleEventsLoadVersionRef.current) setSyncing(false);
     }
-  }, [calendars, connectGoogle, google.connected, rememberRecentEventTitles, renderStart, renderedDayCount, visibleCalendars]);
+  }, [calendars, connectGoogle, google.connected, rememberRecentEventTitles, visibleCalendars]);
+
+  React.useEffect(() => {
+    loadGoogleEventsRef.current = loadGoogleEvents;
+  }, [loadGoogleEvents]);
+
+  const processGoogleEventRangeQueue = React.useCallback(() => {
+    if (googleEventsRangeWorkerRef.current) return;
+    const worker = (async () => {
+      while (true) {
+        const target = googleEventsDesiredRangeRef.current;
+        if (!target) return;
+        const plan = planCalendarEventLoad(
+          target.key,
+          target.range,
+          googleEventsCoverageRef.current,
+          target.forceReplaceRevision !== null,
+        );
+        if (!plan) return;
+
+        console.debug("[CALENDAR:LOAD] loading event range", {
+          coverage: googleEventsCoverageRef.current,
+          mode: plan.mode,
+          range: {
+            end: new Date(plan.range.end).toISOString(),
+            start: new Date(plan.range.start).toISOString(),
+          },
+          target: {
+            end: new Date(target.range.end).toISOString(),
+            start: new Date(target.range.start).toISOString(),
+          },
+        });
+        const loaded = await loadGoogleEventsRef.current({
+          key: target.key,
+          mode: plan.mode,
+          range: plan.range,
+        });
+        if (!loaded) {
+          const latestTarget = googleEventsDesiredRangeRef.current;
+          if (
+            latestTarget
+            && (
+              latestTarget.key !== target.key
+              || latestTarget.revision !== target.revision
+            )
+          ) continue;
+          return;
+        }
+        const currentTarget = googleEventsDesiredRangeRef.current;
+        if (!currentTarget || currentTarget.key !== target.key) continue;
+
+        googleEventsCoverageRef.current = includeCalendarEventLoadRange(
+          target.key,
+          googleEventsCoverageRef.current,
+          plan.range,
+          plan.mode === "replace",
+        );
+        if (
+          plan.mode === "replace"
+          && currentTarget.forceReplaceRevision === target.forceReplaceRevision
+        ) {
+          googleEventsDesiredRangeRef.current = {
+            ...currentTarget,
+            forceReplaceRevision: null,
+          };
+        }
+      }
+    })();
+    googleEventsRangeWorkerRef.current = worker;
+    void worker.finally(() => {
+      if (googleEventsRangeWorkerRef.current === worker) {
+        googleEventsRangeWorkerRef.current = null;
+      }
+    });
+  }, []);
 
   React.useEffect(() => () => googleEventsLoadControllerRef.current?.abort(), []);
 
   React.useEffect(() => {
-    if (!google.connected) return;
-    const timer = window.setTimeout(() => void loadGoogleEvents(), 0);
+    if (!google.connected || !googleEventLoadKey) {
+      googleEventsLoadControllerRef.current?.abort();
+      googleEventsCoverageRef.current = null;
+      googleEventsDesiredRangeRef.current = null;
+      return;
+    }
+    const previousTarget = googleEventsDesiredRangeRef.current;
+    const revision = (previousTarget?.revision ?? 0) + 1;
+    const keyChanged = previousTarget?.key !== googleEventLoadKey;
+    if (keyChanged) {
+      googleEventsLoadControllerRef.current?.abort();
+      googleEventsCoverageRef.current = null;
+    }
+    googleEventsDesiredRangeRef.current = {
+      forceReplaceRevision: keyChanged
+        ? revision
+        : previousTarget?.forceReplaceRevision ?? null,
+      key: googleEventLoadKey,
+      range: {
+        end: addDays(renderStart, renderedDayCount).getTime(),
+        start: renderStart.getTime(),
+      },
+      revision,
+    };
+    const timer = window.setTimeout(processGoogleEventRangeQueue, 0);
     return () => window.clearTimeout(timer);
-  }, [google.connected, loadGoogleEvents, visibleKey]);
+  }, [google.connected, googleEventLoadKey, processGoogleEventRangeQueue, renderStart, renderedDayCount]);
+
+  const requestGoogleEventsRefresh = React.useCallback(() => {
+    if (!google.connected || !googleEventLoadKey) return;
+    const previousTarget = googleEventsDesiredRangeRef.current;
+    const revision = (previousTarget?.revision ?? 0) + 1;
+    googleEventsDesiredRangeRef.current = {
+      forceReplaceRevision: revision,
+      key: googleEventLoadKey,
+      range: {
+        end: addDays(renderStart, renderedDayCount).getTime(),
+        start: renderStart.getTime(),
+      },
+      revision,
+    };
+    processGoogleEventRangeQueue();
+  }, [google.connected, googleEventLoadKey, processGoogleEventRangeQueue, renderStart, renderedDayCount]);
 
   useGoogleCalendarRefresh({
     canRefresh: () => !hasActiveActionToast(),
     enabled: google.connected,
-    onRefresh: loadGoogleEvents,
+    onRefresh: requestGoogleEventsRefresh,
   });
 
   const searchEvents = React.useCallback(
@@ -3911,7 +4080,7 @@ export function CalendarApp() {
         && !document.querySelector(".modal-backdrop")
       ) {
         event.preventDefault();
-        void loadGoogleEvents();
+        requestGoogleEventsRefresh();
       } else if (!modifier && event.key.toLowerCase() === "t") {
         setWeekStart(startOfCalendarWeek(new Date()));
       } else if (!modifier && event.key.toLowerCase() === "j") {
@@ -3926,7 +4095,7 @@ export function CalendarApp() {
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [activeSelectionSurface, cancelActiveInteraction, cancelVisibleEventFinder, changeDayCount, clearEventSelection, closeDateCommand, copySelection, createAdjacentEvent, creationDraft, dayCount, deleteEvents, dismissCreationDraft, duplicateEvents, eventNavigationRepeat, extractedTasks.length, focusCalendarSurface, focusRenderedEvent, focusSidebarSurface, google.connected, loadGoogleEvents, navigateBetweenEvents, navigateDays, openDateCommand, openEventSearch, openVisibleEventFinder, rightSidebarTab, selected, setEventSearchOpen, showDateCommandDialog, showEventSearch, showSettings, showShortcuts, showVisibleEventFinder, syncing, ungroupedTodoistTasks.length]);
+  }, [activeSelectionSurface, cancelActiveInteraction, cancelVisibleEventFinder, changeDayCount, clearEventSelection, closeDateCommand, copySelection, createAdjacentEvent, creationDraft, dayCount, deleteEvents, dismissCreationDraft, duplicateEvents, eventNavigationRepeat, extractedTasks.length, focusCalendarSurface, focusRenderedEvent, focusSidebarSurface, google.connected, navigateBetweenEvents, navigateDays, openDateCommand, openEventSearch, openVisibleEventFinder, requestGoogleEventsRefresh, rightSidebarTab, selected, setEventSearchOpen, showDateCommandDialog, showEventSearch, showSettings, showShortcuts, showVisibleEventFinder, syncing, ungroupedTodoistTasks.length]);
 
   const toggleCalendar = (calendarId: string) => {
     const calendar = calendars.find((candidate) => candidate.id === calendarId);
@@ -5267,38 +5436,86 @@ export function CalendarApp() {
   const changeSidebarTodoistTasksCalendar = React.useCallback(async (
     tasks: TodoistTask[],
     calendarId: string,
+    onRestoreFocus: () => void,
   ) => {
+    const calendar = writableCalendars.find(({ id }) => id === calendarId);
+    if (!calendar) {
+      toast.error("That calendar is not available for editing");
+      return false;
+    }
     const moves = tasks.flatMap((task) => {
-      const currentCalendarId = calendarEventDetailsFromTodoistContent(task.content).calendarId;
-      if (currentCalendarId === calendarId) return [];
+      const details = calendarEventDetailsFromTodoistContent(task.content);
+      if (
+        details.calendarId === calendarId
+        && details.color?.toLocaleLowerCase() === calendar.backgroundColor.toLocaleLowerCase()
+      ) return [];
       return [{
         original: task,
-        updated: { ...task, content: todoistContentWithCalendar(task.content, calendarId) },
+        updated: {
+          ...task,
+          content: todoistContentWithCalendar(
+            task.content,
+            calendarId,
+            calendar.backgroundColor,
+          ),
+        },
       }];
     });
     if (!moves.length) return true;
 
     moves.forEach(({ updated }) => replaceLocalTodoistTask(updated));
-    const { failed } = await runMutationBatch(
-      moves,
-      ({ updated }) => updateTodoistTask(updated.id, {
-        content: updated.content,
-        description: updated.description,
-      }),
+    const calendarName = calendar.name;
+    let failedTaskIds: Set<string> | null = null;
+    const restoreTasks = (
+      taskIds = new Set(moves.map(({ original }) => original.id)),
+    ) => {
+      moves.forEach(({ original }) => {
+        if (taskIds.has(original.id)) replaceLocalTodoistTask(original);
+      });
+    };
+    queueActionToast(
+      moves.length === 1
+        ? `Changed calendar to ${calendarName}`
+        : `Changed ${moves.length} tasks to ${calendarName}`,
+      {
+        duration: toastDuration,
+        onUndo: () => {
+          restoreTasks();
+          onRestoreFocus();
+        },
+        onSubmit: async (reportProgress) => {
+          const { failed } = await runMutationBatch(
+            moves,
+            ({ updated }) => updateTodoistTask(updated.id, {
+              content: updated.content,
+              description: updated.description,
+            }),
+            (completed, total) => reportProgress(
+              `Saving task calendars… ${completed}/${total}`,
+            ),
+          );
+          if (!failed.length) return;
+          failedTaskIds = new Set(failed.map(({ item }) => item.original.id));
+          restoreTasks(failedTaskIds);
+          throw new Error(
+            `${failed.length} ${failed.length === 1 ? "task" : "tasks"} could not be updated`,
+          );
+        },
+        onError: (error) => {
+          if (!failedTaskIds) restoreTasks();
+          onRestoreFocus();
+          toast.error(error instanceof Error
+            ? error.message
+            : "Event task calendars could not be updated");
+        },
+        resourceIds: moves.map(({ original }) => original.id),
+        submittingMessage: moves.length === 1
+          ? "Saving task calendar…"
+          : "Saving task calendars…",
+      },
     );
-    failed.forEach(({ item }) => replaceLocalTodoistTask(item.original));
-    if (failed.length > 0) {
-      toast.error(failed.length === moves.length
-        ? "Event task calendars could not be updated"
-        : `${failed.length} ${failed.length === 1 ? "task" : "tasks"} could not be updated`);
-      return false;
-    }
-
-    const calendarName = writableCalendars.find(({ id }) => id === calendarId)?.name
-      ?? "the selected calendar";
-    toast.success(`Moved ${moves.length} ${moves.length === 1 ? "task" : "tasks"} to ${calendarName}`);
     return true;
-  }, [replaceLocalTodoistTask, updateTodoistTask, writableCalendars]);
+  }, [replaceLocalTodoistTask, toastDuration, updateTodoistTask, writableCalendars]);
 
   const moveSidebarTodoistTasksToTriage = React.useCallback((
     tasks: TodoistTask[],
@@ -5396,6 +5613,18 @@ export function CalendarApp() {
 
   const duplicateSidebarTodoistTask = React.useCallback((task: TodoistTask) => {
     const title = todoistTaskDisplayTitle(task.content);
+    if (isLocalTask(task)) {
+      const duplicatedTask = addLocalTask(
+        { content: task.content, description: task.description },
+        { edge: "after", taskId: task.id },
+      );
+      queueActionToast(`Duplicated ${title}`, {
+        duration: toastDuration,
+        onUndo: () => removeLocalTodoistTasks([duplicatedTask.id]),
+        onSubmit: async () => undefined,
+      });
+      return Promise.resolve();
+    }
     const input = {
       content: task.content,
       description: task.description,
@@ -5426,7 +5655,7 @@ export function CalendarApp() {
       submittingMessage: "Duplicating event…",
     });
     return Promise.resolve();
-  }, [commitStagedTodoistTask, persistTodoistTaskOrder, removeLocalTodoistTasks, stageTodoistTasks, toastDuration]);
+  }, [addLocalTask, commitStagedTodoistTask, persistTodoistTaskOrder, removeLocalTodoistTasks, stageTodoistTasks, toastDuration]);
 
   const todayInWeek = isWithinInterval(now, {
     start: renderStart,
@@ -5602,7 +5831,7 @@ export function CalendarApp() {
 
           <div className="topbar-right">
             <button className="topbar-search-button" onClick={openEventSearch} aria-label="Search all events and tasks"><Search size={14} /><span>Search</span><kbd>⌘ K</kbd></button>
-            <button className="icon-button" onClick={() => void loadGoogleEvents()} aria-label="Refresh" disabled={!google.connected}><RefreshCw size={15} /></button>
+            <button className="icon-button" onClick={requestGoogleEventsRefresh} aria-label="Refresh" disabled={!google.connected}><RefreshCw size={15} /></button>
             <DayCountPicker dayCount={dayCount} onChange={changeDayCount} />
             <button className="icon-button" onClick={() => setShowShortcuts(true)} aria-label="Keyboard shortcuts"><CircleHelp size={16} /></button>
           </div>
@@ -6249,6 +6478,11 @@ export function CalendarApp() {
               );
               return next;
             })}
+            onCreateTask={(title) => {
+              addLocalTask({
+                content: todoistContentFromTaskTitle(title, TODOIST_ROOT_GROUP),
+              });
+            }}
             onDeleteTasks={deleteTodoistTasks}
             onDuplicateTask={duplicateSidebarTodoistTask}
             onFocusTaskHandled={handleTodoistTaskFocus}
@@ -6260,7 +6494,6 @@ export function CalendarApp() {
               );
               return next;
             })}
-            onOpenSettings={() => setShowSettings(true)}
             onMoveTaskToGroup={moveSidebarTodoistTaskToGroup}
             onMoveTasksToTriage={moveSidebarTodoistTasksToTriage}
             onQueueTaskKeyboardMove={(task, group, orderedTaskIds, previousOrderedTaskIds, restoreFolderState) => {

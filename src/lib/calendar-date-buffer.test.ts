@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   adjustCalendarDateBuffer,
   createCalendarDateBuffer,
+  ensureTrailingCalendarDateBufferReserve,
 } from "./calendar-date-buffer";
 
 const date = (day: number) => new Date(2026, 7, day, 12);
@@ -12,6 +13,28 @@ test("starts with one visible period and one reserve period on each side", () =>
 
   assert.equal(buffer.start.getTime(), date(3).getTime());
   assert.equal(buffer.dayCount, 21);
+});
+
+test("keeps a full trailing period rendered before the scroll reaches the edge", () => {
+  const initial = createCalendarDateBuffer(date(10), 7);
+
+  assert.equal(
+    ensureTrailingCalendarDateBufferReserve(initial, 7),
+    initial,
+  );
+  assert.deepEqual(
+    ensureTrailingCalendarDateBufferReserve(initial, 7.01),
+    { ...initial, dayCount: 28 },
+  );
+});
+
+test("restores the trailing reserve after a large scroll movement", () => {
+  const initial = createCalendarDateBuffer(date(10), 7);
+
+  assert.deepEqual(
+    ensureTrailingCalendarDateBufferReserve(initial, 20),
+    { ...initial, dayCount: 35 },
+  );
 });
 
 test("appends a period as soon as the trailing reserve is partly visible", () => {

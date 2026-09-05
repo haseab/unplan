@@ -86,6 +86,17 @@ const metadataTokenFromFields = (fields: Map<string, string>) =>
     ([key, value]) => `${key}=${encodeURIComponent(value)}`,
   )].join(";") + "]]";
 
+export const todoistContentFromTaskTitle = (
+  title: string,
+  group = "Ungrouped",
+) => {
+  const fields = new Map([
+    ["duration", "30"],
+    ["group", group.trim() || "Ungrouped"],
+  ]);
+  return `${title.trim().replace(/\s+/g, " ")} ${metadataTokenFromFields(fields)}`;
+};
+
 const calendarEventMetadataToken = (event: CalendarEvent, group: string) => [
   "[[unplan:v1",
   `duration=${calendarEventDurationMinutes(event)}`,
@@ -199,10 +210,12 @@ export const todoistContentWithGroup = (content: string, group: string) => {
 export const todoistContentWithCalendar = (
   content: string,
   calendarId: string,
+  calendarColor?: string,
 ) => {
   const metadataMatch = content.match(UNPLAN_METADATA_TOKEN);
   const fields = metadataFields(metadataMatch?.[1]);
   fields.set("calendar", calendarId);
+  if (calendarColor) fields.set("color", calendarColor);
   if (!fields.has("duration")) fields.set("duration", "30");
   if (!fields.has("group")) fields.set("group", "Ungrouped");
   const token = metadataTokenFromFields(fields);

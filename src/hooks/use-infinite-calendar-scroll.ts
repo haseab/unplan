@@ -7,6 +7,7 @@ import {
   adjustCalendarDateBuffer,
   calendarDateBuffersEqual,
   createCalendarDateBuffer,
+  ensureTrailingCalendarDateBufferReserve,
   type CalendarDateBuffer,
 } from "@/lib/calendar-date-buffer";
 import {
@@ -104,6 +105,7 @@ export function useInfiniteCalendarScroll({
   );
   const dateBufferRef = React.useRef(dateBuffer);
   const pendingBufferPosition = React.useRef<PendingBufferPosition | null>(null);
+  const trailingBufferExpansionPending = React.useRef(false);
   const lastCommittedViewStart = React.useRef<Date | null>(null);
   const recentering = React.useRef(false);
   const navigationFrame = React.useRef<number | null>(null);
@@ -130,6 +132,7 @@ export function useInfiniteCalendarScroll({
 
   React.useLayoutEffect(() => {
     dateBufferRef.current = dateBuffer;
+    trailingBufferExpansionPending.current = false;
   }, [dateBuffer]);
 
   React.useLayoutEffect(() => {
@@ -250,6 +253,31 @@ export function useInfiniteCalendarScroll({
     setDateBuffer(adjustment.buffer);
   }, [viewStart]);
 
+  const ensureTrailingBufferForScroll = React.useCallback((
+    scroller: HTMLDivElement,
+  ) => {
+    if (
+      recentering.current
+      || pendingBufferPosition.current
+      || trailingBufferExpansionPending.current
+    ) return;
+    const buffer = dateBufferRef.current;
+    const visibleStartOffsetDays = getVisibleStartOffsetDays(
+      scroller,
+      buffer.dayCount,
+    );
+    const expandedBuffer = ensureTrailingCalendarDateBufferReserve(
+      buffer,
+      visibleStartOffsetDays,
+    );
+    if (calendarDateBuffersEqual(buffer, expandedBuffer)) return;
+
+    // Appending days does not move the current content, so it is safe during
+    // trackpad momentum and prevents the viewport from reaching a hard edge.
+    trailingBufferExpansionPending.current = true;
+    setDateBuffer(expandedBuffer);
+  }, []);
+
   const settleHorizontalInteraction = React.useCallback(() => {
     const scroller = scrollRef.current;
     if (!scroller || !canSettleCalendarHorizontalInteraction({
@@ -278,7 +306,31 @@ export function useInfiniteCalendarScroll({
   React.useEffect(() => {
     const scroller = scrollRef.current;
     if (!scroller) return;
-    const supportsScrollEnd = "onscrollend" in window;
+
+    const clearHorizontalWheelSettleTimer = () => {
+      if (horizontalWheelSnapTimer.current === null) return;
+      window.clearTimeout(horizontalWheelSnapTimer.current);
+      horizontalWheelSnapTimer.current = null;
+    };
+
+    const completeHorizontalWheelInteraction = (fallback: boolean) => {
+      if (!scroller.hasAttribute("data-horizontal-wheel-scrolling")) return;
+      clearHorizontalWheelSettleTimer();
+      scroller.removeAttribute("data-horizontal-wheel-scrolling");
+      wheelAxisIntent.current = null;
+      if (fallback) {
+        console.debug(
+          "[BUG:HORIZONTAL-SCROLL-STALL]",
+          "Settled horizontal wheel interaction after wheel inactivity",
+          {
+            clientWidth: scroller.clientWidth,
+            scrollLeft: scroller.scrollLeft,
+            scrollWidth: scroller.scrollWidth,
+          },
+        );
+      }
+      scheduleHorizontalSettle();
+    };
 
     const handleWheel = (event: WheelEvent) => {
       if (event.ctrlKey) return;
@@ -309,16 +361,11 @@ export function useInfiniteCalendarScroll({
       };
       if (delta.left !== 0) {
         scroller.setAttribute("data-horizontal-wheel-scrolling", "true");
-        if (!supportsScrollEnd) {
-          if (horizontalWheelSnapTimer.current !== null) {
-            window.clearTimeout(horizontalWheelSnapTimer.current);
-          }
-          horizontalWheelSnapTimer.current = window.setTimeout(() => {
-            scroller.removeAttribute("data-horizontal-wheel-scrolling");
-            horizontalWheelSnapTimer.current = null;
-            scheduleHorizontalSettle();
-          }, HORIZONTAL_WHEEL_FALLBACK_SETTLE_MS);
-        }
+        clearHorizontalWheelSettleTimer();
+        horizontalWheelSnapTimer.current = window.setTimeout(() => {
+          horizontalWheelSnapTimer.current = null;
+          completeHorizontalWheelInteraction(true);
+        }, HORIZONTAL_WHEEL_FALLBACK_SETTLE_MS);
         return;
       }
 
@@ -327,10 +374,7 @@ export function useInfiniteCalendarScroll({
     };
 
     const handleScrollEnd = () => {
-      if (!scroller.hasAttribute("data-horizontal-wheel-scrolling")) return;
-      scroller.removeAttribute("data-horizontal-wheel-scrolling");
-      wheelAxisIntent.current = null;
-      scheduleHorizontalSettle();
+      completeHorizontalWheelInteraction(false);
     };
 
     scroller.addEventListener("wheel", handleWheel, { passive: false });
@@ -340,10 +384,7 @@ export function useInfiniteCalendarScroll({
       scroller.removeEventListener("scrollend", handleScrollEnd);
       scroller.removeAttribute("data-horizontal-wheel-scrolling");
       wheelAxisIntent.current = null;
-      if (horizontalWheelSnapTimer.current !== null) {
-        window.clearTimeout(horizontalWheelSnapTimer.current);
-        horizontalWheelSnapTimer.current = null;
-      }
+      clearHorizontalWheelSettleTimer();
     };
   }, [scheduleHorizontalSettle, scrollRef]);
 
@@ -420,9 +461,10 @@ export function useInfiniteCalendarScroll({
       ].slice(-12);
 
       if (recentering.current || pendingBufferPosition.current) return;
+      ensureTrailingBufferForScroll(scroller);
       scheduleHorizontalSettle();
     },
-    [scheduleHorizontalSettle],
+    [ensureTrailingBufferForScroll, scheduleHorizontalSettle],
   );
 
   const getVisibleViewStart = React.useCallback((

@@ -15,6 +15,25 @@ export type CalendarDateBufferAdjustment = {
 const INITIAL_PERIOD_COUNT = 3;
 const TRIM_HIDDEN_PERIOD_COUNT = 2;
 
+export const ensureTrailingCalendarDateBufferReserve = (
+  buffer: CalendarDateBuffer,
+  visibleStartOffsetDays: number,
+): CalendarDateBuffer => {
+  const hiddenAfter = buffer.dayCount
+    - visibleStartOffsetDays
+    - buffer.periodDayCount;
+  if (hiddenAfter >= buffer.periodDayCount) return buffer;
+
+  const missingReserveDays = buffer.periodDayCount - hiddenAfter;
+  const addedPeriodCount = Math.ceil(
+    missingReserveDays / buffer.periodDayCount,
+  );
+  return {
+    ...buffer,
+    dayCount: buffer.dayCount + addedPeriodCount * buffer.periodDayCount,
+  };
+};
+
 export const createCalendarDateBuffer = (
   visibleStart: Date,
   periodDayCount: number,

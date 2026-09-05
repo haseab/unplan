@@ -63,6 +63,32 @@ export const mergeGoogleEventsAfterPartialSync = (
   ];
 };
 
+const eventOverlapsRange = (
+  event: CalendarEvent,
+  rangeStart: number,
+  rangeEnd: number,
+) => new Date(event.end).getTime() > rangeStart
+  && new Date(event.start).getTime() < rangeEnd;
+
+export const mergeGoogleEventsForRange = (
+  current: CalendarEvent[],
+  loaded: CalendarEvent[],
+  failedAccountIds: ReadonlySet<string>,
+  activeCalendarIds: ReadonlySet<string>,
+  rangeStart: number,
+  rangeEnd: number,
+) => {
+  const loadedIds = new Set(loaded.map((event) => event.id));
+  const retained = current.filter((event) => {
+    if (loadedIds.has(event.id)) return false;
+    if (!activeCalendarIds.has(event.calendarId)) return true;
+    const accountId = googleAccountIdForSource(event.calendarId);
+    if (accountId && failedAccountIds.has(accountId)) return true;
+    return !eventOverlapsRange(event, rangeStart, rangeEnd);
+  });
+  return [...loaded, ...retained];
+};
+
 export const browserGoogleStatus = () => {
   const stored = readGoogleAccounts();
   const accounts: GoogleConnectedAccount[] = stored.map((account) => ({

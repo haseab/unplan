@@ -1012,7 +1012,7 @@ kbd {
 .todo-event-list-heading button { display: grid; width: 28px; height: 28px; place-items: center; border: 0; border-radius: 7px; background: transparent; color: var(--text-soft); cursor: pointer; }
 .todo-event-list-heading button:hover { background: var(--hover); color: var(--ink); }
 .todo-event-group-form { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px; padding: 9px; border-bottom: 1px solid var(--line); transform-origin: top center; animation: todo-folder-form-in 180ms cubic-bezier(0.2, 0.8, 0.2, 1); }
-.todo-event-group-form input { min-width: 0; height: 34px; padding: 0 10px; border: 1px solid var(--line-strong); border-radius: 7px; outline: none; background: var(--surface); color: var(--ink); font: inherit; font-size: 10px; }
+.todo-event-group-form input { min-width: 0; height: 34px; padding: 0 10px; border: 1px solid var(--line-strong); border-radius: 7px; outline: none; background: var(--surface); color: var(--ink); font: inherit; font-size: 13px; }
 .todo-event-group-form input:focus { border-color: var(--blue-border); box-shadow: 0 0 0 3px var(--blue-soft); }
 .todo-event-group-form button { height: 34px; padding: 0 11px; border: 1px solid var(--blue-border); border-radius: 7px; background: var(--blue-soft); color: var(--blue-ink); font-size: 9px; font-weight: 650; cursor: pointer; }
 .todo-event-group-form button:disabled { opacity: 0.45; cursor: default; }

@@ -249,6 +249,22 @@ test("changes only the calendar in existing task metadata", () => {
   });
 });
 
+test("changes the stored display color when assigning a colored calendar", () => {
+  const updated = todoistContentWithCalendar(
+    "Review [[unplan:v1;duration=45;calendar=old;color=%23d18a31;group=Later]]",
+    "work",
+    "#8b5cf6",
+  );
+
+  assert.deepEqual(calendarEventDetailsFromTodoistContent(updated), {
+    title: "Review",
+    durationMinutes: 45,
+    calendarId: "work",
+    color: "#8b5cf6",
+    group: "Later",
+  });
+});
+
 test("recreates custom sections from the groups encoded in tasks", () => {
   const planning = task("planning", todoistContentWithGroup("Plan launch", "This week"));
   const research = task("research", todoistContentWithGroup("Read brief", "Later"));
