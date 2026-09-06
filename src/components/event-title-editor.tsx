@@ -16,6 +16,7 @@ import {
 
 type EventTitleEditorProps = EventTitleFieldProps & {
   calendars: CalendarSource[];
+  cancelOnEscape?: boolean;
   currentCalendarId?: string;
   excludeCurrentTitle?: boolean;
   onRecentTitleNavigation?: () => void;
@@ -39,6 +40,7 @@ export const EventTitleEditor = React.forwardRef<
   EventTitleEditorProps
 >(function EventTitleEditor({
   calendars,
+  cancelOnEscape = false,
   currentCalendarId,
   excludeCurrentTitle = false,
   onBlur,
@@ -114,7 +116,7 @@ export const EventTitleEditor = React.forwardRef<
           onFocus?.(event);
         }}
         onKeyDown={(event) => {
-          if (open && event.key === "Escape") {
+          if (open && event.key === "Escape" && !cancelOnEscape) {
             event.preventDefault();
             event.stopPropagation();
             setDismissed(true);

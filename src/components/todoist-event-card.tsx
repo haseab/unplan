@@ -108,13 +108,6 @@ export function TodoistEventCard({
   const restoreEventButtonFocus = () => {
     window.requestAnimationFrame(() => {
       eventButtonRef.current?.focus({ preventScroll: true });
-      console.debug("[BUG:EVENT-TITLE-FOCUS] [TASK:FOCUS] restored task-card focus", {
-        activeTaskId: (document.activeElement as HTMLElement | null)
-          ?.closest<HTMLElement>("[data-task-shell-id]")
-          ?.dataset.taskShellId ?? null,
-        activeTag: document.activeElement?.tagName ?? null,
-        taskId: task.id,
-      });
     });
   };
 
@@ -316,10 +309,6 @@ export function TodoistEventCard({
           className="todo-event-inline-editor"
           onSubmit={(event) => {
             event.preventDefault();
-            console.debug("[BUG:EVENT-TITLE-FOCUS] [TASK:ENTER] submitting task title", {
-              taskId: task.id,
-              title: renameValue,
-            });
             void commitRename(true);
           }}
           style={{ ...style, height: eventHeight }}

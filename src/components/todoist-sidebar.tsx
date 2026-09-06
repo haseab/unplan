@@ -53,12 +53,14 @@ import {
   shouldCollapseTodoistTaskMoveSource,
   TODOIST_ROOT_GROUP,
   todoistEventRenderedHeight,
+  todoistFolderNeedsScheduling,
   todoistFolderFirstRowOrder,
   todoistGroupDropEdgeAtPointer,
   todoistGroupDropTargetsShareBoundary,
   todoistGroupAncestors,
   todoistGroupParent,
   todoistGroupPath,
+  todoistSchedulingAlertGroups,
   todoistTaskFolderMoveOrder,
   todoistTaskFolderMoveTarget,
   type TodoistTaskFolderMoveDirection,
@@ -68,15 +70,8 @@ export const TODOIST_DRAG_TYPE = "application/x-unplan-todoist-task";
 export const TODOIST_MULTI_DRAG_TYPE = "application/x-unplan-todoist-tasks";
 const TODOIST_GROUP_DRAG_TYPE = "application/x-unplan-todoist-group";
 const GROUP_HOVER_EXPAND_DELAY_MS = 750;
-const PRIORITY_SCHEDULING_GROUPS = new Set([
-  "priority right now",
-  "priority today",
-]);
-
 const REORDER_BUG_FLAG = "[BUG:SIDEBAR-REORDER]";
 const FOLDER_REORDER_BUG_FLAG = "[BUG:FOLDER-REORDER]";
-const RELEASE_MOTION_BUG_FLAG = "[BUG:SIDEBAR-RELEASE-MOTION]";
-let releaseMotionTraceSequence = 0;
 
 const normalizeTodoistGroupName = (name: string) =>
   name.trim().replace(/\s+/g, " ").replaceAll("/", "-");
@@ -90,123 +85,6 @@ const logFolderReorder = (
   phase: string,
   details: Record<string, unknown> = {},
 ) => console.debug(FOLDER_REORDER_BUG_FLAG, phase, details);
-
-type SidebarMotionPosition = {
-  display: string;
-  height: number;
-  left: number;
-  opacity: string;
-  top: number;
-  transform: string;
-  width: number;
-};
-
-type SidebarMotionSnapshot = {
-  animations: Array<Record<string, unknown>>;
-  positions: Map<string, SidebarMotionPosition>;
-};
-
-const sidebarMotionElements = (container: HTMLElement) => Array.from(
-  container.querySelectorAll<HTMLElement>(
-    "[data-group-heading], [data-task-shell-id], .todo-event-group-drop-projection, .todo-event-drop-projection",
-  ),
-);
-
-const sidebarMotionElementKey = (element: HTMLElement, index: number) =>
-  element.dataset.groupHeading
-  ?? element.dataset.taskShellId
-  ?? `${element.className || element.tagName}:${index}`;
-
-const captureSidebarMotion = (container: HTMLElement): SidebarMotionSnapshot => {
-  const positions = new Map<string, SidebarMotionPosition>();
-  const animations: Array<Record<string, unknown>> = [];
-  sidebarMotionElements(container).forEach((element, index) => {
-    const key = sidebarMotionElementKey(element, index);
-    const rect = element.getBoundingClientRect();
-    const style = window.getComputedStyle(element);
-    positions.set(key, {
-      display: style.display,
-      height: rect.height,
-      left: rect.left,
-      opacity: style.opacity,
-      top: rect.top,
-      transform: style.transform,
-      width: rect.width,
-    });
-    element.getAnimations().forEach((animation) => {
-      const timing = animation.effect?.getComputedTiming();
-      animations.push({
-        animationName: style.animationName,
-        currentTime: animation.currentTime,
-        duration: timing?.duration,
-        key,
-        playState: animation.playState,
-        transitionDuration: style.transitionDuration,
-        transitionProperty: style.transitionProperty,
-      });
-    });
-  });
-  return { animations, positions };
-};
-
-const sidebarMotionChanges = (
-  baseline: SidebarMotionSnapshot,
-  current: SidebarMotionSnapshot,
-) => {
-  const keys = new Set([...baseline.positions.keys(), ...current.positions.keys()]);
-  return Array.from(keys).flatMap((key) => {
-    const before = baseline.positions.get(key);
-    const after = current.positions.get(key);
-    if (!before || !after) return [{ after: after ?? null, before: before ?? null, key }];
-    const moved = Math.abs(before.top - after.top) > 0.25
-      || Math.abs(before.left - after.left) > 0.25
-      || Math.abs(before.width - after.width) > 0.25
-      || Math.abs(before.height - after.height) > 0.25
-      || before.transform !== after.transform
-      || before.opacity !== after.opacity
-      || before.display !== after.display;
-    return moved ? [{ after, before, key }] : [];
-  }).slice(0, 40);
-};
-
-const scheduleSidebarReleaseMotionTrace = (
-  container: HTMLElement | null,
-  details: Record<string, unknown>,
-) => {
-  if (!container) return;
-  const traceId = ++releaseMotionTraceSequence;
-  const beforeRelease = captureSidebarMotion(container);
-  console.debug(RELEASE_MOTION_BUG_FLAG, "release:requested", {
-    ...details,
-    activeAnimations: beforeRelease.animations.slice(0, 40),
-    elementCount: beforeRelease.positions.size,
-    traceId,
-  });
-  window.requestAnimationFrame(() => {
-    if (!container.isConnected) return;
-    const baseline = captureSidebarMotion(container);
-    console.debug(RELEASE_MOTION_BUG_FLAG, "release:frame-1", {
-      ...details,
-      activeAnimations: baseline.animations.slice(0, 40),
-      elementCount: baseline.positions.size,
-      traceId,
-    });
-    const probe = (checkpoint: string) => {
-      if (!container.isConnected) return;
-      const current = captureSidebarMotion(container);
-      console.debug(RELEASE_MOTION_BUG_FLAG, `release:${checkpoint}`, {
-        ...details,
-        activeAnimations: current.animations.slice(0, 40),
-        changesFromFrame1: sidebarMotionChanges(baseline, current),
-        traceId,
-      });
-    };
-    window.requestAnimationFrame(() => probe("frame-2"));
-    window.setTimeout(() => probe("50ms"), 50);
-    window.setTimeout(() => probe("180ms"), 180);
-    window.setTimeout(() => probe("260ms"), 260);
-  });
-};
 
 export type CalendarTaskDropProjection = {
   group: string;
@@ -510,12 +388,6 @@ export function TodoistSidebar({
       taskId,
       target: releaseTarget,
     });
-    scheduleSidebarReleaseMotionTrace(groupsRef.current, {
-      itemId: taskId,
-      kind: "task",
-      reason,
-      target: releaseTarget,
-    });
     draggedTaskIdRef.current = null;
     dropInProgressRef.current = false;
     dropTargetRef.current = null;
@@ -552,6 +424,13 @@ export function TodoistSidebar({
       return !ancestors.some((ancestor) => collapsedGroups.has(ancestor));
     }),
     [collapsedGroups, groupParents, taskGroups],
+  );
+  const schedulingAlertGroups = React.useMemo(
+    () => todoistSchedulingAlertGroups(
+      taskGroups.map(([group, items]) => [group, items.length] as const),
+      groupParents,
+    ),
+    [groupParents, taskGroups],
   );
   const folderFirstRowOrder = React.useMemo(
     () => todoistFolderFirstRowOrder(
@@ -1123,12 +1002,6 @@ export function TodoistSidebar({
       reason,
       target: releaseTarget,
     });
-    scheduleSidebarReleaseMotionTrace(groupsRef.current, {
-      itemId: group,
-      kind: "folder",
-      reason,
-      target: releaseTarget,
-    });
     draggedGroupRef.current = null;
     groupDropTargetRef.current = null;
     groupDragDiagnosticRef.current = null;
@@ -1236,10 +1109,6 @@ export function TodoistSidebar({
       parent: todoistGroupParent(group, groupParents),
       pointer: { x: event.clientX, y: event.clientY },
       target: target.className || target.tagName,
-    });
-    console.debug(RELEASE_MOTION_BUG_FLAG, "pickup", {
-      itemId: group,
-      kind: "folder",
     });
     groupDragCancelledRef.current = false;
     draggedGroupRef.current = group;
@@ -1633,6 +1502,12 @@ export function TodoistSidebar({
               (count, [, descendantItems]) => count + descendantItems.length,
               0,
             );
+            const folderNeedsScheduling = todoistFolderNeedsScheduling({
+              alertGroups: schedulingAlertGroups,
+              collapsed,
+              group,
+              parents: groupParents,
+            });
             const showGroupProjectionBefore = groupDropTarget?.group === group
               && groupDropTarget.edge === "before";
             const showGroupProjectionAfter = groupDropTarget?.group === group
@@ -1924,10 +1799,7 @@ export function TodoistSidebar({
               >
                 <span
                   className="todo-event-group-count"
-                  data-needs-scheduling={folderItemCount > 0
-                    && PRIORITY_SCHEDULING_GROUPS.has(groupLabel.trim().toLocaleLowerCase())
-                    ? "true"
-                    : undefined}
+                  data-needs-scheduling={folderNeedsScheduling ? "true" : undefined}
                   title={`${folderItemCount} total events`}
                 >
                   {folderItemCount}
@@ -2206,11 +2078,6 @@ export function TodoistSidebar({
                             taskOrder: taskGroups.flatMap(([, groupItems]) =>
                               groupItems.map(({ task: itemTask }) => itemTask.id),
                             ),
-                          });
-                          console.debug(RELEASE_MOTION_BUG_FLAG, "pickup", {
-                            group,
-                            itemId: task.id,
-                            kind: "task",
                           });
                           dragStartFrameRef.current = window.requestAnimationFrame(() => {
                             dragStartFrameRef.current = null;

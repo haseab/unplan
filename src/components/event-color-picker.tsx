@@ -84,11 +84,6 @@ export function EventColorPicker({
       });
 
   const preview = (option: EventColorChoice) => {
-    console.debug("[BUG:COLOR-PICKER-NAV] [PREVIEW] previewing event color", {
-      color: option.color,
-      colorKey: option.key,
-      name: option.name,
-    });
     setActiveKey(option.key);
     onPreview(eventColorChoiceChange(option));
   };
@@ -128,10 +123,6 @@ export function EventColorPicker({
       }
       const state = keyboardStateRef.current;
       if (keyboardEvent.key === "Escape") {
-        console.debug("[BUG:COLOR-PICKER-NAV] [CANCEL] cancelling color preview", {
-          activeKey: state.activeKey,
-          selectedKey: state.selectedKey,
-        });
         keyboardEvent.preventDefault();
         keyboardEvent.stopPropagation();
         state.cancelPreview();
@@ -150,11 +141,6 @@ export function EventColorPicker({
           const returnButton = buttonRefs.current.get(returnKey)
             ?? (firstKey ? buttonRefs.current.get(firstKey) : undefined);
           returnButton?.focus({ preventScroll: true });
-          console.debug("[BUG:COLOR-PICKER-NAV] [TOGGLE:RETURN] returned from palette toggle", {
-            focused: document.activeElement === returnButton,
-            key: keyboardEvent.key,
-            returnKey,
-          });
         }
         return;
       }
@@ -166,11 +152,6 @@ export function EventColorPicker({
         keyboardEvent.stopPropagation();
         returnColorKeyRef.current = state.activeKey;
         toggleRef.current?.focus({ preventScroll: true });
-        console.debug("[BUG:COLOR-PICKER-NAV] [TOGGLE:FOCUS] focused palette toggle", {
-          activeKey: state.activeKey,
-          expanded: state.showMore,
-          focused: document.activeElement === toggleRef.current,
-        });
         return;
       }
       const nextIndex = eventColorGridNavigationIndex({
@@ -183,26 +164,9 @@ export function EventColorPicker({
       keyboardEvent.preventDefault();
       keyboardEvent.stopPropagation();
       const next = state.visibleOptions[nextIndex];
-      console.debug("[BUG:COLOR-PICKER-NAV] [ARROW] navigating color grid", {
-        activeKey: state.activeKey,
-        columns,
-        currentIndex,
-        key: keyboardEvent.key,
-        nextIndex,
-        nextKey: next.key,
-        optionCount: state.visibleOptions.length,
-        showMore: state.showMore,
-      });
       state.preview(next);
       const nextButton = buttonRefs.current.get(next.key);
       nextButton?.focus({ preventScroll: true });
-      window.requestAnimationFrame(() => {
-        console.debug("[BUG:COLOR-PICKER-NAV] [FOCUS:SETTLED] checked focus after arrow", {
-          activeLabel: document.activeElement?.getAttribute("aria-label") ?? null,
-          expectedLabel: next.name,
-          focused: document.activeElement === nextButton,
-        });
-      });
     };
     window.addEventListener("keydown", handlePaletteKeyDown, true);
     return () => window.removeEventListener("keydown", handlePaletteKeyDown, true);
@@ -214,12 +178,6 @@ export function EventColorPicker({
     const selected = buttonRefs.current.get(selectedKey);
     selected?.focus({ preventScroll: true });
     selected?.scrollIntoView({ block: "nearest" });
-    console.debug("[BUG:COLOR-PICKER-NAV] [FOCUS] focused saved event color", {
-      activeLabel: selected?.getAttribute("aria-label") ?? null,
-      focused: document.activeElement === selected,
-      selectedKey,
-      showMore,
-    });
     onAutoFocused?.();
   }, [autoFocus, onAutoFocused, selectedKey, showMore]);
 
@@ -234,11 +192,6 @@ export function EventColorPicker({
         onClick={(event) => {
           submittedRef.current = true;
           preview(option);
-          console.debug("[BUG:COLOR-PICKER-NAV] [COMMIT] committing event color", {
-            color: option.color,
-            colorKey: option.key,
-            input: event.detail === 0 ? "keyboard" : "pointer",
-          });
           onCommit(eventColorChoiceChange(option), event.detail === 0);
         }}
         onFocus={() => setActiveKey(option.key)}
@@ -269,14 +222,6 @@ export function EventColorPicker({
           && event.currentTarget.contains(event.relatedTarget)
         ) return;
         if (!submittedRef.current && activeKey !== selectedKey) cancelPreview();
-        console.debug("[BUG:COLOR-PICKER-NAV] [BLUR] palette lost focus", {
-          activeKey,
-          relatedLabel: event.relatedTarget instanceof Element
-            ? event.relatedTarget.getAttribute("aria-label")
-            : null,
-          selectedKey,
-          submitted: submittedRef.current,
-        });
         submittedRef.current = false;
       }}
       ref={rootRef}
@@ -311,10 +256,6 @@ export function EventColorPicker({
           aria-expanded={showMore}
           className="event-editor-color-more"
           onClick={() => {
-            console.debug("[BUG:COLOR-PICKER-NAV] [TOGGLE] toggling expanded palette", {
-              from: showMore,
-              to: !showMore,
-            });
             if (showMore) cancelPreview();
             setShowMore((current) => !current);
           }}

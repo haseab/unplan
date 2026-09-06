@@ -206,25 +206,25 @@ test("an initial keyboard resize up chooses the start edge and keeps it selected
     startMinuteDelta: 0,
   };
 
-  transform = advanceKeyboardResizeTransform(transform, -15);
+  transform = advanceKeyboardResizeTransform(transform, -15, [event]);
   assert.equal(transform.activeEdge, "start");
   assert.deepEqual(applyKeyboardResizeTransform(event, transform), {
     ...event,
     start: new Date(2026, 7, 22, 9, 45).toISOString(),
   });
 
-  transform = advanceKeyboardResizeTransform(transform, 15);
+  transform = advanceKeyboardResizeTransform(transform, 15, [event]);
   assert.equal(transform.activeEdge, "start");
   assert.deepEqual(applyKeyboardResizeTransform(event, transform), event);
 
-  transform = advanceKeyboardResizeTransform(transform, 15);
+  transform = advanceKeyboardResizeTransform(transform, 15, [event]);
   assert.equal(transform.activeEdge, "start");
   assert.deepEqual(applyKeyboardResizeTransform(event, transform), {
     ...event,
     start: new Date(2026, 7, 22, 10, 15).toISOString(),
   });
 
-  transform = advanceKeyboardResizeTransform(transform, 45);
+  transform = advanceKeyboardResizeTransform(transform, 45, [event]);
   assert.deepEqual(applyKeyboardResizeTransform(event, transform), {
     ...event,
     start: new Date(2026, 7, 22, 10, 45).toISOString(),
@@ -238,22 +238,48 @@ test("an initial keyboard resize down chooses the end edge and keeps it selected
     startMinuteDelta: 0,
   };
 
-  transform = advanceKeyboardResizeTransform(transform, 15);
+  transform = advanceKeyboardResizeTransform(transform, 15, [event]);
   assert.deepEqual(applyKeyboardResizeTransform(event, transform), {
     ...event,
     end: new Date(2026, 7, 22, 11, 15).toISOString(),
   });
 
-  transform = advanceKeyboardResizeTransform(transform, -15);
+  transform = advanceKeyboardResizeTransform(transform, -15, [event]);
   assert.equal(transform.activeEdge, "end");
   assert.deepEqual(applyKeyboardResizeTransform(event, transform), event);
 
-  transform = advanceKeyboardResizeTransform(transform, -15);
+  transform = advanceKeyboardResizeTransform(transform, -15, [event]);
   assert.equal(transform.activeEdge, "end");
   assert.deepEqual(applyKeyboardResizeTransform(event, transform), {
     ...event,
     end: new Date(2026, 7, 22, 10, 45).toISOString(),
   });
+});
+
+test("keyboard resize does not accumulate shrink debt past the minimum duration", () => {
+  const shortEvent = {
+    ...event,
+    end: new Date(2026, 7, 22, 10, 30).toISOString(),
+  };
+  let transform: KeyboardResizeTransform = {
+    activeEdge: "end",
+    endMinuteDelta: 0,
+    startMinuteDelta: 0,
+  };
+
+  transform = advanceKeyboardResizeTransform(transform, -15, [shortEvent]);
+  transform = advanceKeyboardResizeTransform(transform, -15, [shortEvent]);
+  transform = advanceKeyboardResizeTransform(transform, -15, [shortEvent]);
+
+  assert.equal(transform.endMinuteDelta, -15);
+  assert.deepEqual(applyKeyboardResizeTransform(shortEvent, transform), {
+    ...shortEvent,
+    end: new Date(2026, 7, 22, 10, 15).toISOString(),
+  });
+
+  transform = advanceKeyboardResizeTransform(transform, 15, [shortEvent]);
+  assert.equal(transform.endMinuteDelta, 0);
+  assert.deepEqual(applyKeyboardResizeTransform(shortEvent, transform), shortEvent);
 });
 
 test("keyboard resize uses the end edge when extending the start would hit the previous event", () => {

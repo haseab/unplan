@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   actionToastSyncIntersectsResources,
   clearActionToastResourceHold,
+  getActionToastSyncProtectedResourceIds,
   getActionToastSyncSnapshot,
   hasPendingActionToast,
   hasActiveResourceCreation,
@@ -187,6 +188,16 @@ test("a pending resource is paused only while an editing hold is active", async 
   assert.equal(triggerToastSubmit(), true);
 
   await Promise.resolve();
+});
+
+test("an interaction hold protects a resource before its action is queued", () => {
+  setActionToastResourceHold("calendar-pointer", ["resizing-event"]);
+
+  assert.deepEqual(getActionToastSyncSnapshot().pendingResourceIds, []);
+  assert.deepEqual(getActionToastSyncProtectedResourceIds(), ["resizing-event"]);
+
+  clearActionToastResourceHold("calendar-pointer");
+  assert.deepEqual(getActionToastSyncProtectedResourceIds(), []);
 });
 
 test("pending sync protection applies only to selected resources", async () => {

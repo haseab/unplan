@@ -89,6 +89,7 @@ import { useTodoistTaskExtraction } from "@/hooks/use-todoist-task-extraction";
 import {
   clearActionToastResourceHold,
   getActionToastServerSyncSnapshot,
+  getActionToastSyncProtectedResourceIds,
   getActionToastSyncSnapshot,
   hasActiveActionToast,
   hasActiveResourceCreation,
@@ -402,6 +403,8 @@ type GoogleEventLoadTarget = {
   range: CalendarEventLoadRange;
   revision: number;
 };
+
+const CALENDAR_KEYBOARD_TRANSFORM_HOLD_SCOPE = "calendar-keyboard-transform";
 
 type Marquee = { x1: number; y1: number; x2: number; y2: number };
 
@@ -870,6 +873,22 @@ export function CalendarApp() {
     });
     return cancelledIds;
   }, []);
+
+  const cancelSelectedPendingEventCreation = React.useCallback(() => {
+    const cancelledIds = cancelPendingEventCreations(selected);
+    if (!cancelledIds.size) return false;
+    setEvents((current) => current.filter(({ id }) => !cancelledIds.has(id)));
+    setSelected((current) => new Set(
+      [...current].filter((eventId) => !cancelledIds.has(eventId)),
+    ));
+    setEventDetailsPreview(null);
+    setRightSidebarTab("todos");
+    window.requestAnimationFrame(() => {
+      document.querySelector<HTMLElement>(".calendar-workspace")
+        ?.focus({ preventScroll: true });
+    });
+    return true;
+  }, [cancelPendingEventCreations, selected]);
 
   React.useEffect(() => {
     eventsRef.current = events;
@@ -1457,10 +1476,9 @@ export function CalendarApp() {
           suppressedRemovalIds: reconciliation.suppressedRemovalIds,
         });
       }
-      const queuedToastEventIds = getActionToastSyncSnapshot().pendingResourceIds;
       const syncProtectedEventIds = new Set([
         ...pendingEventMutationOriginsRef.current.keys(),
-        ...queuedToastEventIds,
+        ...getActionToastSyncProtectedResourceIds(),
       ]);
       const eventsWithPendingUpdates = preservePendingCalendarEventUpdates(
         reconciliation.events,
@@ -1577,18 +1595,6 @@ export function CalendarApp() {
         );
         if (!plan) return;
 
-        console.debug("[CALENDAR:LOAD] loading event range", {
-          coverage: googleEventsCoverageRef.current,
-          mode: plan.mode,
-          range: {
-            end: new Date(plan.range.end).toISOString(),
-            start: new Date(plan.range.start).toISOString(),
-          },
-          target: {
-            end: new Date(target.range.end).toISOString(),
-            start: new Date(target.range.start).toISOString(),
-          },
-        });
         const loaded = await loadGoogleEventsRef.current({
           key: target.key,
           mode: plan.mode,
@@ -3380,33 +3386,6 @@ export function CalendarApp() {
     };
   }, [focusRenderedEvent]);
 
-  React.useEffect(() => {
-    const traceEventFocusLoss = (focusEvent: FocusEvent) => {
-      const eventElement = focusEvent.target instanceof Element
-        ? focusEvent.target.closest<HTMLElement>(".calendar-event, .all-day-event")
-        : null;
-      if (!eventElement) return;
-      window.queueMicrotask(() => {
-        const activeElement = document.activeElement as HTMLElement | null;
-        console.debug("[BUG:EVENT-TITLE-FOCUS] [FOCUS:OUT] calendar event lost focus", {
-          activeClass: activeElement?.className ?? null,
-          activeEventKey: activeElement?.dataset.eventKey ?? null,
-          activeTag: activeElement?.tagName ?? null,
-          fromEventKey: eventElement.dataset.eventKey ?? null,
-          relatedTarget: focusEvent.relatedTarget instanceof HTMLElement
-            ? {
-                className: focusEvent.relatedTarget.className,
-                eventKey: focusEvent.relatedTarget.dataset.eventKey ?? null,
-                tagName: focusEvent.relatedTarget.tagName,
-              }
-            : null,
-        });
-      });
-    };
-    document.addEventListener("focusout", traceEventFocusLoss, true);
-    return () => document.removeEventListener("focusout", traceEventFocusLoss, true);
-  }, []);
-
   const focusCalendarTarget = React.useCallback((rememberedEventKey: string | null) => {
     const elements = renderedEventElements();
     const currentTime = new Date();
@@ -3799,6 +3778,12 @@ export function CalendarApp() {
         dismissCreationDraft();
         return;
       }
+      if (event.key === "Escape" && cancelSelectedPendingEventCreation()) {
+        event.preventDefault();
+        event.stopPropagation();
+        focusCalendarSurface();
+        return;
+      }
       if (
         event.key === "Escape"
         && selected.size
@@ -3936,10 +3921,6 @@ export function CalendarApp() {
         shiftKey: event.shiftKey,
       })) {
         event.preventDefault();
-        console.debug("[BUG:COLOR-PICKER-NAV] [SHORTCUT] requesting color picker focus", {
-          activeTag: document.activeElement?.tagName ?? null,
-          selectedCount: selected.size,
-        });
         setSelectedEventColorPickerFocusRequested(true);
         setRightSidebarTab("events");
       } else if (
@@ -4013,7 +3994,6 @@ export function CalendarApp() {
           return;
         }
         const direction = event.key.slice(5).toLowerCase() as EventNavigationDirection;
-        const origin = event.target instanceof HTMLElement ? event.target : null;
         const extendSelection = event.shiftKey
           && (direction === "down" || direction === "up");
         const navigated = navigateBetweenEvents(
@@ -4030,17 +4010,6 @@ export function CalendarApp() {
               : EVENT_NAVIGATION_REPEAT_INTERVAL_MS,
           );
         }
-        console.debug("[BUG:EVENT-TITLE-FOCUS] [KEYBOARD:ARROW] handled arrow key", {
-          activeEventKey: (document.activeElement as HTMLElement | null)?.dataset.eventKey ?? null,
-          activeTag: document.activeElement?.tagName ?? null,
-          direction,
-          extendSelection,
-          navigated,
-          originClass: origin?.className ?? null,
-          originEventKey: origin?.dataset.eventKey ?? null,
-          originTag: origin?.tagName ?? null,
-          selectedCount: selected.size,
-        });
         if (shouldConsumeEventNavigationKey({
           activeCalendar: activeSelectionSurface === "calendar",
           navigated,
@@ -4105,7 +4074,7 @@ export function CalendarApp() {
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [activeSelectionSurface, cancelActiveInteraction, cancelVisibleEventFinder, changeDayCount, clearEventSelection, closeDateCommand, copySelection, createAdjacentEvent, creationDraft, dayCount, deleteEvents, dismissCreationDraft, duplicateEvents, eventNavigationRepeat, extractedTasks.length, focusCalendarSurface, focusRenderedEvent, focusSidebarSurface, google.connected, navigateBetweenEvents, navigateDays, openDateCommand, openEventSearch, openVisibleEventFinder, requestGoogleEventsRefresh, rightSidebarTab, selected, setEventSearchOpen, showDateCommandDialog, showEventSearch, showSettings, showShortcuts, showVisibleEventFinder, syncing, ungroupedTodoistTasks.length]);
+  }, [activeSelectionSurface, cancelActiveInteraction, cancelSelectedPendingEventCreation, cancelVisibleEventFinder, changeDayCount, clearEventSelection, closeDateCommand, copySelection, createAdjacentEvent, creationDraft, dayCount, deleteEvents, dismissCreationDraft, duplicateEvents, eventNavigationRepeat, extractedTasks.length, focusCalendarSurface, focusRenderedEvent, focusSidebarSurface, google.connected, navigateBetweenEvents, navigateDays, openDateCommand, openEventSearch, openVisibleEventFinder, requestGoogleEventsRefresh, rightSidebarTab, selected, setEventSearchOpen, showDateCommandDialog, showEventSearch, showSettings, showShortcuts, showVisibleEventFinder, syncing, ungroupedTodoistTasks.length]);
 
   const toggleCalendar = (calendarId: string) => {
     const calendar = calendars.find((candidate) => candidate.id === calendarId);
@@ -5089,6 +5058,7 @@ export function CalendarApp() {
             : "Saving event move…",
         },
       );
+      clearActionToastResourceHold(CALENDAR_KEYBOARD_TRANSFORM_HOLD_SCOPE);
     };
 
     const cancelKeyboardMoveAtOrigin = (session: KeyboardMoveSession) => {
@@ -5100,6 +5070,7 @@ export function CalendarApp() {
       restoreEvents(session.originals);
       if (keyboardMoveSessionRef.current === session) {
         keyboardMoveSessionRef.current = null;
+        clearActionToastResourceHold(CALENDAR_KEYBOARD_TRANSFORM_HOLD_SCOPE);
       }
       return true;
     };
@@ -5118,6 +5089,7 @@ export function CalendarApp() {
         restoreEvents(session.originals);
         if (keyboardMoveSessionRef.current === session) {
           keyboardMoveSessionRef.current = null;
+          clearActionToastResourceHold(CALENDAR_KEYBOARD_TRANSFORM_HOLD_SCOPE);
         }
         return;
       }
@@ -5284,6 +5256,7 @@ export function CalendarApp() {
             startMinuteDelta: session.startMinuteDelta,
           },
           resizeShortcut.minuteDelta,
+          session.originals,
         );
         session.resizeActiveEdge = nextResize.activeEdge;
         session.endMinuteDelta = nextResize.endMinuteDelta;
@@ -5301,6 +5274,10 @@ export function CalendarApp() {
 
       const moved = keyboardEventUpdates(session, selection);
       const movedById = new Map(moved.map((event) => [event.id, event]));
+      setActionToastResourceHold(
+        CALENDAR_KEYBOARD_TRANSFORM_HOLD_SCOPE,
+        session.originals.map(({ id }) => id),
+      );
       if (moveShortcut || moveToPresent) {
         const focusedEventKey = keyboardEvent.target instanceof Element
           ? keyboardEvent.target.closest<HTMLElement>("[data-event-key]")
@@ -5350,6 +5327,9 @@ export function CalendarApp() {
           }
         }
       }
+      eventsRef.current = eventsRef.current.map(
+        (event) => movedById.get(event.id) ?? event,
+      );
       setEvents((current) => current.map((event) => movedById.get(event.id) ?? event));
       if (cancelKeyboardMoveAtOrigin(session)) return true;
       const idleDelay = resizeShortcut
@@ -6713,6 +6693,7 @@ export function CalendarApp() {
             draft={creationDraft}
             onBulkUpdateEvents={bulkUpdateEventDetails}
             onCancel={dismissCreationDraft}
+            onCancelPendingCreation={cancelSelectedPendingEventCreation}
             onClearSelection={clearEventSelection}
             onCopySelection={copySelection}
             onCreate={createEvent}
@@ -6726,32 +6707,8 @@ export function CalendarApp() {
             onFocusWithinChange={setEventDetailsFocused}
             onFocusEvent={(event) => {
               const eventKey = calendarEventKey(event.calendarId, event.id);
-              console.debug("[BUG:EVENT-TITLE-FOCUS] [FOCUS:REQUEST] scheduling event focus", {
-                activeTag: document.activeElement?.tagName ?? null,
-                eventKey,
-              });
               window.requestAnimationFrame(() => {
-                const focused = focusRenderedEvent(eventKey, false);
-                const activeElement = document.activeElement as HTMLElement | null;
-                console.debug("[BUG:EVENT-TITLE-FOCUS] [FOCUS:RESULT] attempted event focus", {
-                  activeClass: activeElement?.className ?? null,
-                  activeEventKey: activeElement?.dataset.eventKey ?? null,
-                  activeTag: activeElement?.tagName ?? null,
-                  eventKey,
-                  focused,
-                });
-                window.setTimeout(() => {
-                  const settledActiveElement = document.activeElement as HTMLElement | null;
-                  console.debug("[BUG:EVENT-TITLE-FOCUS] [FOCUS:SETTLED] checked focus after render", {
-                    activeClass: settledActiveElement?.className ?? null,
-                    activeEventKey: settledActiveElement?.dataset.eventKey ?? null,
-                    activeTag: settledActiveElement?.tagName ?? null,
-                    eventKey,
-                    eventStillConnected: renderedEventElements().some(
-                      (element) => element.dataset.eventKey === eventKey,
-                    ),
-                  });
-                }, 500);
+                focusRenderedEvent(eventKey, false);
               });
             }}
             onRemoveSelection={(eventId) => setSelected((current) => {

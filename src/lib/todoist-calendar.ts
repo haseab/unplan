@@ -11,6 +11,10 @@ const UNPLAN_METADATA_TOKENS = /\[\[unplan:v1;[^\]]+\]\]/g;
 const EVENT_VERTICAL_INSET_PX = 2;
 const TODOIST_EVENT_DURATION_STEP_MINUTES = 15;
 const TODOIST_EVENT_MAX_DURATION_MINUTES = 24 * 60;
+const TODOIST_SCHEDULING_ALERT_GROUPS = new Set([
+  "priority right now",
+  "priority today",
+]);
 export const TODOIST_ROOT_GROUP = "__unplan_root__";
 
 export const todoistGroupDisplayName = (group: string) =>
@@ -26,6 +30,33 @@ export const isPriorityTodoistGroup = (group: string) => {
 
 export const isPriorityLaterTodoistGroup = (group: string) =>
   normalizedTodoistGroupLeaf(group) === "priority later";
+
+export const todoistSchedulingAlertGroups = (
+  groups: ReadonlyArray<readonly [group: string, itemCount: number]>,
+  parents: TodoistGroupParents,
+) => new Set(groups.flatMap(([group]) => {
+  if (!TODOIST_SCHEDULING_ALERT_GROUPS.has(normalizedTodoistGroupLeaf(group))) return [];
+  const subtreeHasItems = groups.some(([candidate, itemCount]) =>
+    itemCount > 0
+    && (candidate === group || isTodoistGroupDescendant(candidate, group, parents))
+  );
+  return subtreeHasItems ? [group] : [];
+}));
+
+export const todoistFolderNeedsScheduling = ({
+  alertGroups,
+  collapsed,
+  group,
+  parents,
+}: {
+  alertGroups: ReadonlySet<string>;
+  collapsed: boolean;
+  group: string;
+  parents: TodoistGroupParents;
+}) => alertGroups.has(group)
+  || (collapsed && [...alertGroups].some((alertGroup) =>
+    isTodoistGroupDescendant(alertGroup, group, parents)
+  ));
 
 export const isTodoistTriageGroup = (group: string | undefined) =>
   !group?.trim() || group.trim().toLocaleLowerCase() === "ungrouped";

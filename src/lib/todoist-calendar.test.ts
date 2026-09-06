@@ -10,7 +10,9 @@ import {
   isTodoistGroupDescendant,
   reorderTodoistGroupNames,
   todoistGroupPath,
+  todoistSchedulingAlertGroups,
   todoistFolderFirstRowOrder,
+  todoistFolderNeedsScheduling,
   todoistGroupDropEdgeAtPointer,
   todoistGroupDropTargetsShareBoundary,
   isTodoistCalendarName,
@@ -521,6 +523,43 @@ test("builds an indented folder tree from persisted parent names", () => {
   );
   assert.equal(isTodoistGroupDescendant("Design", "Work", parents), true);
   assert.equal(isTodoistGroupDescendant("Work", "Design", parents), false);
+});
+
+test("finds scheduling alerts in priority folder subtrees", () => {
+  const groups: Array<[string, number]> = [
+    ["Priority", 0],
+    ["Priority Right Now", 2],
+    ["Priority Today", 0],
+    ["Today Later", 1],
+    ["General", 4],
+  ];
+  const parents = {
+    "Priority Right Now": "Priority",
+    "Priority Today": "Priority",
+    "Today Later": "Priority Today",
+  };
+
+  const alertGroups = todoistSchedulingAlertGroups(groups, parents);
+
+  assert.deepEqual(alertGroups, new Set(["Priority Right Now", "Priority Today"]));
+  assert.equal(todoistFolderNeedsScheduling({
+    alertGroups,
+    collapsed: true,
+    group: "Priority",
+    parents,
+  }), true);
+  assert.equal(todoistFolderNeedsScheduling({
+    alertGroups,
+    collapsed: false,
+    group: "Priority",
+    parents,
+  }), false);
+  assert.equal(todoistFolderNeedsScheduling({
+    alertGroups,
+    collapsed: false,
+    group: "Priority Today",
+    parents,
+  }), true);
 });
 
 test("resolves keyboard task moves across adjacent, parent, and child folders", () => {

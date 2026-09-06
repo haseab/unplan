@@ -320,20 +320,36 @@ export const applyKeyboardResizeTransform = (
 export const advanceKeyboardResizeTransform = (
   transform: KeyboardResizeTransform,
   minuteDelta: number,
+  events: CalendarEvent[],
 ): KeyboardResizeTransform => {
   const activeEdge = transform.activeEdge
     ?? (minuteDelta < 0 ? "start" : "end");
+  const maximumShrinkMinutes = events.length
+    ? Math.max(
+        0,
+        Math.min(...events.map((event) => differenceInMinutes(
+          parseISO(event.end),
+          parseISO(event.start),
+        ))) - SNAP_MINUTES,
+      )
+    : 0;
 
   return activeEdge === "end"
     ? {
         ...transform,
         activeEdge,
-        endMinuteDelta: transform.endMinuteDelta + minuteDelta,
+        endMinuteDelta: Math.max(
+          transform.endMinuteDelta + minuteDelta,
+          -maximumShrinkMinutes,
+        ),
       }
     : {
         ...transform,
         activeEdge,
-        startMinuteDelta: transform.startMinuteDelta + minuteDelta,
+        startMinuteDelta: Math.min(
+          transform.startMinuteDelta + minuteDelta,
+          maximumShrinkMinutes,
+        ),
       };
 };
 

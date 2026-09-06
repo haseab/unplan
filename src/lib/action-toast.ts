@@ -474,6 +474,20 @@ export const subscribeActionToastSync = (listener: () => void) => {
 export const getActionToastSyncSnapshot = () => syncSnapshot;
 export const getActionToastServerSyncSnapshot = () => EMPTY_SYNC_SNAPSHOT;
 
+/**
+ * Resources whose local representation must win over an in-flight provider
+ * snapshot. This includes active pointer/editor holds before an action toast
+ * exists, closing the gap between starting an interaction and queueing its
+ * eventual mutation.
+ */
+export const getActionToastSyncProtectedResourceIds = () => {
+  const resourceIds = new Set(syncSnapshot.pendingResourceIds);
+  resourceHolds.forEach((heldIds) => {
+    heldIds.forEach((resourceId) => resourceIds.add(resourceId));
+  });
+  return [...resourceIds];
+};
+
 export const actionToastSyncIntersectsResources = (
   snapshot: ActionToastSyncSnapshot,
   resourceIds: ReadonlySet<string>,

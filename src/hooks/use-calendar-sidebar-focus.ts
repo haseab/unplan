@@ -182,10 +182,6 @@ export const useCalendarSidebarFocus = (
         || !event.target.closest(".right-sidebar")
       ) return;
       if (event.target.closest("[data-sidebar-horizontal-arrows='true']")) {
-        console.debug("[BUG:COLOR-PICKER-NAV] [SIDEBAR:ARROW-BYPASS] letting palette handle arrow", {
-          key: event.key,
-          targetLabel: event.target.getAttribute("aria-label"),
-        });
         return;
       }
       const action = sidebarHorizontalArrowAction({

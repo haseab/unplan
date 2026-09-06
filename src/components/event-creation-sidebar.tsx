@@ -62,6 +62,7 @@ type EventCreationSidebarProps = {
   calendars: CalendarSource[];
   draft: EventCreationDraft | null;
   onCancel: () => void;
+  onCancelPendingCreation: () => void;
   onClearSelection: () => void;
   onBulkUpdateEvents: (events: CalendarEvent[]) => Promise<boolean>;
   onCopySelection: () => void;
@@ -142,6 +143,7 @@ function EventDetailsEditor({
   onRespond,
   onCalendarPickerClose,
   onCalendarPickerOpen,
+  onCancelPendingCreation,
   onColorPickerAutoFocused,
   onUpdate,
   pendingCreation,
@@ -164,6 +166,7 @@ function EventDetailsEditor({
   ) => Promise<boolean>;
   onCalendarPickerClose: () => void;
   onCalendarPickerOpen: () => void;
+  onCancelPendingCreation: () => void;
   onColorPickerAutoFocused: () => void;
   onUpdate: (event: CalendarEvent) => Promise<boolean>;
   pendingCreation: boolean;
@@ -263,12 +266,6 @@ function EventDetailsEditor({
       return candidate;
     });
     onPreview(candidate);
-    console.debug("[BUG:COLOR-PICKER-NAV] [SIDEBAR:PREVIEW] applied optimistic color", {
-      color: colorChange.color,
-      colorId: colorChange.colorId ?? null,
-      customColor: colorChange.customColor ?? null,
-      eventId: candidate.id,
-    });
   };
 
   const cancelColorPreview = () => {
@@ -284,21 +281,10 @@ function EventDetailsEditor({
       return candidate;
     });
     onPreview(candidate);
-    console.debug("[BUG:COLOR-PICKER-NAV] [SIDEBAR:CANCEL] restored saved color", {
-      color: originalColor.color,
-      eventId: candidate.id,
-    });
   };
 
   const commitColor = (colorChange: EventColorChange, restoreFocus: boolean) => {
     updateDraft((current) => applyColorChange(current, colorChange));
-    console.debug("[BUG:COLOR-PICKER-NAV] [SIDEBAR:COMMIT] queued color update", {
-      color: colorChange.color,
-      colorId: colorChange.colorId ?? null,
-      customColor: colorChange.customColor ?? null,
-      eventId: edited.id,
-      restoreFocus,
-    });
     if (restoreFocus) onFocusEvent(edited);
     void flushUpdate();
   };
@@ -475,6 +461,7 @@ function EventDetailsEditor({
         accentColor={edited.color}
         aria-label="Event title"
         calendars={calendars}
+        cancelOnEscape={pendingCreation}
         currentCalendarId={edited.calendarId}
         data-sidebar-primary-focus
         excludeCurrentTitle
@@ -503,9 +490,11 @@ function EventDetailsEditor({
             if (titleAction) {
               keyboardEvent.preventDefault();
               keyboardEvent.stopPropagation();
-              if (titleAction === "cancel") cancelTitle();
+              if (titleAction === "cancel" && pendingCreation) {
+                onCancelPendingCreation();
+              } else if (titleAction === "cancel") cancelTitle();
               else void commitTitle();
-              onFocusEvent(edited);
+              if (!pendingCreation || titleAction !== "cancel") onFocusEvent(edited);
               return;
             }
             if (
@@ -733,6 +722,7 @@ export function EventCreationSidebar({
   calendars,
   draft,
   onCancel,
+  onCancelPendingCreation,
   onClearSelection,
   onBulkUpdateEvents,
   onCopySelection,
@@ -894,6 +884,7 @@ export function EventCreationSidebar({
           onRespond={onRespondToEvent}
           onCalendarPickerClose={onSelectedEventCalendarPickerClose}
           onCalendarPickerOpen={onSelectedEventCalendarPickerOpen}
+          onCancelPendingCreation={onCancelPendingCreation}
           onColorPickerAutoFocused={onSelectedEventColorPickerAutoFocused}
           onUpdate={onUpdateEvent}
           pendingCreation={selectedEventPendingCreation}
