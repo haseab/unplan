@@ -658,8 +658,8 @@ const compareVerticalEventOrder = (
   second: EventNavigationRect,
 ) => first.dayIndex - second.dayIndex
   || first.startMinute - second.startMinute
-  || first.left - second.left
   || first.endMinute - second.endMinute
+  || first.left - second.left
   || first.eventKey.localeCompare(second.eventKey);
 
 export const findVerticalEventKey = (

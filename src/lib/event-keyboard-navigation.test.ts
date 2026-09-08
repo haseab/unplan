@@ -631,6 +631,22 @@ test("simultaneous events use stable left-to-right vertical ordering", () => {
   assert.equal(findVerticalEventKey(right, [left, right], "up"), "left");
 });
 
+test("simultaneous events use end time before overlap layout position", () => {
+  const rasmus = rect("rasmus", 1, 40, 60, 200, 150);
+  const timetracking = rect("timetracking", 1, 160, 100, 80, 30);
+  const sfTechWeek = rect("sf-tech-week", 1, 40, 100, 200, 120);
+  const events = [rasmus, timetracking, sfTechWeek];
+
+  assert.equal(
+    findVerticalEventKey(rasmus, events, "down"),
+    "timetracking",
+  );
+  assert.equal(
+    findVerticalEventKey(timetracking, events, "down"),
+    "sf-tech-week",
+  );
+});
+
 test("horizontal navigation skips empty days", () => {
   const anchor = rect("anchor", 1, 100, 100);
 
