@@ -7,6 +7,7 @@ import {
   parseRecentEventTitles,
   reconcileRecentEventTitles,
   recordRecentEventTitleUse,
+  resetRecentEventTitleRanking,
   type RecentEventTitle,
 } from "@/lib/recent-event-titles";
 
@@ -55,5 +56,9 @@ export function useRecentEventTitles(initialEvents: CalendarEvent[]) {
     updateEntries((current) => addRecentEventTitle(current, event));
   }, [updateEntries]);
 
-  return { entries, recordUse, rememberEvent, rememberEvents };
+  const resetRanking = React.useCallback((entry: RecentEventTitle) => {
+    updateEntries((current) => resetRecentEventTitleRanking(current, entry));
+  }, [updateEntries]);
+
+  return { entries, recordUse, rememberEvent, rememberEvents, resetRanking };
 }

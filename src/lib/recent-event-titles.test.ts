@@ -10,6 +10,7 @@ import {
   recentEventEditDurationMinutes,
   recentEventPreviewDurationMinutes,
   recordRecentEventTitleUse,
+  resetRecentEventTitleRanking,
   searchRecentEventTitles,
 } from "./recent-event-titles";
 
@@ -129,7 +130,7 @@ test("observing the same loaded window does not duplicate suggestions", () => {
   assert.equal(second[0].eventId, "1");
 });
 
-test("fuzzy score ranks first and explicit usage breaks ties", () => {
+test("selection frequency ranks before other search relevance", () => {
   const now = new Date("2026-08-30T00:00:00.000Z").getTime();
   let entries = reconcileRecentEventTitles([], [
     event("1", "Product planning", "2026-08-20T10:00:00.000Z"),
@@ -223,4 +224,47 @@ test("the recent-title cache is unbounded", () => {
     new Date("2026-08-30T00:00:00.000Z").getTime(),
   );
   assert.equal(entries.length, 300);
+});
+
+test("recent-title search can expose twenty ranked entries", () => {
+  const entries = reconcileRecentEventTitles(
+    [],
+    Array.from({ length: 25 }, (_, index) => event(
+      String(index),
+      `Planning ${index}`,
+      "2026-08-01T10:00:00.000Z",
+    )),
+    new Date("2026-08-30T00:00:00.000Z").getTime(),
+  );
+
+  assert.equal(searchRecentEventTitles(entries, "planning", { limit: 20 }).length, 20);
+});
+
+test("title coverage ranks concise matches first without superseding selection frequency", () => {
+  const now = new Date("2026-08-30T00:00:00.000Z").getTime();
+  let entries = reconcileRecentEventTitles([], [
+    event("walking", "🚶 Moving", "2026-08-01T10:00:00.000Z", "work"),
+    event("car", "🚗 Moving", "2026-08-02T10:00:00.000Z", "personal"),
+    event("tasks", "Moving Tasks", "2026-08-03T10:00:00.000Z", "work"),
+    event("long-tail", "RT - add moving orbs to onboarding", "2026-08-04T10:00:00.000Z", "work"),
+  ], now);
+
+  assert.deepEqual(
+    new Set(searchRecentEventTitles(entries, "moving").slice(0, 2).map(({ title }) => title)),
+    new Set(["🚶 Moving", "🚗 Moving"]),
+  );
+
+  entries = recordRecentEventTitleUse(entries, {
+    calendarId: "work",
+    title: "RT - add moving orbs to onboarding",
+  });
+  assert.equal(
+    searchRecentEventTitles(entries, "moving")[0].title,
+    "RT - add moving orbs to onboarding",
+  );
+
+  const longTail = entries.find(({ eventId }) => eventId === "long-tail")!;
+  entries = resetRecentEventTitleRanking(entries, longTail);
+  assert.equal(entries.find(({ eventId }) => eventId === "long-tail")?.usageCount, 0);
+  assert.match(searchRecentEventTitles(entries, "moving")[0].title, /Moving$/);
 });

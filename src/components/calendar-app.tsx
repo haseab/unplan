@@ -522,6 +522,7 @@ export function CalendarApp() {
   const {
     entries: recentEventTitles,
     recordUse: recordRecentEventTitleUse,
+    resetRanking: resetRecentEventTitleRanking,
     rememberEvent: rememberRecentEventTitle,
     rememberEvents: rememberRecentEventTitles,
   } = useRecentEventTitles(events);
@@ -6740,6 +6741,7 @@ export function CalendarApp() {
               createEvent(entry.title, calendarId, nextDraft);
             }}
             onRecentTitleUsed={recordRecentEventTitleUse}
+            onRecentTitleRankingReset={resetRecentEventTitleRanking}
             onSelectedEventCalendarPickerClose={closeSelectedEventCalendarPicker}
             onSelectedEventCalendarPickerOpen={() => {
               setOpenSelectedEventCalendarPicker(true);

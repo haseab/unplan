@@ -1,7 +1,7 @@
 "use client";
 
 import { formatDistanceToNowStrict } from "date-fns";
-import { Clock3 } from "lucide-react";
+import { Clock3, X } from "lucide-react";
 import * as React from "react";
 import {
   EventTitleField,
@@ -20,6 +20,7 @@ type EventTitleEditorProps = EventTitleFieldProps & {
   currentCalendarId?: string;
   excludeCurrentTitle?: boolean;
   onRecentTitleNavigation?: () => void;
+  onRecentTitleRankingReset: (entry: RecentEventTitle) => void;
   onRecentTitleUsed: (entry: RecentEventTitle) => void;
   recentTitles: RecentEventTitle[];
 };
@@ -47,6 +48,7 @@ export const EventTitleEditor = React.forwardRef<
   onFocus,
   onKeyDown,
   onRecentTitleNavigation,
+  onRecentTitleRankingReset,
   onRecentTitleUsed,
   onValueChange,
   recentTitles,
@@ -54,6 +56,7 @@ export const EventTitleEditor = React.forwardRef<
   ...props
 }, forwardedRef) {
   const inputRef = React.useRef<HTMLTextAreaElement>(null);
+  const optionRefs = React.useRef(new Map<number, HTMLDivElement>());
   const [activeIndex, setActiveIndex] = React.useState(-1);
   const [dismissed, setDismissed] = React.useState(false);
   const [focused, setFocused] = React.useState(false);
@@ -68,7 +71,7 @@ export const EventTitleEditor = React.forwardRef<
     {
       excludeCalendarId: currentCalendarId,
       excludeTitle: excludeCurrentTitle && !touched ? value : undefined,
-      limit: 5,
+      limit: 20,
     },
   ), [currentCalendarId, excludeCurrentTitle, recentTitles, touched, value]);
   const open = focused && !dismissed && results.length > 0;
@@ -80,6 +83,11 @@ export const EventTitleEditor = React.forwardRef<
   React.useEffect(() => {
     if (activeIndex >= results.length) setActiveIndex(results.length - 1);
   }, [activeIndex, results.length]);
+
+  React.useEffect(() => {
+    if (activeIndex < 0) return;
+    optionRefs.current.get(activeIndex)?.scrollIntoView({ block: "nearest" });
+  }, [activeIndex]);
 
   const choose = (entry: RecentEventTitle) => {
     onValueChange(entry.title);
@@ -169,31 +177,53 @@ export const EventTitleEditor = React.forwardRef<
           <header><Clock3 size={12} /><span>Recent timers</span><small>↑↓ to browse</small></header>
           <div id={listboxId} role="listbox" aria-label="Recent event titles">
             {results.map((entry, index) => (
-              <button
+              <div
                 aria-selected={index === activeIndex}
                 className="recent-event-title-option"
                 id={`${listboxId}-option-${index}`}
                 key={recentEventTitleKey(entry.calendarId, entry.normalizedTitle)}
-                onClick={() => choose(entry)}
-                onMouseDown={(event) => event.preventDefault()}
                 onMouseEnter={() => setActiveIndex(index)}
+                ref={(element) => {
+                  if (element) optionRefs.current.set(index, element);
+                  else optionRefs.current.delete(index);
+                }}
                 role="option"
-                type="button"
               >
-                <span
-                  className="recent-event-title-color"
-                  style={{ backgroundColor: entry.calendarColor }}
-                />
-                <span className="recent-event-title-copy">
-                  <strong>{entry.title}</strong>
-                  <small>
-                    {calendarNames.get(entry.calendarId) ?? "Calendar"}
-                    <span aria-hidden="true"> · </span>
-                    {formatDistanceToNowStrict(entry.lastUsedAt, { addSuffix: true })}
-                  </small>
-                </span>
-                <em>{formatDuration(entry.durationMinutes)}</em>
-              </button>
+                <button
+                  className="recent-event-title-select"
+                  onClick={() => choose(entry)}
+                  onMouseDown={(event) => event.preventDefault()}
+                  tabIndex={-1}
+                  type="button"
+                >
+                  <span
+                    className="recent-event-title-color"
+                    style={{ backgroundColor: entry.calendarColor }}
+                  />
+                  <span className="recent-event-title-copy">
+                    <strong>{entry.title}</strong>
+                    <small>
+                      {calendarNames.get(entry.calendarId) ?? "Calendar"}
+                      <span aria-hidden="true"> · </span>
+                      {formatDistanceToNowStrict(entry.lastUsedAt, { addSuffix: true })}
+                    </small>
+                  </span>
+                  <em>{formatDuration(entry.durationMinutes)}</em>
+                </button>
+                <button
+                  aria-label={`Reset ranking for ${entry.title}`}
+                  className="recent-event-title-reset"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onRecentTitleRankingReset(entry);
+                  }}
+                  onMouseDown={(event) => event.preventDefault()}
+                  title="Reset ranking"
+                  type="button"
+                >
+                  <X aria-hidden="true" size={13} />
+                </button>
+              </div>
             ))}
           </div>
         </section>

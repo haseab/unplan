@@ -75,6 +75,7 @@ type EventCreationSidebarProps = {
   onFocusEvent: (event: CalendarEvent) => void;
   onRemoveSelection: (eventId: string) => void;
   onRecentTitleUsed: (entry: RecentEventTitle) => void;
+  onRecentTitleRankingReset: (entry: RecentEventTitle) => void;
   onCreateFromRecent: (entry: RecentEventTitle) => void;
   onSelectedEventCalendarPickerClose: () => void;
   onSelectedEventCalendarPickerOpen: () => void;
@@ -138,6 +139,7 @@ function EventDetailsEditor({
   onCreateConference,
   onFocusEvent,
   onRecentTitleUsed,
+  onRecentTitleRankingReset,
   onTitleAutoFocused,
   onPreview,
   onRespond,
@@ -158,6 +160,7 @@ function EventDetailsEditor({
   onCreateConference: (event: CalendarEvent) => Promise<string>;
   onFocusEvent: (event: CalendarEvent) => void;
   onRecentTitleUsed: (entry: RecentEventTitle) => void;
+  onRecentTitleRankingReset: (entry: RecentEventTitle) => void;
   onTitleAutoFocused: () => void;
   onPreview: (event: CalendarEvent | null) => void;
   onRespond: (
@@ -466,6 +469,7 @@ function EventDetailsEditor({
         data-sidebar-primary-focus
         excludeCurrentTitle
         onRecentTitleNavigation={deferUpdate}
+        onRecentTitleRankingReset={onRecentTitleRankingReset}
         onRecentTitleUsed={(entry) => {
           applyRecentTitleMetadata(entry);
           onRecentTitleUsed(entry);
@@ -741,6 +745,7 @@ export function EventCreationSidebar({
   onPreviewEvent,
   onCreateFromRecent,
   onRecentTitleUsed,
+  onRecentTitleRankingReset,
   onRespondToEvent,
   onUpdateEvent,
   selectedEvents,
@@ -811,6 +816,7 @@ export function EventCreationSidebar({
               onRecentTitleUsed(entry);
               onCreateFromRecent(entry);
             }}
+            onRecentTitleRankingReset={onRecentTitleRankingReset}
             recentTitles={recentTitles}
             onKeyDown={(event) => {
               if (
@@ -879,6 +885,7 @@ export function EventCreationSidebar({
           onCreateConference={onCreateConference}
           onFocusEvent={onFocusEvent}
           onRecentTitleUsed={onRecentTitleUsed}
+          onRecentTitleRankingReset={onRecentTitleRankingReset}
           onTitleAutoFocused={onSelectedEventTitleAutoFocused}
           onPreview={onPreviewEvent}
           onRespond={onRespondToEvent}

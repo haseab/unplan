@@ -40,7 +40,7 @@ export function TaskTriageCard({
     <div className="task-triage-card-triggers">
       {extractedCount > 0 && (
         <button
-          aria-label={`Extracte triage, ${extractedCount} remaining`}
+          aria-label={`Extracted triage, ${extractedCount} remaining`}
           className="task-triage-card-trigger"
           data-sidebar-navigation-id={sidebarTriageNavigationId("extracted")}
           data-sidebar-navigation-kind="action"
@@ -53,7 +53,7 @@ export function TaskTriageCard({
         >
           <span>{extractedCount}</span>
           <Sparkles aria-hidden="true" size={14} />
-          <strong>Extracte triage</strong>
+          <strong>Extracted triage</strong>
         </button>
       )}
       {normalCount > 0 && (

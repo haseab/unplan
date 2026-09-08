@@ -127,6 +127,18 @@ export const reconcileRecentEventTitles = (
   return [...newEntries, ...reconciled];
 };
 
+export const resetRecentEventTitleRanking = (
+  current: RecentEventTitle[],
+  entry: Pick<RecentEventTitle, "calendarId" | "normalizedTitle">,
+) => {
+  const resetKey = recentEventTitleKey(entry.calendarId, entry.normalizedTitle);
+  return current.map((candidate) =>
+    recentEventTitleKey(candidate.calendarId, candidate.normalizedTitle) === resetKey
+      ? { ...candidate, usageCount: 0 }
+      : candidate
+  );
+};
+
 export const addRecentEventTitle = (
   current: RecentEventTitle[],
   event: CalendarEvent,
@@ -174,6 +186,9 @@ const fuzzyScore = (query: string, title: string) => {
   return queryIndex === query.length ? score : -1;
 };
 
+const searchableCharacterCount = (value: string) =>
+  [...value].filter((character) => /[\p{L}\p{N}]/u.test(character)).length;
+
 export const searchRecentEventTitles = (
   entries: RecentEventTitle[],
   query: string,
@@ -199,10 +214,17 @@ export const searchRecentEventTitles = (
     .flatMap((entry) => {
       const matchScore = fuzzyScore(normalizedQuery, entry.normalizedTitle);
       if (matchScore < 0) return [];
-      return [{ entry, score: matchScore }];
+      const titleLength = searchableCharacterCount(entry.normalizedTitle);
+      const coverage = titleLength > 0 && entry.normalizedTitle.includes(normalizedQuery)
+        ? searchableCharacterCount(normalizedQuery) / titleLength
+        : 0;
+      return [{ coverage, entry, score: matchScore }];
     })
     .sort((first, second) =>
-      second.score - first.score || second.entry.usageCount - first.entry.usageCount
+      second.entry.usageCount - first.entry.usageCount
+      || second.coverage - first.coverage
+      || second.score - first.score
+      || second.entry.lastUsedAt - first.entry.lastUsedAt
     )
     .slice(0, options.limit ?? 5)
     .map(({ entry }) => entry);
