@@ -195,6 +195,14 @@ export const isEventMoveToPresentShortcut = ({
   && !shiftKey
 );
 
+export const eventStackShortcut = (
+  context: Parameters<typeof isEventMoveToPresentShortcut>[0],
+): "up" | "down" | null => {
+  if (context.selectedCount < 2) return null;
+  if (!isEventMoveToPresentShortcut({ ...context, key: "ArrowDown", selectedCount: 1 })) return null;
+  return context.key === "ArrowUp" ? "up" : context.key === "ArrowDown" ? "down" : null;
+};
+
 export const isPastEventDuplicateShortcut = ({
   activeCalendar,
   altKey,

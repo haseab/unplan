@@ -63,3 +63,17 @@ export const moveSelectionToCalendar = (
   color: event.colorId ? event.color : calendar.backgroundColor,
   textColor: event.colorId ? event.textColor : calendar.foregroundColor,
 }));
+
+/** Pack chronologically while retaining input order for selection and undo reconciliation. */
+export const stackEventSelection = (events: CalendarEvent[], start?: Date) => {
+  if (!events.length || events.some((event) => event.allDay)) return events;
+  const ordered = [...events].sort((a, b) => Date.parse(a.start) - Date.parse(b.start));
+  let cursor = start?.getTime() ?? Date.parse(ordered[0].start);
+  const stacked = new Map(ordered.map((event) => {
+    const duration = Date.parse(event.end) - Date.parse(event.start);
+    const next = { ...event, start: new Date(cursor).toISOString(), end: new Date(cursor + duration).toISOString() };
+    cursor += duration;
+    return [event.id, next];
+  }));
+  return events.map((event) => stacked.get(event.id)!);
+};

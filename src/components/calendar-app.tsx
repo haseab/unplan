@@ -34,6 +34,7 @@ import {
 } from "lucide-react";
 import * as React from "react";
 import { flushSync } from "react-dom";
+import { transformKeyboardEventSelection } from "@/lib/keyboard-event-transform";
 import { toast } from "sonner";
 import { BulkConfirmationDialog } from "@/components/bulk-confirmation-dialog";
 import { CalendarEventContent } from "@/components/calendar-event-content";
@@ -184,6 +185,7 @@ import {
   isEventColorPickerShortcut,
   isEventMoveAtOrigin,
   isEventMoveToPresentShortcut,
+  eventStackShortcut,
   isEventTitleFocusShortcut,
   isHorizontalEventNavigationCandidate,
   isLeftSidebarToggleShortcut,
@@ -206,7 +208,6 @@ import {
 import {
   MINUTES_IN_DAY,
   advanceKeyboardResizeTransform,
-  applyKeyboardResizeTransform,
   calendarScrollTopForMinute,
   clamp,
   eventGeometry,
@@ -219,7 +220,6 @@ import {
   getWeekDays,
   latestQuarterHour,
   moveEvent,
-  moveEventToStart,
   nextAvailableEventStart,
   retimePastEventToLatestQuarterHour,
   resolveKeyboardResizeEdge,
@@ -661,6 +661,7 @@ export function CalendarApp() {
     token: todoistToken,
     updateTask: updateTodoistTask,
   } = useTodoist({ syncProtectedTaskIds: selectedTodoistTaskIds });
+  const refreshing = syncing || todoistLoading;
   const {
     destinationProject: taskExtractionDestination,
     extractionProject,
@@ -721,6 +722,7 @@ export function CalendarApp() {
     startMinuteDelta: number;
     submitImmediately: boolean;
     targetStart: Date | null;
+    stackSelection: boolean;
     idleTimer: ReturnType<typeof setTimeout> | null;
   } | null>(null);
   const submitKeyboardMoveRef = React.useRef<(() => boolean) | null>(null);
@@ -1677,7 +1679,12 @@ export function CalendarApp() {
     return () => window.clearTimeout(timer);
   }, [google.connected, googleEventLoadKey, processGoogleEventRangeQueue, renderStart, renderedDayCount]);
 
-  const requestGoogleEventsRefresh = React.useCallback(() => {
+  const requestCalendarRefresh = React.useCallback(() => {
+    if (todoistConnected) {
+      void refreshTodoist().catch((error: unknown) => {
+        toast.error(error instanceof Error ? error.message : "Task sync failed");
+      });
+    }
     if (!google.connected || !googleEventLoadKey) return;
     const previousTarget = googleEventsDesiredRangeRef.current;
     const revision = (previousTarget?.revision ?? 0) + 1;
@@ -1691,12 +1698,12 @@ export function CalendarApp() {
       revision,
     };
     processGoogleEventRangeQueue();
-  }, [google.connected, googleEventLoadKey, processGoogleEventRangeQueue, renderStart, renderedDayCount]);
+  }, [google.connected, googleEventLoadKey, processGoogleEventRangeQueue, refreshTodoist, renderStart, renderedDayCount, todoistConnected]);
 
   useGoogleCalendarRefresh({
     canRefresh: () => !hasActiveActionToast(),
     enabled: google.connected,
-    onRefresh: requestGoogleEventsRefresh,
+    onRefresh: requestCalendarRefresh,
   });
 
   const searchEvents = React.useCallback(
@@ -4064,11 +4071,11 @@ export function CalendarApp() {
         && !event.repeat
         && event.key.toLowerCase() === "r"
         && google.connected
-        && !syncing
+        && !refreshing
         && !document.querySelector(".modal-backdrop")
       ) {
         event.preventDefault();
-        requestGoogleEventsRefresh();
+        requestCalendarRefresh();
       } else if (!modifier && event.key.toLowerCase() === "t") {
         setWeekStart(startOfCalendarWeek(new Date()));
       } else if (!modifier && event.key.toLowerCase() === "j") {
@@ -4083,7 +4090,7 @@ export function CalendarApp() {
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [activeSelectionSurface, cancelActiveInteraction, cancelSelectedPendingEventCreation, cancelVisibleEventFinder, changeDayCount, clearEventSelection, closeDateCommand, copySelection, createKeyboardEvent, creationDraft, dayCount, deleteEvents, dismissCreationDraft, duplicateEvents, eventNavigationRepeat, extractedTasks.length, focusCalendarSurface, focusRenderedEvent, focusSidebarSurface, google.connected, navigateBetweenEvents, navigateDays, openDateCommand, openEventSearch, openVisibleEventFinder, requestGoogleEventsRefresh, rightSidebarTab, selected, setEventSearchOpen, showDateCommandDialog, showEventSearch, showSettings, showShortcuts, showVisibleEventFinder, syncing, ungroupedTodoistTasks.length]);
+  }, [activeSelectionSurface, cancelActiveInteraction, cancelSelectedPendingEventCreation, cancelVisibleEventFinder, changeDayCount, clearEventSelection, closeDateCommand, copySelection, createKeyboardEvent, creationDraft, dayCount, deleteEvents, dismissCreationDraft, duplicateEvents, eventNavigationRepeat, extractedTasks.length, focusCalendarSurface, focusRenderedEvent, focusSidebarSurface, google.connected, navigateBetweenEvents, navigateDays, openDateCommand, openEventSearch, openVisibleEventFinder, requestCalendarRefresh, rightSidebarTab, selected, setEventSearchOpen, showDateCommandDialog, showEventSearch, showSettings, showShortcuts, showVisibleEventFinder, refreshing, ungroupedTodoistTasks.length]);
 
   const toggleCalendar = (calendarId: string) => {
     const calendar = calendars.find((candidate) => candidate.id === calendarId);
@@ -4998,24 +5005,12 @@ export function CalendarApp() {
       latestEvents: CalendarEvent[] = session.originals,
     ) => {
       const latestById = new Map(latestEvents.map((event) => [event.id, event]));
-      return session.originals.map((original) => {
-        const latest = latestById.get(original.id) ?? original;
-        const positioned = session.targetStart
-          ? moveEventToStart(original, session.targetStart)
-          : original;
-        const moved = moveEvent(positioned, session.dayDelta, session.minuteDelta);
-        const resized = applyKeyboardResizeTransform(moved, {
-          activeEdge: session.resizeActiveEdge,
-          endMinuteDelta: session.endMinuteDelta,
-          startMinuteDelta: session.startMinuteDelta,
-        });
-        return {
-          ...latest,
-          allDay: resized.allDay,
-          end: resized.end,
-          start: resized.start,
-        };
-      });
+      return transformKeyboardEventSelection(session.originals, session).map((transformed) => ({
+        ...(latestById.get(transformed.id) ?? transformed),
+        allDay: transformed.allDay,
+        end: transformed.end,
+        start: transformed.start,
+      }));
     };
 
     const keyboardTransformIsAtOrigin = (session: KeyboardMoveSession) =>
@@ -5024,7 +5019,7 @@ export function CalendarApp() {
       );
 
     const keyboardTransformOnlyResizes = (session: KeyboardMoveSession) =>
-      session.targetStart === null && isEventMoveAtOrigin(session);
+      !session.stackSelection && session.targetStart === null && isEventMoveAtOrigin(session);
 
     const queueKeyboardMoveToast = (
       session: KeyboardMoveSession,
@@ -5193,7 +5188,8 @@ export function CalendarApp() {
       const resizeShortcut = eventResizeShortcut(shortcutContext);
       const moveToPresent = isEventMoveToPresentShortcut(shortcutContext);
       const gapFillDirection = eventGapFillShortcut(shortcutContext);
-      if (!moveShortcut && !resizeShortcut && !moveToPresent && !gapFillDirection) return false;
+      const stackDirection = eventStackShortcut(shortcutContext);
+      if (!moveShortcut && !resizeShortcut && !moveToPresent && !gapFillDirection && !stackDirection) return false;
 
       keyboardEvent.preventDefault();
       keyboardEvent.stopPropagation();
@@ -5241,13 +5237,15 @@ export function CalendarApp() {
           startMinuteDelta: 0,
           submitImmediately: false,
           targetStart: null,
+          stackSelection: false,
           idleTimer: null,
         };
         keyboardMoveSessionRef.current = session;
         sessionStarted = true;
       }
 
-      if (moveToPresent) {
+      if (stackDirection) session.stackSelection = true;
+      if (moveToPresent || stackDirection === "down") {
         session.dayDelta = 0;
         session.minuteDelta = 0;
         session.targetStart = latestQuarterHour(new Date());
@@ -5297,13 +5295,15 @@ export function CalendarApp() {
         CALENDAR_KEYBOARD_TRANSFORM_HOLD_SCOPE,
         session.originals.map(({ id }) => id),
       );
-      if (moveShortcut || moveToPresent) {
+      if (moveShortcut || moveToPresent || stackDirection) {
         const focusedEventKey = keyboardEvent.target instanceof Element
           ? keyboardEvent.target.closest<HTMLElement>("[data-event-key]")
             ?.dataset.eventKey ?? null
           : null;
         const anchorEventKey = focusedEventKey ?? selectionAnchorRef.current;
-        const movedAnchor = moved.find((event) =>
+        const movedAnchor = stackDirection
+          ? [...moved].sort((a, b) => Date.parse(a.start) - Date.parse(b.start))[0]
+          : moved.find((event) =>
           calendarEventKey(event.calendarId, event.id) === anchorEventKey
         ) ?? moved[0];
         if (movedAnchor) {
@@ -5842,12 +5842,12 @@ export function CalendarApp() {
               <button className="icon-button" onClick={clearEventSelection}><X size={14} /></button>
             </div>
           ) : (
-            <div className="sync-state" data-paused={actionToastSync.pausedResourceIds.length ? "true" : undefined}>{syncing ? <LoaderCircle className="spin" size={14} /> : actionToastSync.pendingResourceIds.length ? <CloudOff size={14} /> : google.connected ? <Cloud size={14} /> : <CloudOff size={14} />}<span>{syncing ? "Syncing" : actionToastSync.pausedResourceIds.length ? "Sync paused while editing" : actionToastSync.pendingResourceIds.length ? "Unsynced changes" : google.connected ? "Up to date" : "Demo calendar"}</span></div>
+            <div className="sync-state" data-paused={actionToastSync.pausedResourceIds.length ? "true" : undefined}>{refreshing ? <LoaderCircle className="spin" size={14} /> : actionToastSync.pendingResourceIds.length ? <CloudOff size={14} /> : google.connected ? <Cloud size={14} /> : <CloudOff size={14} />}<span>{refreshing ? "Syncing" : actionToastSync.pausedResourceIds.length ? "Sync paused while editing" : actionToastSync.pendingResourceIds.length ? "Unsynced changes" : google.connected ? "Up to date" : "Demo calendar"}</span></div>
           )}
 
           <div className="topbar-right">
             <button className="topbar-search-button" onClick={openEventSearch} aria-label="Search all events and tasks"><Search size={14} /><span>Search</span><kbd>⌘ K</kbd></button>
-            <button className="icon-button" onClick={requestGoogleEventsRefresh} aria-label="Refresh" disabled={!google.connected}><RefreshCw size={15} /></button>
+            <button className="icon-button" onClick={requestCalendarRefresh} aria-label="Refresh" disabled={!google.connected}><RefreshCw size={15} /></button>
             <DayCountPicker dayCount={dayCount} onChange={changeDayCount} />
             <button className="icon-button" onClick={() => setShowShortcuts(true)} aria-label="Keyboard shortcuts"><CircleHelp size={16} /></button>
           </div>
@@ -6235,7 +6235,8 @@ export function CalendarApp() {
               <span>Navigate between events</span><span><kbd>↑</kbd> <kbd>↓</kbd> <kbd>←</kbd> <kbd>→</kbd></span>
               <span>Move selected events by one day</span><span><kbd>⌥ ←</kbd> <kbd>⌥ →</kbd></span>
               <span>Move selected events by 15 minutes</span><span><kbd>⌥ ↑</kbd> <kbd>⌥ ↓</kbd></span>
-              <span>Move selected event to the latest 15-minute block</span><kbd>⌥ ⌘ ↓</kbd>
+              <span>Stack selected events without gaps</span><kbd>⌥ ⌘ ↑</kbd>
+              <span>Stack selection and move to the latest 15-minute block</span><kbd>⌥ ⌘ ↓</kbd>
               <span>Previous / next day</span><span><kbd>⌥ ⇧ ←</kbd> <kbd>⌥ ⇧ →</kbd></span>
               <span>Shorten / lengthen selected events from the bottom</span><span><kbd>⌥ ⇧ ↑</kbd> <kbd>⌥ ⇧ ↓</kbd></span>
               <span>Fill gap to previous / next event</span><span><kbd>⌥ ⇧ ⌘ ↑</kbd> <kbd>⌥ ⇧ ⌘ ↓</kbd></span>

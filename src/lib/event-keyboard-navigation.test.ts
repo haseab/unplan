@@ -1,3 +1,4 @@
+import { eventStackShortcut } from "./event-keyboard-navigation";
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
@@ -813,4 +814,21 @@ test("navigation does not fall through to an event behind the requested directio
     findDirectionalEventKey(anchor, [rect("left", 0, 0, 100)], "right"),
     null,
   );
+});
+
+
+test("stack shortcuts require multiple timed calendar events and command-option arrows", () => {
+  const context = {
+    activeCalendar: true, altKey: true, ctrlKey: false, editable: false,
+    includesAllDay: false, key: "ArrowUp", metaKey: true, modalOpen: false,
+    repeat: false, selectedCount: 2, shiftKey: false,
+  };
+  assert.equal(eventStackShortcut(context), "up");
+  assert.equal(eventStackShortcut({ ...context, key: "ArrowDown" }), "down");
+  for (const override of [
+    { selectedCount: 1 }, { includesAllDay: true }, { editable: true },
+    { modalOpen: true }, { repeat: true }, { shiftKey: true },
+    { metaKey: false }, { altKey: false }, { activeCalendar: false },
+    { ctrlKey: true }, { key: "ArrowLeft" },
+  ]) assert.equal(eventStackShortcut({ ...context, ...override }), null);
 });

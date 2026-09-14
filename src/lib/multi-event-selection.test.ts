@@ -6,6 +6,7 @@ import {
   multiEventSelectionSummary,
   moveSelectionToCalendar,
   sharedSelectionValue,
+  stackEventSelection,
 } from "./multi-event-selection";
 
 const event = (
@@ -88,4 +89,28 @@ test("moving a selection updates its calendar palette", () => {
   assert.equal(moved.calendarId, "calendar-b");
   assert.equal(moved.calendarColor, "#abcdef");
   assert.equal(moved.color, "#abcdef");
+});
+
+test("stacking removes gaps and overlaps in chronological order and preserves durations", () => {
+  const selection = [
+    event("last", "2026-08-22T12:00:00.000Z", "2026-08-22T12:30:00.000Z"),
+    event("first", "2026-08-22T09:00:00.000Z", "2026-08-22T10:00:00.000Z"),
+    event("overlap", "2026-08-22T09:30:00.000Z", "2026-08-22T10:00:00.000Z"),
+  ];
+  const stacked = stackEventSelection(selection);
+  assert.deepEqual(stacked.map(({ id }) => id), selection.map(({ id }) => id));
+  assert.equal(stacked[1].start, selection[1].start);
+  assert.equal(stacked[2].start, stacked[1].end);
+  assert.equal(stacked[0].start, stacked[2].end);
+  assert.equal(stacked[0].end, "2026-08-22T11:00:00.000Z");
+  const present = stackEventSelection(selection, new Date("2026-08-23T23:45:00.000Z"));
+  assert.equal(present[1].start, "2026-08-23T23:45:00.000Z");
+  assert.equal(present[0].end, "2026-08-24T01:45:00.000Z");
+  assert.equal(selection[0].start, "2026-08-22T12:00:00.000Z");
+});
+
+test("stacking ignores all-day selections and handles empty selections", () => {
+  assert.deepEqual(stackEventSelection([]), []);
+  const selection = [{ ...event("day", "2026-08-22", "2026-08-23"), allDay: true }];
+  assert.deepEqual(stackEventSelection(selection), selection);
 });
