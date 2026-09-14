@@ -121,6 +121,9 @@ import type {
 import { recentEventPreviewDurationMinutes } from "@/lib/recent-event-titles";
 import {
   adjacentEventCreationDates,
+  currentEventCreationDates,
+  eventCreationShortcutMode,
+  type EventCreationShortcutMode,
   eventCreationDates,
   eventCreationAnchorRange,
   eventCreationPoint,
@@ -995,11 +998,14 @@ export function CalendarApp() {
       ?? defaultCalendar,
     [defaultCalendar, preferredTaskCalendarId, technicalitiesCalendar, writableCalendars],
   );
-  const createAdjacentEvent = React.useCallback((edge: "after" | "before") => {
-    if (selectedEvents.length !== 1 || !defaultCalendar || !createEventRef.current) {
+  const createKeyboardEvent = React.useCallback((mode: EventCreationShortcutMode) => {
+    if (!defaultCalendar || !createEventRef.current) {
       return false;
     }
-    const dates = adjacentEventCreationDates(selectedEvents[0], edge);
+    if (mode !== "now" && selectedEvents.length !== 1) return false;
+    const dates = mode === "now"
+      ? currentEventCreationDates(new Date())
+      : adjacentEventCreationDates(selectedEvents[0], mode);
     createEventRef.current(
       "New event",
       defaultCalendar.id,
@@ -3890,6 +3896,7 @@ export function CalendarApp() {
         }
       }
       if (isEditableTarget(event.target)) return;
+      const creationMode = eventCreationShortcutMode(event);
       const requestedTaskTriageMode = taskTriageShortcutMode({
         altKey: event.altKey,
         extractedTaskCount: extractedTasks.length,
@@ -3953,13 +3960,10 @@ export function CalendarApp() {
         event.preventDefault();
         setShowNewTimeEntry(true);
       } else if (
-        !modifier
-        && !event.shiftKey
-        && !event.repeat
-        && (event.key.toLowerCase() === "n" || event.code === "KeyN")
+        creationMode
         && !document.querySelector(".modal-backdrop")
       ) {
-        if (createAdjacentEvent(event.altKey ? "before" : "after")) {
+        if (createKeyboardEvent(creationMode)) {
           event.preventDefault();
         }
       } else if (isPastEventDuplicateShortcut({
@@ -4075,7 +4079,7 @@ export function CalendarApp() {
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [activeSelectionSurface, cancelActiveInteraction, cancelSelectedPendingEventCreation, cancelVisibleEventFinder, changeDayCount, clearEventSelection, closeDateCommand, copySelection, createAdjacentEvent, creationDraft, dayCount, deleteEvents, dismissCreationDraft, duplicateEvents, eventNavigationRepeat, extractedTasks.length, focusCalendarSurface, focusRenderedEvent, focusSidebarSurface, google.connected, navigateBetweenEvents, navigateDays, openDateCommand, openEventSearch, openVisibleEventFinder, requestGoogleEventsRefresh, rightSidebarTab, selected, setEventSearchOpen, showDateCommandDialog, showEventSearch, showSettings, showShortcuts, showVisibleEventFinder, syncing, ungroupedTodoistTasks.length]);
+  }, [activeSelectionSurface, cancelActiveInteraction, cancelSelectedPendingEventCreation, cancelVisibleEventFinder, changeDayCount, clearEventSelection, closeDateCommand, copySelection, createKeyboardEvent, creationDraft, dayCount, deleteEvents, dismissCreationDraft, duplicateEvents, eventNavigationRepeat, extractedTasks.length, focusCalendarSurface, focusRenderedEvent, focusSidebarSurface, google.connected, navigateBetweenEvents, navigateDays, openDateCommand, openEventSearch, openVisibleEventFinder, requestGoogleEventsRefresh, rightSidebarTab, selected, setEventSearchOpen, showDateCommandDialog, showEventSearch, showSettings, showShortcuts, showVisibleEventFinder, syncing, ungroupedTodoistTasks.length]);
 
   const toggleCalendar = (calendarId: string) => {
     const calendar = calendars.find((candidate) => candidate.id === calendarId);
@@ -6209,6 +6213,7 @@ export function CalendarApp() {
             <div className="shortcut-grid">
               <span>Go to today</span><kbd>T</kbd>
               <span>New time entry</span><kbd>⌘ N</kbd>
+              <span>New event at the latest 15-minute block</span><kbd>⌘ ⌥ N</kbd>
               <span>New event after / before selected event</span><span><kbd>N</kbd> <kbd>⌥ N</kbd></span>
               <span>Duplicate a past event at the latest 15-minute block</span><kbd>S</kbd>
               <span>Sync calendars</span><kbd>R</kbd>

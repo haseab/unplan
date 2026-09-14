@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   adjacentEventCreationDates,
+  currentEventCreationDates,
+  eventCreationShortcutMode,
   eventCreationAnchorRange,
   eventCreationRange,
   eventCreationRangeFromDates,
@@ -98,4 +100,35 @@ test("maps adjacent draft dates to a visible calendar range", () => {
     new Date(2026, 7, 31, 11, 45),
     renderedDays,
   ), null);
+});
+
+
+test("creation shortcuts preserve adjacent modes and recognize Option-modified physical N", () => {
+  const event = {
+    key: "n", code: "KeyN", altKey: false, metaKey: false,
+    ctrlKey: false, shiftKey: false, repeat: false,
+  };
+  assert.equal(eventCreationShortcutMode(event), "after");
+  assert.equal(eventCreationShortcutMode({ ...event, altKey: true, key: "Dead" }), "before");
+  const now = { ...event, altKey: true, metaKey: true, key: "˜" };
+  assert.equal(eventCreationShortcutMode(now), "now");
+  assert.equal(eventCreationShortcutMode({ ...now, metaKey: false, ctrlKey: true }), "now");
+  assert.equal(eventCreationShortcutMode({ ...event, metaKey: true }), null);
+  assert.equal(eventCreationShortcutMode({ ...now, shiftKey: true }), null);
+  assert.equal(eventCreationShortcutMode({ ...now, repeat: true }), null);
+  assert.equal(eventCreationShortcutMode({ ...now, key: "x", code: "KeyX" }), null);
+});
+
+test("current event starts at the most recent quarter hour and lasts 15 minutes", () => {
+  for (const minute of [0, 14, 15, 29, 30, 38, 44, 45, 59]) {
+    const now = new Date(2026, 8, 13, 23, minute, 42, 123);
+    const original = now.getTime();
+    const { start, end } = currentEventCreationDates(now);
+    assert.deepEqual(parts(start), [2026, 9, 13, 23, Math.floor(minute / 15) * 15]);
+    assert.equal(start.getSeconds(), 0);
+    assert.equal(start.getMilliseconds(), 0);
+    assert.equal(end.getTime() - start.getTime(), 15 * 60_000);
+    assert.equal(now.getTime(), original);
+    if (minute >= 45) assert.deepEqual(parts(end), [2026, 9, 14, 0, 0]);
+  }
 });

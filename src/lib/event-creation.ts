@@ -1,6 +1,6 @@
 import { addMinutes, differenceInMinutes, isSameDay, startOfDay } from "date-fns";
 import type { CalendarEvent } from "./calendar-types";
-import { MINUTES_IN_DAY, SNAP_MINUTES, clamp, snapMinutes } from "./calendar-utils";
+import { MINUTES_IN_DAY, SNAP_MINUTES, clamp, latestQuarterHour, snapMinutes } from "./calendar-utils";
 
 export type EventCreationRange = {
   dayIndex: number;
@@ -15,6 +15,28 @@ export type EventCreationSession = {
 };
 
 export type AdjacentEventCreationEdge = "after" | "before";
+
+export type EventCreationShortcutMode = AdjacentEventCreationEdge | "now";
+
+export const eventCreationShortcutMode = (event: {
+  key: string;
+  code: string;
+  altKey: boolean;
+  metaKey: boolean;
+  ctrlKey: boolean;
+  shiftKey: boolean;
+  repeat: boolean;
+}): EventCreationShortcutMode | null => {
+  if (event.shiftKey || event.repeat) return null;
+  if (event.key.toLowerCase() !== "n" && event.code !== "KeyN") return null;
+  if (event.metaKey || event.ctrlKey) return event.altKey ? "now" : null;
+  return event.altKey ? "before" : "after";
+};
+
+export const currentEventCreationDates = (now: Date) => {
+  const start = latestQuarterHour(now);
+  return { start, end: addMinutes(start, SNAP_MINUTES) };
+};
 
 export const adjacentEventCreationDates = (
   event: Pick<CalendarEvent, "end" | "start">,
