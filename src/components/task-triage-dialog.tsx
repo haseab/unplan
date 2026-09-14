@@ -3,7 +3,7 @@
 import {
   ArrowLeft,
   ArrowRight,
-  Check,
+  CalendarPlus,
   ExternalLink,
   Folder,
   FolderOpen,
@@ -14,6 +14,9 @@ import {
   X,
 } from "lucide-react";
 import * as React from "react";
+import type { CalendarSource } from "@/lib/calendar-types";
+import { PriorityTaskReview } from "@/components/priority-task-review";
+import { PRIORITY_REVIEW_ANIMATION_MS, priorityReviewTasks, type PriorityReviewCard } from "@/lib/priority-task-review";
 import { InlineMarkdownLinks } from "@/components/inline-markdown-links";
 import { todoistTaskUrl, type TodoistTask } from "@/lib/todoist";
 import {
@@ -24,6 +27,7 @@ import {
 import { readTodoistFolderPreferences } from "@/lib/todoist-folder-backup";
 import {
   taskTriageFolders,
+  taskTriagePhase,
   type TaskTriageFolder,
   type TaskTriageMode,
 } from "@/lib/task-triage";
@@ -31,12 +35,16 @@ export type { TaskTriageMode } from "@/lib/task-triage";
 type TriageDirection = "left" | "right";
 
 type TaskTriageDialogProps = {
+  calendars: CalendarSource[];
+  tasks: TodoistTask[];
   extractedTasks: TodoistTask[];
   groups: string[];
   initialMode: TaskTriageMode;
   onAssignGroup: (task: TodoistTask, group: string) => Promise<void>;
   onDeleteTask: (task: TodoistTask) => Promise<void>;
   onOpenChange: (open: boolean) => void;
+  onScheduleTask: (task: TodoistTask, onRestore?: () => void) => Promise<void>;
+  onRestorePriorityTask: (card: PriorityReviewCard) => void;
   onRenameTask: (task: TodoistTask, title: string) => Promise<void>;
   onResolveExtracted: (task: TodoistTask, resolution: "delete" | "keep") => Promise<void>;
   onReturnAnimationEnd: (taskId: string) => void;
@@ -112,6 +120,7 @@ type NormalTaskReviewProps = {
   onHighlight: (index: number) => void;
   onOpenOriginal: () => void;
   onQueryChange: (query: string) => void;
+  onSchedule: () => void;
   onRename: (title: string) => Promise<void>;
   onFolderScroll: (scrollTop: number) => void;
   query: string;
@@ -132,6 +141,7 @@ function NormalTaskReview({
   onOpenOriginal,
   onQueryChange,
   onRename,
+  onSchedule,
   onFolderScroll,
   query,
   resolving,
@@ -364,6 +374,16 @@ function NormalTaskReview({
           </button>
         )}
         <button
+          disabled={resolving || savingTitle || editingTitle}
+          onClick={onSchedule}
+          title="Move to calendar at the next available time (⌘⇧←)"
+          type="button"
+        >
+          <CalendarPlus size={14} />
+          <span>Move to calendar</span>
+          <kbd>⌘⇧←</kbd>
+        </button>
+        <button
           aria-label="Delete task"
           className="task-triage-delete-task"
           disabled={resolving || savingTitle}
@@ -381,6 +401,8 @@ function NormalTaskReview({
 }
 
 export function TaskTriageDialog({
+  calendars,
+  tasks,
   extractedTasks,
   groups,
   initialMode,
@@ -388,13 +410,14 @@ export function TaskTriageDialog({
   onDeleteTask,
   onOpenChange,
   onRenameTask,
+  onScheduleTask,
+  onRestorePriorityTask,
   onResolveExtracted,
   onReturnAnimationEnd,
   open,
   returningTask,
   ungroupedTasks,
 }: TaskTriageDialogProps) {
-  const [completed, setCompleted] = React.useState(false);
   const [resolving, setResolving] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [folderQuery, setFolderQuery] = React.useState("");
@@ -405,16 +428,11 @@ export function TaskTriageDialog({
     groupParents: {},
   });
   const searchInputRef = React.useRef<HTMLInputElement>(null);
-  const phase = initialMode === "extracted" && extractedTasks.length > 0
-    ? "extracted"
-    : "normal";
+  const phase = taskTriagePhase(initialMode, extractedTasks.length, ungroupedTasks.length);
   const currentTask = phase === "extracted"
     ? extractedTasks[0] ?? null
-    : ungroupedTasks[0] ?? null;
-  const sessionFinished = initialMode === "normal"
-    ? ungroupedTasks.length === 0
-    : extractedTasks.length + ungroupedTasks.length === 0;
-  const completionVisible = open && completed && sessionFinished;
+    : phase === "normal" ? ungroupedTasks[0] ?? null : null;
+  const priorityReviewVisible = open && phase === "priority" && !resolving;
   const folders = React.useMemo(() => taskTriageFolders({
     groups,
     order: folderPreferences.groupOrder,
@@ -423,7 +441,6 @@ export function TaskTriageDialog({
   }), [folderPreferences, folderQuery, groups]);
 
   const close = React.useCallback(() => {
-    setCompleted(false);
     setError(null);
     setFolderQuery("");
     setHighlightedFolder(0);
@@ -446,25 +463,23 @@ export function TaskTriageDialog({
   }, [currentTask, open, phase]);
 
   React.useEffect(() => {
-    if (!returningTask || returningTask.id !== currentTask?.id) return;
-    const timer = window.setTimeout(() => onReturnAnimationEnd(returningTask.id), 560);
+    if (!returningTask || (phase !== "priority" && returningTask.id !== currentTask?.id)) return;
+    const timer = window.setTimeout(() => onReturnAnimationEnd(returningTask.id), phase === "priority" ? PRIORITY_REVIEW_ANIMATION_MS : 560);
     return () => window.clearTimeout(timer);
-  }, [currentTask?.id, onReturnAnimationEnd, returningTask]);
+  }, [currentTask?.id, onReturnAnimationEnd, phase, returningTask]);
 
   const resolveExtracted = React.useCallback(async (direction: TriageDirection) => {
     if (!currentTask || resolving || phase !== "extracted") return;
     setError(null);
     setResolving(true);
-    if (extractedTasks.length === 1 && ungroupedTasks.length === 0) setCompleted(true);
     try {
       await onResolveExtracted(currentTask, direction === "left" ? "delete" : "keep");
     } catch (caught) {
-      setCompleted(false);
       setError(caught instanceof Error ? caught.message : "That task could not be reviewed");
     } finally {
       setResolving(false);
     }
-  }, [currentTask, extractedTasks.length, onResolveExtracted, phase, resolving, ungroupedTasks.length]);
+  }, [currentTask, onResolveExtracted, phase, resolving]);
 
   const assignFolder = React.useCallback(async (group: string) => {
     if (!currentTask || resolving || phase !== "normal") return;
@@ -473,16 +488,14 @@ export function TaskTriageDialog({
     setResolving(true);
     setFolderQuery("");
     setHighlightedFolder(0);
-    if (ungroupedTasks.length === 1) setCompleted(true);
     try {
       await onAssignGroup(currentTask, group);
     } catch (caught) {
-      setCompleted(false);
       setError(caught instanceof Error ? caught.message : "That task could not be filed");
     } finally {
       setResolving(false);
     }
-  }, [currentTask, groups, onAssignGroup, phase, resolving, ungroupedTasks.length]);
+  }, [currentTask, groups, onAssignGroup, phase, resolving]);
 
   const deleteNormalTask = React.useCallback(async () => {
     if (!currentTask || resolving || phase !== "normal") return;
@@ -490,16 +503,29 @@ export function TaskTriageDialog({
     setResolving(true);
     setFolderQuery("");
     setHighlightedFolder(0);
-    if (ungroupedTasks.length === 1) setCompleted(true);
     try {
       await onDeleteTask(currentTask);
     } catch (caught) {
-      setCompleted(false);
       setError(caught instanceof Error ? caught.message : "That task could not be deleted");
     } finally {
       setResolving(false);
     }
-  }, [currentTask, onDeleteTask, phase, resolving, ungroupedTasks.length]);
+  }, [currentTask, onDeleteTask, phase, resolving]);
+
+  const scheduleCurrentTask = React.useCallback(async () => {
+    if (!currentTask || resolving || phase !== "normal") return;
+    setError(null);
+    setResolving(true);
+    try {
+      await onScheduleTask(currentTask);
+      setFolderQuery("");
+      setHighlightedFolder(0);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "That task could not be scheduled");
+    } finally {
+      setResolving(false);
+    }
+  }, [currentTask, onScheduleTask, phase, resolving]);
 
   const openOriginalTask = React.useCallback(() => {
     if (!currentTask || currentTask.optimistic) return;
@@ -548,6 +574,22 @@ export function TaskTriageDialog({
         void deleteNormalTask();
         return;
       }
+      if (
+        phase === "normal"
+        && event.metaKey
+        && event.shiftKey
+        && !event.altKey
+        && !event.ctrlKey
+        && !event.repeat
+        && event.key === "ArrowLeft"
+        && !(event.target instanceof HTMLElement
+          && event.target.matches("[data-task-triage-title]"))
+      ) {
+        event.preventDefault();
+        event.stopPropagation();
+        void scheduleCurrentTask();
+        return;
+      }
       if (phase !== "extracted" || event.metaKey || event.ctrlKey || event.altKey || event.repeat) return;
       if (event.key === "ArrowLeft") {
         event.preventDefault();
@@ -561,24 +603,24 @@ export function TaskTriageDialog({
     };
     window.addEventListener("keydown", handleKeyDown, true);
     return () => window.removeEventListener("keydown", handleKeyDown, true);
-  }, [close, currentTask, deleteNormalTask, open, openOriginalTask, phase, resolveExtracted]);
+  }, [close, currentTask, deleteNormalTask, open, openOriginalTask, phase, resolveExtracted, scheduleCurrentTask]);
 
-  React.useEffect(() => {
-    if (!completionVisible) return;
-    const timer = window.setTimeout(close, 1_250);
-    return () => window.clearTimeout(timer);
-  }, [close, completionVisible]);
+  if (!open || (!currentTask && !priorityReviewVisible)) return null;
 
-  if (!open || (!currentTask && !completionVisible)) return null;
-
-  if (completionVisible) {
+  if (priorityReviewVisible) {
+    const restoredTask = tasks.find((task) => task.id === returningTask?.id);
     return (
-      <div aria-label="Task triage complete" aria-modal="true" className="modal-backdrop task-triage-backdrop" role="dialog">
-        <section className="task-triage-modal task-triage-complete">
-          <Check aria-hidden="true" size={28} />
-          <h2>{initialMode === "normal" ? "Triage complete" : "All clear"}</h2>
-          <p>{initialMode === "normal" ? "No tasks left to file." : "There’s nothing left to triage."}</p>
-        </section>
+      <div aria-label="Priority task review" aria-modal="true" className="modal-backdrop task-triage-backdrop" role="dialog">
+        <PriorityTaskReview
+          tasks={priorityReviewTasks(tasks, folderPreferences.groupParents)}
+          calendars={calendars}
+          onSchedule={onScheduleTask}
+          onRestore={onRestorePriorityTask}
+          initialReturning={returningTask && restoredTask
+            ? { task: restoredTask, direction: returningTask.direction }
+            : null}
+          onClose={close}
+        />
       </div>
     );
   }
@@ -630,6 +672,7 @@ export function TaskTriageDialog({
             key={`${currentTask.id}:${currentTask.content}`}
             onAssign={(group) => void assignFolder(group)}
             onDelete={() => void deleteNormalTask()}
+            onSchedule={() => void scheduleCurrentTask()}
             onHighlight={setHighlightedFolder}
             onOpenOriginal={openOriginalTask}
             onFolderScroll={setFolderScrollTop}

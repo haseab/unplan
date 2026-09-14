@@ -11,7 +11,17 @@ export type TaskTriageFolder = {
   path: string;
 };
 
-export type TaskTriageMode = "extracted" | "normal";
+export type TaskTriageMode = "extracted" | "normal" | "priority";
+
+export const taskTriagePhase = (
+  initialMode: TaskTriageMode,
+  extractedTaskCount: number,
+  normalTaskCount: number,
+): TaskTriageMode => {
+  if (initialMode !== "normal" && extractedTaskCount > 0) return "extracted";
+  if (normalTaskCount > 0) return "normal";
+  return "priority";
+};
 
 export const taskTriageShortcutMode = ({
   altKey,
@@ -39,9 +49,7 @@ export const taskTriageShortcutMode = ({
     && !repeat
     && !shiftKey;
   if (!isShortcut) return null;
-  if (extractedTaskCount > 0) return "extracted";
-  if (normalTaskCount > 0) return "normal";
-  return null;
+  return taskTriagePhase("extracted", extractedTaskCount, normalTaskCount);
 };
 
 const folderLabel = (group: string) =>

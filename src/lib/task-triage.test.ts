@@ -2,10 +2,11 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   taskTriageFolders,
+  taskTriagePhase,
   taskTriageShortcutMode,
 } from "./task-triage";
 
-test("Cmd/Ctrl + E prefers extracted tasks and falls back to event tasks", () => {
+test("Cmd/Ctrl + E opens extraction, task triage, then Priority review", () => {
   const shortcut = (
     overrides: Partial<Parameters<typeof taskTriageShortcutMode>[0]> = {},
   ) => taskTriageShortcutMode({
@@ -23,7 +24,7 @@ test("Cmd/Ctrl + E prefers extracted tasks and falls back to event tasks", () =>
   assert.equal(shortcut(), "extracted");
   assert.equal(shortcut({ key: "E" }), "extracted");
   assert.equal(shortcut({ extractedTaskCount: 0 }), "normal");
-  assert.equal(shortcut({ extractedTaskCount: 0, normalTaskCount: 0 }), null);
+  assert.equal(shortcut({ extractedTaskCount: 0, normalTaskCount: 0 }), "priority");
   assert.equal(shortcut({ modalOpen: true }), null);
   assert.equal(shortcut({ modifier: false }), null);
   assert.equal(shortcut({ repeat: true }), null);
@@ -67,4 +68,18 @@ test("task triage folders deduplicate case-insensitively", () => {
     order: [],
     parents: {},
   }).map(({ name }) => name), ["work", "Personal"]);
+});
+
+test("review advances through extraction, task triage, and priority as queues empty", () => {
+  assert.equal(taskTriagePhase("extracted", 2, 3), "extracted");
+  assert.equal(taskTriagePhase("extracted", 0, 3), "normal");
+  assert.equal(taskTriagePhase("extracted", 0, 0), "priority");
+  assert.equal(taskTriagePhase("normal", 0, 1), "normal");
+  assert.equal(taskTriagePhase("normal", 0, 0), "priority");
+});
+
+test("priority launch cannot skip pending queues and restores triage on rollback", () => {
+  assert.equal(taskTriagePhase("priority", 0, 0), "priority");
+  assert.equal(taskTriagePhase("priority", 0, 1), "normal");
+  assert.equal(taskTriagePhase("priority", 1, 1), "extracted");
 });

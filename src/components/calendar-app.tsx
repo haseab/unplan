@@ -4282,6 +4282,7 @@ export function CalendarApp() {
 
   const scheduleTodoistTasks = React.useCallback((
     taskDrafts: Array<{ draft: EventCreationDraft; task: TodoistTask }>,
+    onRestore?: () => void,
   ) => {
     if (!taskDrafts.length) return;
     const nonce = Date.now();
@@ -4357,6 +4358,7 @@ export function CalendarApp() {
           });
           removeOptimisticEvents();
           restoreTodoistTasks(moves.map(({ task }) => task));
+          onRestore?.();
         },
         onSubmit: async (reportProgress) => {
           const hasGoogleEvents = moves.some(({ event }) => event.provider === "google");
@@ -4381,6 +4383,7 @@ export function CalendarApp() {
             });
             removeOptimisticEvents(new Set(failedMoves.map(({ event }) => event.id)));
             restoreTodoistTasks(failedMoves.map(({ task }) => task));
+            onRestore?.();
             toast.error(
               `${failedMoves.length} ${failedMoves.length === 1 ? "task" : "tasks"} could not be scheduled`,
             );
@@ -4430,6 +4433,7 @@ export function CalendarApp() {
           });
           removeOptimisticEvents();
           restoreTodoistTasks(moves.map(({ task }) => task));
+          onRestore?.();
           toast.error(
             error instanceof Error
               ? error.message
@@ -4443,6 +4447,28 @@ export function CalendarApp() {
       });
     return moves;
   }, [completeTodoistTask, defaultTaskCalendar, removeLocalTodoistTasks, replaceLocalTodoistTask, toastDuration, writableCalendars]);
+
+  const scheduleTodoistTaskAtPresent = React.useCallback((task: TodoistTask, onRestore?: () => void) => {
+    const present = latestQuarterHour(new Date());
+    const details = calendarEventDetailsFromTodoistContent(task.content);
+    const durationMinutes = details.durationMinutes ?? 30;
+    const start = nextAvailableEventStart(
+      eventsRef.current,
+      present,
+      durationMinutes,
+    );
+    const moves = scheduleTodoistTasks([{
+      draft: {
+        calendarId: details.calendarId ?? defaultTaskCalendar?.id ?? "",
+        end: new Date(start.getTime() + durationMinutes * 60_000),
+        start,
+      },
+      task,
+    }], onRestore);
+    const scheduled = moves?.[0]?.event;
+    if (!scheduled) throw new Error("Task could not be scheduled");
+    return scheduled;
+  }, [defaultTaskCalendar?.id, scheduleTodoistTasks]);
 
   const dropTodoistTaskOnCalendar = React.useCallback((dropEvent: React.DragEvent<HTMLDivElement>) => {
     dropEvent.preventDefault();
@@ -4677,25 +4703,9 @@ export function CalendarApp() {
         if (!task) return;
         event.preventDefault();
         event.stopPropagation();
-        const present = latestQuarterHour(new Date());
-        const details = calendarEventDetailsFromTodoistContent(task.content);
-        const durationMinutes = details.durationMinutes ?? 30;
-        const start = nextAvailableEventStart(
-          eventsRef.current,
-          present,
-          durationMinutes,
-        );
         try {
-          const moves = scheduleTodoistTasks([{
-            draft: {
-              calendarId: details.calendarId ?? defaultTaskCalendar?.id ?? "",
-              end: new Date(start.getTime() + durationMinutes * 60_000),
-              start,
-            },
-            task,
-          }]);
-          const scheduled = moves?.[0]?.event;
-          if (!scheduled) return;
+          const scheduled = scheduleTodoistTaskAtPresent(task);
+          const start = new Date(scheduled.start);
           const eventKey = calendarEventKey(scheduled.calendarId, scheduled.id);
           pendingKeyboardScheduledEventRef.current = {
             eventId: scheduled.id,
@@ -4741,7 +4751,7 @@ export function CalendarApp() {
     };
     document.addEventListener("keydown", handleCrossSurfaceMove, true);
     return () => document.removeEventListener("keydown", handleCrossSurfaceMove, true);
-  }, [activeSelectionSurface, defaultTaskCalendar?.id, moveCalendarEventsToTriage, renderedDays, renderedEventElements, scheduleTodoistTasks, selected, visibleTodoistTasks]);
+  }, [activeSelectionSurface, moveCalendarEventsToTriage, renderedDays, renderedEventElements, scheduleTodoistTaskAtPresent, selected, visibleTodoistTasks]);
 
   React.useLayoutEffect(() => {
     const pending = pendingKeyboardScheduledEventRef.current;
@@ -6302,6 +6312,8 @@ export function CalendarApp() {
         onChoose={chooseRecurringScope}
       />
       <TaskTriageDialog
+        calendars={writableCalendars}
+        tasks={visibleTodoistTasks}
         extractedTasks={extractedTasks}
         groups={todoistGroups}
         initialMode={taskTriageMode}
@@ -6356,6 +6368,14 @@ export function CalendarApp() {
         )}
         onOpenChange={setShowTaskTriage}
         onRenameTask={renameSidebarTodoistTask}
+        onRestorePriorityTask={({ task, direction }) => {
+          setTaskTriageMode("priority");
+          setReturningTriageTask({ id: task.id, direction });
+          setShowTaskTriage(true);
+        }}
+        onScheduleTask={async (task, onRestore) => {
+          scheduleTodoistTaskAtPresent(task, onRestore);
+        }}
         onResolveExtracted={async (task, resolution) => {
           if (resolution === "keep" && !defaultTaskCalendar) {
             throw new Error("A writable task calendar is required");
