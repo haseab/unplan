@@ -571,7 +571,7 @@ export function CalendarApp() {
   const [showTaskTriage, setShowTaskTriage] = React.useState(false);
   const [taskTriageMode, setTaskTriageMode] = React.useState<TaskTriageMode>("extracted");
   const [returningTriageTask, setReturningTriageTask] = React.useState<{
-    direction: "left" | "right";
+    direction: "left" | "right" | "up";
     id: string;
   } | null>(null);
   const [rightSidebarTab, setRightSidebarTab] = React.useState<RightSidebarTab>("todos");
@@ -3157,7 +3157,7 @@ export function CalendarApp() {
     );
   }, [cancelPendingEventCreations, chooseGuestNotifications, chooseRecurringDeleteScope, confirmBulkAction, selected, toastDuration]);
 
-  const deleteTodoistTasks = React.useCallback(async (source: TodoistTask[]) => {
+  const deleteTodoistTasks = React.useCallback(async (source: TodoistTask[], onRestore?: () => void) => {
     if (!source.length) return false;
     const confirmed = await confirmBulkAction({
       action: "delete",
@@ -3185,7 +3185,10 @@ export function CalendarApp() {
       `Deleted ${source.length === 1 ? todoistTaskDisplayTitle(source[0].content) : `${source.length} tasks`}`,
       {
         duration: toastDuration,
-        onUndo: () => restoreTasks(deleted),
+        onUndo: () => {
+          restoreTasks(deleted);
+          onRestore?.();
+        },
         onSubmit: async (reportProgress) => {
           const { failed } = await runMutationBatch(
             source,
@@ -3196,6 +3199,7 @@ export function CalendarApp() {
 
           const failedIds = new Set(failed.map(({ item }) => item.id));
           restoreTasks(deleted.filter(({ task }) => failedIds.has(task.id)));
+          onRestore?.();
           throw new Error(
             `${failed.length} ${failed.length === 1 ? "task" : "tasks"} could not be deleted`,
           );
@@ -6360,8 +6364,9 @@ export function CalendarApp() {
             submittingMessage: `Moving task to ${group}…`,
           });
         }}
-        onDeleteTask={async (task) => {
-          await deleteTodoistTasks([task]);
+        onDeleteTask={async (task, onRestore) => {
+          const deleted = await deleteTodoistTasks([task], onRestore);
+          if (!deleted) throw new Error("Task could not be deleted");
         }}
         onReturnAnimationEnd={(taskId) => setReturningTriageTask((current) =>
           current?.id === taskId ? null : current

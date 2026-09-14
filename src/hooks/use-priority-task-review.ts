@@ -17,6 +17,7 @@ import { useToastSettings } from "@/hooks/use-toast-settings";
 export function usePriorityTaskReview(
   tasks: TodoistTask[],
   onSchedule: (task: TodoistTask, onRestore?: () => void) => Promise<void>,
+  onDelete: (task: TodoistTask, onRestore?: () => void) => Promise<void>,
   onRestore: (card: PriorityReviewCard) => void,
   initialReturning: PriorityReviewCard | null,
 ) {
@@ -27,11 +28,11 @@ export function usePriorityTaskReview(
   const remaining = remainingPriorityReviewTasks(tasks, state);
   const current = remaining[0];
 
-  const resolve = React.useCallback((direction: PriorityReviewDirection) => {
+  const resolve = React.useCallback((action: PriorityReviewDirection | "delete") => {
     if (!current || locked.current) return;
     locked.current = true;
     setError(null);
-    const card = { task: current, direction };
+    const card: PriorityReviewCard = { task: current, direction: action === "delete" ? "up" : action };
     dispatch({ type: "resolve", card });
     const restore = () => {
       dispatch({ type: "restore", card });
@@ -39,10 +40,11 @@ export function usePriorityTaskReview(
       onRestore(card);
     };
     // Queue the mutation immediately so Undo also works during the exit animation.
-    if (direction === "left") {
-      void onSchedule(current, restore).catch((caught) => {
+    if (action !== "right") {
+      const mutate = action === "delete" ? onDelete : onSchedule;
+      void mutate(current, restore).catch((caught) => {
         restore();
-        setError(caught instanceof Error ? caught.message : "That task could not be scheduled");
+        setError(caught instanceof Error ? caught.message : `That task could not be ${action === "delete" ? "deleted" : "scheduled"}`);
       });
     } else {
       queueActionToast(`Kept ${todoistTaskDisplayTitle(current.content)} in folder`, {
@@ -51,7 +53,7 @@ export function usePriorityTaskReview(
         onSubmit: () => {},
       });
     }
-  }, [current, duration, onRestore, onSchedule]);
+  }, [current, duration, onDelete, onRestore, onSchedule]);
 
   React.useEffect(() => {
     const card = state.departure ?? state.returning;

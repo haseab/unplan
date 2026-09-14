@@ -52,7 +52,7 @@ test("priority swipes require deliberate horizontal movement", () => {
 });
 
 
-for (const direction of ["left", "right"] as const) {
+for (const direction of ["left", "right", "up"] as const) {
   test(`undo ${direction} returns the task to the front and reverses its departure`, () => {
     const tasks = [task("first", "Priority"), task("second", "Priority")];
     const card = { task: tasks[0], direction };

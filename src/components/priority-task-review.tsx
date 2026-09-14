@@ -2,6 +2,8 @@
 
 import * as React from "react";
 import { ArrowLeft, ArrowRight, CalendarPlus, Check, Folder, X } from "lucide-react";
+import { handlePriorityReviewKeyDown } from "@/lib/priority-review-keyboard";
+import { triggerToastUndo, triggerToastSubmit } from "@/lib/action-toast";
 import { CalendarEventContent } from "@/components/calendar-event-content";
 import { usePriorityTaskReview } from "@/hooks/use-priority-task-review";
 import type { CalendarSource } from "@/lib/calendar-types";
@@ -14,13 +16,15 @@ type Props = {
   tasks: TodoistTask[];
   calendars: CalendarSource[];
   onSchedule: (task: TodoistTask, onRestore?: () => void) => Promise<void>;
+  onDelete: (task: TodoistTask, onRestore?: () => void) => Promise<void>;
   onRestore: (card: PriorityReviewCard) => void;
   initialReturning: PriorityReviewCard | null;
   onClose: () => void;
 };
 
-export function PriorityTaskReview({ tasks, calendars, onSchedule, onClose, onRestore, initialReturning }: Props) {
-  const { remaining, departure, returning, restoredAtFront, error, resolve, finished } = usePriorityTaskReview(tasks, onSchedule, onRestore, initialReturning);
+export function PriorityTaskReview({ tasks, calendars, onSchedule, onDelete, onClose, onRestore, initialReturning }: Props) {
+  const { remaining, departure, returning, restoredAtFront, error, resolve, finished } = usePriorityTaskReview(tasks, onSchedule, onDelete, onRestore, initialReturning);
+  const reviewRef = React.useRef<HTMLElement>(null);
   const pointer = React.useRef<{ id: number; x: number; y: number } | null>(null);
   const [dragX, setDragX] = React.useState(0);
   const cards = departure
@@ -34,19 +38,35 @@ export function PriorityTaskReview({ tasks, calendars, onSchedule, onClose, onRe
   }, [finished, onClose]);
 
   React.useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey || event.repeat) return;
-      if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
-      event.preventDefault();
-      event.stopPropagation();
-      resolve(event.key === "ArrowLeft" ? "left" : "right");
+    const previousFocus = document.activeElement;
+    reviewRef.current?.focus({ preventScroll: true });
+    return () => {
+      if (previousFocus instanceof HTMLElement && previousFocus.isConnected) {
+        previousFocus.focus({ preventScroll: true });
+      }
     };
+  }, []);
+
+  React.useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => handlePriorityReviewKeyDown(event, {
+      resolve,
+      undo: triggerToastUndo,
+      submit: triggerToastSubmit,
+      close: onClose,
+      focusNext: (backward) => {
+        const buttons = [...(reviewRef.current?.querySelectorAll<HTMLButtonElement>("button:not(:disabled)") ?? [])];
+        const index = buttons.findIndex((button) => button === document.activeElement);
+        const next = index < 0 ? (backward ? buttons.length - 1 : 0)
+          : (index + (backward ? -1 : 1) + buttons.length) % buttons.length;
+        buttons[next]?.focus();
+      },
+    });
     window.addEventListener("keydown", onKeyDown, true);
     return () => window.removeEventListener("keydown", onKeyDown, true);
-  }, [resolve]);
+  }, [onClose, resolve]);
 
   if (finished) return (
-    <section className="task-triage-modal task-triage-complete" aria-live="polite">
+    <section ref={reviewRef} tabIndex={-1} className="task-triage-modal task-triage-complete" aria-live="polite">
       <Check aria-hidden="true" size={28} />
       <h2>All clear</h2>
       <p>Task triage is complete.</p>
@@ -54,7 +74,7 @@ export function PriorityTaskReview({ tasks, calendars, onSchedule, onClose, onRe
   );
 
   return (
-    <section className="task-triage-modal priority-review-modal" style={{ "--priority-review-duration": `${PRIORITY_REVIEW_ANIMATION_MS}ms` } as React.CSSProperties}>
+    <section ref={reviewRef} tabIndex={-1} className="task-triage-modal priority-review-modal" style={{ "--priority-review-duration": `${PRIORITY_REVIEW_ANIMATION_MS}ms` } as React.CSSProperties}>
       <header className="task-triage-heading">
         <div>
           <span className="task-triage-eyebrow">Priority tasks</span>
@@ -124,7 +144,7 @@ export function PriorityTaskReview({ tasks, calendars, onSchedule, onClose, onRe
           <Folder size={15} /><span>Keep in folder</span><ArrowRight size={15} />
         </button>
       </div>
-      <p className="task-triage-shortcuts"><kbd>←</kbd> stack at present <span /> keep in folder <kbd>→</kbd></p>
+      <p className="task-triage-shortcuts"><kbd>←</kbd> stack at present <span /> keep in folder <kbd>→</kbd><span /><kbd>⌫</kbd> delete</p>
     </section>
   );
 }

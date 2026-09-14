@@ -41,7 +41,7 @@ type TaskTriageDialogProps = {
   groups: string[];
   initialMode: TaskTriageMode;
   onAssignGroup: (task: TodoistTask, group: string) => Promise<void>;
-  onDeleteTask: (task: TodoistTask) => Promise<void>;
+  onDeleteTask: (task: TodoistTask, onRestore?: () => void) => Promise<void>;
   onOpenChange: (open: boolean) => void;
   onScheduleTask: (task: TodoistTask, onRestore?: () => void) => Promise<void>;
   onRestorePriorityTask: (card: PriorityReviewCard) => void;
@@ -49,7 +49,7 @@ type TaskTriageDialogProps = {
   onResolveExtracted: (task: TodoistTask, resolution: "delete" | "keep") => Promise<void>;
   onReturnAnimationEnd: (taskId: string) => void;
   open: boolean;
-  returningTask: { direction: TriageDirection; id: string } | null;
+  returningTask: { direction: PriorityReviewCard["direction"]; id: string } | null;
   ungroupedTasks: TodoistTask[];
 };
 
@@ -615,6 +615,7 @@ export function TaskTriageDialog({
           tasks={priorityReviewTasks(tasks, folderPreferences.groupParents)}
           calendars={calendars}
           onSchedule={onScheduleTask}
+          onDelete={onDeleteTask}
           onRestore={onRestorePriorityTask}
           initialReturning={returningTask && restoredTask
             ? { task: restoredTask, direction: returningTask.direction }

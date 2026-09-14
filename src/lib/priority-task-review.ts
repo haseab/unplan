@@ -22,7 +22,7 @@ export function prioritySwipeDirection(deltaX: number, deltaY: number): Priority
 
 
 export const PRIORITY_REVIEW_ANIMATION_MS = 130;
-export type PriorityReviewCard = { task: TodoistTask; direction: PriorityReviewDirection };
+export type PriorityReviewCard = { task: TodoistTask; direction: PriorityReviewDirection | "up" };
 export type PriorityReviewState = {
   reviewed: Set<string>;
   restoredIds: string[];
