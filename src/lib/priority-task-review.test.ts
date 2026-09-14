@@ -9,9 +9,32 @@ const task = (id: string, group: string): TodoistTask => ({
   projectId: "tasks", due: null,
 });
 
-test("priority review includes priority folders and descendants in task order", () => {
-  const tasks = [task("now", "Priority right now"), task("work", "Work"), task("child", "Launch"), task("later", "Priority Later"), task("root", "Priority")];
-  assert.deepEqual(priorityReviewTasks(tasks, { Launch: "Priority" }).map(({ id }) => id), ["now", "child", "later", "root"]);
+test("priority review only includes Now and Today folders and their descendants", () => {
+  const tasks = [
+    task("now", "Priority right now"),
+    task("alias", "Priority Now"),
+    task("today", "PRIORITY TODAY"),
+    task("work", "Work"),
+    task("child", "Launch"),
+    task("tomorrow", "Priority Tomorrow"),
+    task("later", "Priority Later"),
+    task("root", "Priority"),
+    task("later-child", "Backlog"),
+  ];
+  assert.deepEqual(priorityReviewTasks(tasks, {
+    Launch: "Priority Today",
+    Backlog: "Priority Later",
+    "Priority Today": "Priority",
+    "Priority Later": "Priority",
+  }).map(({ id }) => id), ["now", "alias", "today", "child"]);
+});
+
+test("priority review recognizes normalized folder paths", () => {
+  assert.deepEqual(priorityReviewTasks([
+    task("now", "Work/ PRIORITY RIGHT NOW "),
+    task("today", "Work/Priority Today"),
+    task("later", "Work/Priority Later"),
+  ], {}).map(({ id }) => id), ["now", "today"]);
 });
 
 test("newly filed priority tasks are included; ungrouped tasks are excluded", () => {

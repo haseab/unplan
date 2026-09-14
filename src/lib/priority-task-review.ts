@@ -1,7 +1,7 @@
 import type { TodoistTask } from "./todoist";
 import {
   calendarEventDetailsFromTodoistContent,
-  isPriorityTodoistGroup,
+  isImmediatePriorityTodoistGroup,
   todoistGroupAncestors,
   type TodoistGroupParents,
 } from "./todoist-calendar";
@@ -11,7 +11,7 @@ export type PriorityReviewDirection = "left" | "right";
 export function priorityReviewTasks(tasks: TodoistTask[], parents: TodoistGroupParents) {
   return tasks.filter((task) => {
     const group = calendarEventDetailsFromTodoistContent(task.content).group;
-    return group && [group, ...todoistGroupAncestors(group, parents)].some(isPriorityTodoistGroup);
+    return group && [group, ...todoistGroupAncestors(group, parents)].some(isImmediatePriorityTodoistGroup);
   });
 }
 
