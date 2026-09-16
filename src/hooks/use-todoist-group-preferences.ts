@@ -4,9 +4,10 @@ import * as React from "react";
 
 import {
   TODOIST_COLLAPSED_GROUPS_STORAGE_KEY,
+  TODOIST_CUSTOM_GROUPS_STORAGE_KEY,
   TODOIST_GROUP_ORDER_STORAGE_KEY,
   TODOIST_GROUP_PARENTS_STORAGE_KEY,
-} from "@/lib/todoist-folder-backup";
+} from "../lib/todoist-folder-backup";
 
 const readStoredNames = (key: string) => {
   if (typeof window === "undefined") return [];
@@ -47,14 +48,18 @@ const writeStoredParents = (parents: Record<string, string | null>) => {
 
 export function useTodoistGroupPreferences() {
   const [collapsedGroups, setCollapsedGroups] = React.useState<Set<string>>(
-    () => new Set(readStoredNames(TODOIST_COLLAPSED_GROUPS_STORAGE_KEY)),
+    () => new Set(),
   );
-  const [groupOrder, setGroupOrder] = React.useState<string[]>(
-    () => readStoredNames(TODOIST_GROUP_ORDER_STORAGE_KEY),
-  );
-  const [groupParents, setGroupParents] = React.useState<Record<string, string | null>>(
-    readStoredParents,
-  );
+  const [groupOrder, setGroupOrder] = React.useState<string[]>([]);
+  const [groupParents, setGroupParents] = React.useState<Record<string, string | null>>({});
+
+  React.useEffect(() => {
+    // Restore browser-only preferences after the matching server/client render.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setCollapsedGroups(new Set(readStoredNames(TODOIST_COLLAPSED_GROUPS_STORAGE_KEY)));
+    setGroupOrder(readStoredNames(TODOIST_GROUP_ORDER_STORAGE_KEY));
+    setGroupParents(readStoredParents());
+  }, []);
 
   const toggleGroup = React.useCallback((group: string) => {
     setCollapsedGroups((current) => {
@@ -167,4 +172,15 @@ export function useTodoistGroupPreferences() {
     setGroupParent,
     toggleGroup,
   };
+}
+
+export function useTodoistCustomGroups() {
+  const [groups, setGroups] = React.useState<string[]>([]);
+
+  React.useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Restore local storage after hydration.
+    setGroups(readStoredNames(TODOIST_CUSTOM_GROUPS_STORAGE_KEY));
+  }, []);
+
+  return [groups, setGroups] as const;
 }

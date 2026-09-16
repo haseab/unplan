@@ -821,6 +821,7 @@ kbd {
 .task-triage-shortcuts span { width: 1px; height: 10px; margin: 0 4px; background: var(--line-strong); }
 
 .task-triage-task-preview { padding: 12px 14px; border-radius: 11px; background: var(--surface-muted); }
+.task-triage-created-at { display: block; margin-top: 8px; color: var(--muted); font-size: 11px; line-height: 1.4; }
 .task-triage-task-preview > span { color: var(--text-faint); font-size: 8.5px; font-weight: 680; letter-spacing: 0.06em; text-transform: uppercase; }
 .task-triage-task-preview textarea { display: block; width: 100%; min-height: 25px; max-height: 150px; margin-top: 6px; overflow-y: auto; resize: none; border: 0; outline: 0; background: transparent; color: var(--ink); font: inherit; font-size: 15px; font-weight: 560; line-height: 1.3; letter-spacing: -0.025em; }
 .task-triage-task-preview textarea:focus { box-shadow: inset 0 -1px var(--blue-ink); }
@@ -1490,3 +1491,32 @@ kbd {
   .calendar-event.priority-review-block[data-departure],
   .calendar-event.priority-review-block[data-returning] { animation-duration: 1ms; }
 }
+
+.follow-up-modal form { display: grid; gap: 14px; }
+.follow-up-modal label { font-size: 13px; font-weight: 600; }
+.follow-up-modal input { width: 100%; border: 1px solid var(--line); border-radius: 8px; padding: 12px; background: var(--surface); color: var(--ink); font: inherit; }
+.follow-up-modal form p { margin: 0; font-size: 13px; line-height: 1.5; }
+.follow-up-hint { opacity: .65; }
+.follow-up-stop { display: flex; align-items: center; justify-content: center; gap: 12px; margin: 14px auto 0; padding: 8px 12px; color: var(--ink); font-size: 12px; }
+
+.follow-up-review-actions { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.follow-up-review-actions button { display: flex; min-width: 0; gap: 6px; }
+
+.follow-up-manager { width: min(620px, 100%); }
+.follow-up-manager-review { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; margin-top: 16px; padding: 11px 13px; border: 1px solid var(--blue-border); border-radius: 9px; background: var(--blue-soft); color: var(--blue-ink); font-size: 12px; cursor: pointer; }
+.follow-up-manager-list { list-style: none; margin: 16px 0 0; padding: 0; }
+.follow-up-manager-list li { display: flex; align-items: flex-start; gap: 14px; padding: 17px 0; border-top: 1px solid var(--line); }
+.follow-up-manager-item { flex: 1; min-width: 0; }
+.follow-up-manager-item h3 { margin: 0 0 6px; color: var(--ink); font-size: 15px; font-weight: 600; overflow-wrap: anywhere; }
+.follow-up-manager-item p { margin: 0 0 5px; color: var(--text-soft); font-size: 12px; }
+.follow-up-manager-item small { color: var(--muted); font-size: 11px; }
+.follow-up-manager-date { display: flex; flex-wrap: wrap; gap: 5px 10px; margin-top: 12px; font-size: 11px; color: var(--text-soft); }
+.follow-up-manager-date span { color: var(--muted); }
+.follow-up-manager-date[data-due] time { color: var(--blue-ink); }
+.follow-up-manager-item-actions { display: flex; gap: 3px; }
+.follow-up-manager-item-actions button { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 7px; color: var(--muted); cursor: pointer; }
+.follow-up-manager-item-actions button:hover { background: var(--surface-hover); color: var(--ink); }
+.follow-up-manager-empty { padding: 38px 12px; text-align: center; color: var(--muted); }
+.follow-up-manager-empty svg { margin: 0 auto 12px; }
+.follow-up-manager-empty h3 { color: var(--ink); font-size: 15px; }
+.follow-up-manager-empty p { font-size: 12px; line-height: 1.6; }

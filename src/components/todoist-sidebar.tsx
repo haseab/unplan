@@ -9,6 +9,7 @@ import {
   Pencil,
   Plus,
   RefreshCw,
+  Repeat2,
   Trash2,
 } from "lucide-react";
 import * as React from "react";
@@ -147,6 +148,10 @@ type TodoistSidebarProps = {
   onSelectionChange: (taskIds: ReadonlySet<string>) => void;
   onOpenExtractedTriage: () => void;
   onOpenNormalTriage: () => void;
+  followUpCount: number;
+  scheduledFollowUpCount: number;
+  onManageFollowUps: () => void;
+  onOpenFollowUps: () => void;
   pixelsPerMinute: number;
   tasks: TodoistTask[];
   extractedTriageCount: number;
@@ -210,12 +215,16 @@ export function TodoistSidebar({
   onSelectionChange,
   onOpenExtractedTriage,
   onOpenNormalTriage,
+  followUpCount,
+  scheduledFollowUpCount,
+  onManageFollowUps,
+  onOpenFollowUps,
   pixelsPerMinute,
   tasks,
   extractedTriageCount,
   normalTriageCount,
 }: TodoistSidebarProps) {
-  const triageCount = extractedTriageCount + normalTriageCount;
+  const triageCount = extractedTriageCount + normalTriageCount + followUpCount;
   const [creatingTask, setCreatingTask] = React.useState(false);
   const [creatingGroup, setCreatingGroup] = React.useState(false);
   const [dragOverGroup, setDragOverGroup] = React.useState<string | null>(null);
@@ -410,7 +419,11 @@ export function TodoistSidebar({
         unorderedTaskGroups,
         groupOrder,
         groupParents,
-      );
+      ).filter(([group, items]) => group.toLocaleLowerCase() !== "ungrouped"
+        || items.length > 0
+        || unorderedTaskGroups.some(([candidate]) =>
+          todoistGroupAncestors(candidate, groupParents).includes(group)
+        ));
       return [
         ...flattened.filter(([group]) => group !== TODOIST_ROOT_GROUP),
         ...flattened.filter(([group]) => group === TODOIST_ROOT_GROUP),
@@ -454,6 +467,7 @@ export function TodoistSidebar({
       ...sidebarTriageNavigationItems({
         extractedCount: extractedTriageCount,
         normalCount: normalTriageCount,
+        followUpCount,
       }),
       ...sidebarNavigationItems(
         taskGroups
@@ -471,7 +485,7 @@ export function TodoistSidebar({
           kind: "task" as const,
         })),
     ],
-    [collapsedGroups, extractedTriageCount, groupParents, normalTriageCount, taskGroups],
+    [collapsedGroups, extractedTriageCount, groupParents, normalTriageCount, followUpCount, taskGroups],
   );
   const { beginMarquee, marqueeStyle } = useListMarqueeSelection({
     containerRef: groupsRef,
@@ -1383,6 +1397,15 @@ export function TodoistSidebar({
           >
             <FolderPlus size={14} />
           </button>
+          <button
+            type="button"
+            onClick={onManageFollowUps}
+            onPointerDown={(event) => event.stopPropagation()}
+            aria-label={`All follow-ups, ${scheduledFollowUpCount} scheduled`}
+            title={`All follow-ups (${scheduledFollowUpCount} scheduled)`}
+          >
+            <Repeat2 size={14} />
+          </button>
           <button type="button" onClick={() => void onRefresh()} disabled={!connected || loading} aria-label="Refresh Todoist">
             <RefreshCw className={loading ? "spin" : ""} size={13} />
           </button>
@@ -1485,6 +1508,8 @@ export function TodoistSidebar({
             normalCount={normalTriageCount}
             onOpenExtracted={onOpenExtractedTriage}
             onOpenNormal={onOpenNormalTriage}
+            followUpCount={followUpCount}
+            onOpenFollowUps={onOpenFollowUps}
             onNavigate={(navigationId, direction) => {
               navigateSidebarItem(navigationId, direction, false);
             }}

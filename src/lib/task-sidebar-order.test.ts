@@ -93,3 +93,19 @@ test("collapsed folders skip their complete subtree and continue with the next f
     ],
   );
 });
+
+
+test("follow-ups remain keyboard reachable when they are the only sidebar queue", () => {
+  assert.deepEqual(sidebarTriageNavigationItems({ extractedCount: 0, normalCount: 0, followUpCount: 2 }), [
+    { id: "triage:follow-ups", kind: "action" },
+  ]);
+});
+
+
+test("due follow-ups precede extraction and task triage in sidebar navigation", () => {
+  assert.deepEqual(sidebarTriageNavigationItems({ extractedCount: 3, normalCount: 4, followUpCount: 2 }), [
+    { id: "triage:follow-ups", kind: "action" },
+    { id: "triage:extracted", kind: "action" },
+    { id: "triage:normal", kind: "action" },
+  ]);
+});

@@ -1,9 +1,8 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
-import Script from "next/script";
 import { Toaster } from "sonner";
 import { BrowserConsoleLogger } from "@/components/browser-console-logger";
-import { DEFAULT_THEME, THEME_BOOTSTRAP_SCRIPT } from "@/lib/theme";
+import { DEFAULT_THEME } from "@/lib/theme";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -34,9 +33,12 @@ export default function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <head>
-        <Script id="theme-bootstrap" strategy="beforeInteractive">
-          {THEME_BOOTSTRAP_SCRIPT}
-        </Script>
+        <script
+          id="theme-bootstrap"
+          src="/theme-bootstrap.js"
+          async
+          blocking="render"
+        />
       </head>
       <body>
         {process.env.NODE_ENV === "development" && <BrowserConsoleLogger />}

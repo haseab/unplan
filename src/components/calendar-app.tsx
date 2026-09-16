@@ -1,5 +1,12 @@
 "use client";
 
+import { isFollowUpCreationShortcut } from "@/lib/follow-up-keyboard";
+import { scheduleFollowUp } from "@/lib/follow-up-calendar";
+import { isFollowUpTask } from "@/lib/todoist-follow-ups";
+import { FollowUpManager } from "@/components/follow-up-manager";
+import { useFollowUps } from "@/hooks/use-follow-ups";
+import { FollowUpSetupDialog, FollowUpReviewDialog } from "@/components/follow-up-dialogs";
+import { type FollowUp } from "@/lib/follow-ups";
 import {
   addDays,
   differenceInCalendarDays,
@@ -86,6 +93,7 @@ import { useCalendarTimeScale } from "@/hooks/use-calendar-time-scale";
 import { useCalendarSidebarFocus } from "@/hooks/use-calendar-sidebar-focus";
 import { useToastSettings } from "@/hooks/use-toast-settings";
 import { useTodoist } from "@/hooks/use-todoist";
+import { useTodoistCustomGroups } from "@/hooks/use-todoist-group-preferences";
 import { useTodoistTaskExtraction } from "@/hooks/use-todoist-task-extraction";
 import {
   clearActionToastResourceHold,
@@ -529,6 +537,10 @@ export function CalendarApp() {
     rememberEvent: rememberRecentEventTitle,
     rememberEvents: rememberRecentEventTitles,
   } = useRecentEventTitles(events);
+  const [showFollowUpManager, setShowFollowUpManager] = React.useState(false);
+  const [followUpSource, setFollowUpSource] = React.useState<CalendarEvent | null>(null);
+  const [showFollowUpReview, setShowFollowUpReview] = React.useState(false);
+  const triageAfterFollowUps = React.useRef(false);
   const [eventDetailsPreview, setEventDetailsPreview] = React.useState<CalendarEvent | null>(null);
   const [visibleCalendars, setVisibleCalendars] = React.useState<Set<string>>(
     () => new Set(demoCalendars.map((calendar) => calendar.id)),
@@ -590,19 +602,7 @@ export function CalendarApp() {
   const consumeSelectedEventColorPickerAutoFocus = React.useCallback(() => {
     setSelectedEventColorPickerFocusRequested(false);
   }, []);
-  const [todoistCustomGroups, setTodoistCustomGroups] = React.useState<string[]>(() => {
-    if (typeof window === "undefined") return [];
-    try {
-      const stored = JSON.parse(
-        window.localStorage.getItem(TODOIST_CUSTOM_GROUPS_STORAGE_KEY) ?? "[]",
-      );
-      return Array.isArray(stored)
-        ? stored.filter((group): group is string => typeof group === "string")
-        : [];
-    } catch {
-      return [];
-    }
-  });
+  const [todoistCustomGroups, setTodoistCustomGroups] = useTodoistCustomGroups();
   const [draggedTodoistTasks, setDraggedTodoistTasks] = React.useState<TodoistTask[]>([]);
   const [todoistCalendarDropPoint, setTodoistCalendarDropPoint] = React.useState<TodoistCalendarDropPoint | null>(null);
   const [calendarTaskDropProjection, setCalendarTaskDropProjection] = React.useState<CalendarTaskDropProjection | null>(null);
@@ -661,6 +661,7 @@ export function CalendarApp() {
     token: todoistToken,
     updateTask: updateTodoistTask,
   } = useTodoist({ syncProtectedTaskIds: selectedTodoistTaskIds });
+  const followUps = useFollowUps(todoistToken);
   const refreshing = syncing || todoistLoading;
   const {
     destinationProject: taskExtractionDestination,
@@ -1017,12 +1018,12 @@ export function CalendarApp() {
     return true;
   }, [defaultCalendar, selectedEvents]);
   const visibleTodoistTasks = React.useMemo(
-    () => todoistTasks.filter((task) =>
+    () => todoistTasks.filter((task) => !isFollowUpTask(task) && (
       isLocalTask(task)
       || (
         todoistBucketProjectIds.includes(task.projectId)
         && task.projectId !== extractionProject?.id
-      )
+      ))
     ),
     [extractionProject?.id, todoistBucketProjectIds, todoistTasks],
   );
@@ -1050,6 +1051,75 @@ export function CalendarApp() {
     tasks: visibleTodoistTasks,
     updateTask: updateTodoistTask,
   });
+
+  React.useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (!isFollowUpCreationShortcut(event, {
+        calendarActive: activeSelectionSurface === "calendar",
+        selectedCount: selectedEvents.length,
+        editable: isEditableTarget(event.target),
+        modalOpen: Boolean(document.querySelector(".modal-backdrop")),
+      })) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      setFollowUpSource(selectedEvents[0]);
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [activeSelectionSurface, selectedEvents]);
+
+  const refreshFollowUps = followUps.refresh;
+  const startTaskTriage = React.useCallback(async (mode: TaskTriageMode) => {
+    try {
+      const due = (await refreshFollowUps()).some((item) => Date.parse(item.nextDue) <= Date.now());
+      setTaskTriageMode(mode);
+      triageAfterFollowUps.current = due;
+      setShowFollowUpReview(due);
+      setShowTaskTriage(!due);
+    } catch (error) { toast.error(error instanceof Error ? error.message : "Follow-ups could not sync"); }
+  }, [refreshFollowUps]);
+
+  const openFollowUpReview = async () => {
+    try {
+      await refreshFollowUps();
+      triageAfterFollowUps.current = false;
+      setShowFollowUpManager(false);
+      setShowFollowUpReview(true);
+    } catch (error) { toast.error(error instanceof Error ? error.message : "Follow-ups could not sync"); }
+  };
+
+  const completeFollowUpReview = React.useCallback(() => {
+    setShowFollowUpReview(false);
+    if (triageAfterFollowUps.current) {
+      triageAfterFollowUps.current = false;
+      setShowTaskTriage(true);
+    }
+  }, []);
+
+  const closeFollowUpReview = React.useCallback(() => {
+    triageAfterFollowUps.current = false;
+    setShowFollowUpReview(false);
+  }, []);
+
+  const scheduledFollowUpOccurrences = React.useRef(new Set<string>());
+  const resolveFollowUp = async (item: FollowUp, action: "schedule" | "skip" | "stop") => {
+    if (!followUps.connected) throw new Error("Connect Todoist in Settings to sync and resolve follow-ups.");
+    if (action === "stop") { await followUps.stop(item.id); return; }
+    const current = (await followUps.refresh()).find(({ id }) => id === item.id);
+    if (!current || current.nextDue !== item.nextDue) return;
+    const occurrence = `${item.id}:${item.nextDue}`;
+    if (action === "schedule" && !scheduledFollowUpOccurrences.current.has(occurrence)) {
+      const calendar = writableCalendars.find(({ id }) => id === item.event.calendarId) ?? defaultTaskCalendar;
+      if (!calendar) throw new Error("Choose an available calendar in Settings before scheduling this follow-up.");
+      const event = await scheduleFollowUp(current, calendar);
+      scheduledFollowUpOccurrences.current.add(occurrence);
+      setEvents((current) => [...current, event]);
+      setVisibleCalendars((current) => new Set(current).add(calendar.id));
+      setWeekStart(startOfCalendarWeek(new Date()));
+    }
+    await followUps.advance(current);
+    scheduledFollowUpOccurrences.current.delete(occurrence);
+  };
 
   const setDefaultCalendarId = React.useCallback((calendarId: string) => {
     setPreferredCalendarId(calendarId);
@@ -3958,8 +4028,7 @@ export function CalendarApp() {
         event.preventDefault();
       } else if (requestedTaskTriageMode) {
         event.preventDefault();
-        setTaskTriageMode(requestedTaskTriageMode);
-        setShowTaskTriage(true);
+        startTaskTriage(requestedTaskTriageMode);
       } else if (
         modifier
         && !event.altKey
@@ -4090,7 +4159,7 @@ export function CalendarApp() {
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [activeSelectionSurface, cancelActiveInteraction, cancelSelectedPendingEventCreation, cancelVisibleEventFinder, changeDayCount, clearEventSelection, closeDateCommand, copySelection, createKeyboardEvent, creationDraft, dayCount, deleteEvents, dismissCreationDraft, duplicateEvents, eventNavigationRepeat, extractedTasks.length, focusCalendarSurface, focusRenderedEvent, focusSidebarSurface, google.connected, navigateBetweenEvents, navigateDays, openDateCommand, openEventSearch, openVisibleEventFinder, requestCalendarRefresh, rightSidebarTab, selected, setEventSearchOpen, showDateCommandDialog, showEventSearch, showSettings, showShortcuts, showVisibleEventFinder, refreshing, ungroupedTodoistTasks.length]);
+  }, [activeSelectionSurface, cancelActiveInteraction, cancelSelectedPendingEventCreation, cancelVisibleEventFinder, changeDayCount, clearEventSelection, closeDateCommand, copySelection, createKeyboardEvent, creationDraft, dayCount, deleteEvents, dismissCreationDraft, duplicateEvents, eventNavigationRepeat, extractedTasks.length, focusCalendarSurface, focusRenderedEvent, focusSidebarSurface, google.connected, navigateBetweenEvents, navigateDays, openDateCommand, openEventSearch, openVisibleEventFinder, requestCalendarRefresh, rightSidebarTab, selected, setEventSearchOpen, showDateCommandDialog, showEventSearch, showSettings, showShortcuts, showVisibleEventFinder, refreshing, startTaskTriage, ungroupedTodoistTasks.length]);
 
   const toggleCalendar = (calendarId: string) => {
     const calendar = calendars.find((candidate) => candidate.id === calendarId);
@@ -6265,6 +6334,7 @@ export function CalendarApp() {
               <span>Toggle multiple events</span><kbd>⌘ click</kbd>
               <span>Marquee selection</span><kbd>⇧ drag</kbd>
               <span>Go back / clear selection</span><kbd>Esc</kbd>
+              <span>Create or edit follow-up</span><kbd>F</kbd>
               <span>Show this window</span><kbd>?</kbd>
             </div>
           </section>
@@ -6316,6 +6386,24 @@ export function CalendarApp() {
         onCancel={cancelRecurringDelete}
         onChoose={chooseRecurringScope}
       />
+      {showFollowUpManager && <FollowUpManager
+        items={followUps.items}
+        dueIds={followUps.due.map(({ id }) => id)}
+        calendars={calendars}
+        onSave={followUps.save}
+        onStop={followUps.stop}
+        onClose={() => setShowFollowUpManager(false)}
+        syncError={followUps.error ?? (!followUps.connected ? "Connect Todoist in Settings to sync follow-ups. Existing local schedules will be migrated automatically." : null)}
+        onReviewDue={() => void openFollowUpReview()}
+      />}
+      {followUpSource && <FollowUpSetupDialog
+        event={followUpSource}
+        existing={followUps.items.find((item) => item.event.id === followUpSource.id && item.event.calendarId === followUpSource.calendarId)}
+        onSave={followUps.save}
+        onStop={followUps.stop}
+        onClose={() => setFollowUpSource(null)}
+      />}
+      {showFollowUpReview && <FollowUpReviewDialog items={followUps.due} onResolve={resolveFollowUp} onClose={closeFollowUpReview} onComplete={completeFollowUpReview} />}
       <TaskTriageDialog
         calendars={writableCalendars}
         tasks={visibleTodoistTasks}
@@ -6487,7 +6575,7 @@ export function CalendarApp() {
             calendars={calendars}
             connected={todoistConnected}
             customGroups={todoistCustomGroups}
-            error={todoistError}
+            error={todoistError || followUps.error}
             focusTaskId={pendingTodoistFocusTaskId}
             loading={todoistLoading}
             onCalendarDragEnd={() => {
@@ -6645,12 +6733,10 @@ export function CalendarApp() {
             }}
             onRefresh={() => refreshTodoist()}
             onOpenExtractedTriage={() => {
-              setTaskTriageMode("extracted");
-              setShowTaskTriage(true);
+              startTaskTriage("extracted");
             }}
             onOpenNormalTriage={() => {
-              setTaskTriageMode("normal");
-              setShowTaskTriage(true);
+              startTaskTriage("normal");
             }}
             onRenameTask={renameSidebarTodoistTask}
             onRenameGroup={async (group, nextGroup) => {
@@ -6707,6 +6793,10 @@ export function CalendarApp() {
             onSelectionChange={setSelectedTodoistTaskIds}
             pixelsPerMinute={pixelsPerMinute}
             tasks={visibleTodoistTasks}
+            scheduledFollowUpCount={followUps.items.length}
+            onManageFollowUps={() => { setShowFollowUpManager(true); void followUps.refresh().catch(() => undefined); }}
+            followUpCount={followUps.due.length}
+            onOpenFollowUps={() => void openFollowUpReview()}
             extractedTriageCount={extractedTasks.length}
             normalTriageCount={ungroupedTodoistTasks.length}
           />
@@ -6732,6 +6822,8 @@ export function CalendarApp() {
             onCreateConference={createEventConference}
             onDeleteSelection={() => deleteEvents(selectedEvents)}
             onDuplicateSelection={() => duplicateEvents(selectedEvents)}
+            onFollowUp={setFollowUpSource}
+            selectedEventHasFollowUp={selectedEvents.length === 1 && followUps.items.some((item) => item.event.id === selectedEvents[0].id && item.event.calendarId === selectedEvents[0].calendarId)}
             onDraftPreviewChange={({ calendarId, title }) => {
               setCreationCalendarId(calendarId);
               setCreationPreviewTitle(title);

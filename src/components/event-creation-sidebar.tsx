@@ -70,6 +70,8 @@ type EventCreationSidebarProps = {
   onCreateConference: (event: CalendarEvent) => Promise<string>;
   onDeleteSelection: () => void | Promise<void>;
   onDuplicateSelection: () => void | Promise<void>;
+  onFollowUp: (event: CalendarEvent) => void;
+  selectedEventHasFollowUp: boolean;
   onDraftPreviewChange: (preview: { calendarId: string; title: string }) => void;
   onFocusWithinChange: (focused: boolean) => void;
   onFocusEvent: (event: CalendarEvent) => void;
@@ -137,6 +139,8 @@ function EventDetailsEditor({
   calendars,
   event,
   onCreateConference,
+  onFollowUp,
+  hasFollowUp,
   onFocusEvent,
   onRecentTitleUsed,
   onRecentTitleRankingReset,
@@ -158,6 +162,8 @@ function EventDetailsEditor({
   calendars: CalendarSource[];
   event: CalendarEvent;
   onCreateConference: (event: CalendarEvent) => Promise<string>;
+  onFollowUp: (event: CalendarEvent) => void;
+  hasFollowUp: boolean;
   onFocusEvent: (event: CalendarEvent) => void;
   onRecentTitleUsed: (entry: RecentEventTitle) => void;
   onRecentTitleRankingReset: (entry: RecentEventTitle) => void;
@@ -670,6 +676,16 @@ function EventDetailsEditor({
             {reminderMinutes !== "" && <em>minutes before</em>}
           </span>
         </label>
+        <button
+          className="event-editor-more-trigger"
+          type="button"
+          onClick={() => onFollowUp(edited)}
+          title={hasFollowUp ? "Edit follow-up (F)" : "Create follow-up (F)"}
+        >
+          <Repeat2 size={15} />
+          <span>{hasFollowUp ? "Edit follow-up" : "Create follow-up"}</span>
+          <kbd>F</kbd>
+        </button>
       </section>
 
       <section className="event-details-section event-editor-preferences">
@@ -734,6 +750,8 @@ export function EventCreationSidebar({
   onCreateConference,
   onDeleteSelection,
   onDuplicateSelection,
+  onFollowUp,
+  selectedEventHasFollowUp,
   onDraftPreviewChange,
   onFocusWithinChange,
   onFocusEvent,
@@ -882,6 +900,8 @@ export function EventCreationSidebar({
           calendar={selectedCalendar}
           calendars={calendars}
           event={selectedEvent}
+          onFollowUp={onFollowUp}
+          hasFollowUp={selectedEventHasFollowUp}
           onCreateConference={onCreateConference}
           onFocusEvent={onFocusEvent}
           onRecentTitleUsed={onRecentTitleUsed}

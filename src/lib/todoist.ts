@@ -33,6 +33,7 @@ export const resolveTodoistDestination = (
 };
 
 export type TodoistTask = {
+  createdAt?: string;
   childOrder?: number;
   id: string;
   content: string;
@@ -186,6 +187,7 @@ export const changedTodoistProjectOrders = (
 };
 
 type TodoistTaskPayload = {
+  added_at?: string | null;
   child_order?: number | null;
   id: string;
   content: string;
@@ -215,6 +217,7 @@ type TodoistSectionPayload = {
 };
 
 export const normalizeTodoistTask = (task: TodoistTaskPayload): TodoistTask => ({
+  createdAt: task.added_at ?? undefined,
   childOrder: task.child_order ?? undefined,
   id: String(task.id),
   content: task.content,

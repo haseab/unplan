@@ -151,6 +151,7 @@ function NormalTaskReview({
 }: NormalTaskReviewProps) {
   const details = calendarEventDetailsFromTodoistContent(task.content);
   const title = details.title || task.content;
+  const createdAt = task.createdAt ? new Date(task.createdAt) : null;
   const refreshedFromPriority = details.triageSourceGroup
     ? isPriorityTodoistGroup(details.triageSourceGroup)
     : false;
@@ -289,6 +290,19 @@ function NormalTaskReview({
           >
             <InlineMarkdownLinks>{titleDraft}</InlineMarkdownLinks>
           </div>
+        )}
+        {createdAt && Number.isFinite(createdAt.getTime()) && (
+          <time
+            className="task-triage-created-at"
+            dateTime={task.createdAt}
+            title={createdAt.toLocaleString()}
+          >
+            Created {createdAt.toLocaleDateString(undefined, {
+              month: "short",
+              day: "numeric",
+              year: "numeric",
+            })}
+          </time>
         )}
       </article>
       {error && <p className="task-triage-error">{error}</p>}
