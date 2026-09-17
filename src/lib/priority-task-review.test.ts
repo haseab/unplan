@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createPriorityReviewState, priorityReviewReducer, remainingPriorityReviewTasks, priorityReviewTasks, prioritySwipeDirection } from "./priority-task-review";
-import { todoistContentWithGroup } from "./todoist-calendar";
+import { todoistContentWithGroup, todoistContentWithGroupChange } from "./todoist-calendar";
 import type { TodoistTask } from "./todoist";
 
 const task = (id: string, group: string): TodoistTask => ({
@@ -49,6 +49,29 @@ test("priority swipes require deliberate horizontal movement", () => {
   assert.equal(prioritySwipeDirection(59, 0), null);
   assert.equal(prioritySwipeDirection(-80, 90), null);
   assert.equal(prioritySwipeDirection(0, 0), null);
+});
+
+test("priority review starts with the most recently filed tasks across priority folders", () => {
+  const older = { ...task("older", "Ungrouped"), createdAt: "2026-09-16T12:00:00Z" };
+  const justFlagged = { ...task("just-flagged", "Ungrouped"), createdAt: "2026-01-01T12:00:00Z" };
+  const tasks = [
+    { ...older, content: todoistContentWithGroupChange(older.content, "Priority Now", new Date("2026-09-15T12:00:00Z")) },
+    { ...justFlagged, content: todoistContentWithGroupChange(justFlagged.content, "Launch", new Date("2026-09-16T12:00:00Z")) },
+  ];
+  assert.deepEqual(priorityReviewTasks(tasks, { Launch: "Priority Today" }).map(({ id }) => id), ["just-flagged", "older"]);
+  assert.deepEqual(tasks.map(({ id }) => id), ["older", "just-flagged"], "source order is unchanged");
+});
+
+test("equal filing times keep their order and missing or invalid times come last", () => {
+  const filed = (id: string) => ({
+    ...task(id, "Priority Today"),
+    content: todoistContentWithGroupChange(id, "Priority Today", new Date("2026-09-16T12:00:00Z")),
+  });
+  const invalid = task("invalid", "Priority Now");
+  invalid.content = invalid.content.replace("]]", ";groupChangedAt=invalid]]");
+  assert.deepEqual(priorityReviewTasks([
+    task("legacy", "Priority Today"), filed("first"), invalid, filed("second"),
+  ], {}).map(({ id }) => id), ["first", "second", "legacy", "invalid"]);
 });
 
 

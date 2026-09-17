@@ -9,10 +9,14 @@ import {
 export type PriorityReviewDirection = "left" | "right";
 
 export function priorityReviewTasks(tasks: TodoistTask[], parents: TodoistGroupParents) {
-  return tasks.filter((task) => {
-    const group = calendarEventDetailsFromTodoistContent(task.content).group;
-    return group && [group, ...todoistGroupAncestors(group, parents)].some(isImmediatePriorityTodoistGroup);
-  });
+  return tasks.flatMap((task) => {
+    const { group, groupChangedAt } = calendarEventDetailsFromTodoistContent(task.content);
+    if (!group || ![group, ...todoistGroupAncestors(group, parents)].some(isImmediatePriorityTodoistGroup)) return [];
+    const filedAt = Date.parse(groupChangedAt ?? "");
+    return [{ task, filedAt: Number.isFinite(filedAt) ? filedAt : 0 }];
+  })
+    .sort((first, second) => second.filedAt - first.filedAt)
+    .map(({ task }) => task);
 }
 
 export function prioritySwipeDirection(deltaX: number, deltaY: number): PriorityReviewDirection | null {
