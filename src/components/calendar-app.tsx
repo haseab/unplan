@@ -1069,15 +1069,14 @@ export function CalendarApp() {
   }, [activeSelectionSurface, selectedEvents]);
 
   const refreshFollowUps = followUps.refresh;
-  const startTaskTriage = React.useCallback(async (mode: TaskTriageMode) => {
-    try {
-      const due = (await refreshFollowUps()).some((item) => Date.parse(item.nextDue) <= Date.now());
-      setTaskTriageMode(mode);
-      triageAfterFollowUps.current = due;
-      setShowFollowUpReview(due);
-      setShowTaskTriage(!due);
-    } catch (error) { toast.error(error instanceof Error ? error.message : "Follow-ups could not sync"); }
-  }, [refreshFollowUps]);
+  const hasDueFollowUps = followUps.due.length > 0;
+  const startTaskTriage = React.useCallback((mode: TaskTriageMode) => {
+    // Background polling owns freshness; opening triage must never wait for sync.
+    setTaskTriageMode(mode);
+    triageAfterFollowUps.current = hasDueFollowUps;
+    setShowFollowUpReview(hasDueFollowUps);
+    setShowTaskTriage(!hasDueFollowUps);
+  }, [hasDueFollowUps]);
 
   const openFollowUpReview = async () => {
     try {
