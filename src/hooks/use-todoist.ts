@@ -9,6 +9,7 @@ import {
   createTodoistTask,
   deleteTodoistTask,
   loadTodoistDestinations,
+  invalidateTodoistDestinations,
   loadTodoistTasks,
   insertTodoistTasksAtTarget,
   insertTodoistTaskAtIndex,
@@ -44,6 +45,7 @@ import {
   serializeLocalTasks,
 } from "@/lib/local-tasks";
 import { TodoistStagedTaskCoordinator } from "@/lib/todoist-staged-task-coordinator";
+import { TODOIST_DESTINATIONS_CACHE_MS } from "@/lib/todoist-destinations-cache";
 import {
   getActionToastSyncSnapshot,
   reconcileActionToastSyncProtection,
@@ -345,6 +347,28 @@ export function useTodoist({
     return () => window.clearTimeout(timer);
   }, [refresh, token]);
 
+  React.useEffect(() => {
+    if (!token) return;
+    const controller = new AbortController();
+    const timer = window.setInterval(() => {
+      invalidateTodoistDestinations(token);
+      void loadTodoistDestinations(token, controller.signal).then((destinations) => {
+        if (controller.signal.aborted) return;
+        projectsRef.current = destinations.projects;
+        setProjects(destinations.projects);
+        setSections(destinations.sections);
+      }).catch((error: unknown) => {
+        if (!controller.signal.aborted) {
+          console.warn("[TODOIST:METADATA] Background refresh failed", error);
+        }
+      });
+    }, TODOIST_DESTINATIONS_CACHE_MS);
+    return () => {
+      window.clearInterval(timer);
+      controller.abort();
+    };
+  }, [token]);
+
   const saveToken = React.useCallback(async (candidate: string) => {
     const normalized = candidate.trim();
     if (!normalized) throw new Error("Enter a Todoist API token");
@@ -355,6 +379,7 @@ export function useTodoist({
   }, [refresh]);
 
   const disconnect = React.useCallback(() => {
+    invalidateTodoistDestinations(token);
     taskLoadVersionRef.current += 1;
     taskLoadControllerRef.current?.abort();
     taskLoadControllerRef.current = null;
@@ -382,7 +407,7 @@ export function useTodoist({
     projectsKnownAtCapacityRef.current.clear();
     bucketResolutionFailureRef.current = null;
     setError(null);
-  }, []);
+  }, [token]);
 
   const activateBucketProject = React.useCallback((projectId: string) => {
     preferredProjectIdRef.current = projectId;

@@ -15,8 +15,6 @@ import {
   resolveTaskExtractionDestination,
 } from "@/lib/task-extraction";
 
-const POLL_INTERVAL_MS = 5_000;
-
 type UseTodoistTaskExtractionOptions = {
   preferredProjectId: string;
   projects: TodoistProject[];
@@ -37,6 +35,7 @@ export function useTodoistTaskExtraction({
     () => findTaskExtractionProject(projects),
     [projects],
   );
+  const extractionProjectId = extractionProject?.id;
   const destinationProject = React.useMemo(
     () => extractionProject
       ? resolveTaskExtractionDestination(
@@ -49,7 +48,7 @@ export function useTodoistTaskExtraction({
   );
 
   const refresh = React.useCallback(async () => {
-    if (!token || !extractionProject) {
+    if (!token || !extractionProjectId) {
       loadVersionRef.current += 1;
       setTasks([]);
       setLoading(false);
@@ -58,7 +57,7 @@ export function useTodoistTaskExtraction({
     const loadVersion = ++loadVersionRef.current;
     setLoading(true);
     try {
-      const nextTasks = await loadTodoistTasks(token, extractionProject.id);
+      const nextTasks = await loadTodoistTasks(token, extractionProjectId);
       if (loadVersion !== loadVersionRef.current) return nextTasks;
       setTasks(nextTasks.filter(({ id }) => !resolvingTaskIdsRef.current.has(id)));
       setError(null);
@@ -70,12 +69,10 @@ export function useTodoistTaskExtraction({
     } finally {
       if (loadVersion === loadVersionRef.current) setLoading(false);
     }
-  }, [extractionProject, token]);
+  }, [extractionProjectId, token]);
 
   React.useEffect(() => {
-    if (!token || !extractionProject) return;
     const initialTimer = window.setTimeout(() => void refresh(), 0);
-    const interval = window.setInterval(() => void refresh(), POLL_INTERVAL_MS);
     const refreshWhenVisible = () => {
       if (document.visibilityState === "visible") void refresh();
     };
@@ -83,11 +80,11 @@ export function useTodoistTaskExtraction({
     document.addEventListener("visibilitychange", refreshWhenVisible);
     return () => {
       window.clearTimeout(initialTimer);
-      window.clearInterval(interval);
+      loadVersionRef.current += 1;
       window.removeEventListener("focus", refreshWhenVisible);
       document.removeEventListener("visibilitychange", refreshWhenVisible);
     };
-  }, [extractionProject, refresh, token]);
+  }, [refresh]);
 
   const optimisticallyRemoveTask = React.useCallback((taskId: string) => {
     resolvingTaskIdsRef.current.add(taskId);

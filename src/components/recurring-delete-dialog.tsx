@@ -16,13 +16,29 @@ export function RecurringDeleteDialog({
   onChoose,
   request,
 }: RecurringDeleteDialogProps) {
+  const dialogRef = React.useRef<HTMLElement>(null);
+
   React.useEffect(() => {
     if (!request) return;
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      event.preventDefault();
-      event.stopPropagation();
-      onCancel();
+      if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopPropagation();
+        onCancel();
+        return;
+      }
+      if (event.key === "Enter" && event.metaKey) {
+        event.preventDefault();
+        event.stopPropagation();
+        const focusedButton = document.activeElement;
+        if (
+          !event.repeat
+          && focusedButton instanceof HTMLButtonElement
+          && dialogRef.current?.contains(focusedButton)
+        ) {
+          focusedButton.click();
+        }
+      }
     };
     document.addEventListener("keydown", handleKeyDown, true);
     return () => document.removeEventListener("keydown", handleKeyDown, true);
@@ -36,6 +52,7 @@ export function RecurringDeleteDialog({
   return (
     <div className="modal-backdrop confirmation-backdrop" onMouseDown={onCancel}>
       <section
+        ref={dialogRef}
         className="confirmation-modal recurring-delete-modal"
         role="alertdialog"
         aria-modal="true"
@@ -53,14 +70,14 @@ export function RecurringDeleteDialog({
           </div>
         </div>
         <div className="recurring-delete-options">
-          <button autoFocus onClick={() => onChoose("single")}>
+          <button autoFocus aria-keyshortcuts="Meta+Enter" onClick={() => onChoose("single")}>
             <CalendarMinus size={17} />
             <span>
               <strong>This event only</strong>
               <small>Keep every other occurrence in the series.</small>
             </span>
           </button>
-          <button onClick={() => onChoose("following")}>
+          <button aria-keyshortcuts="Meta+Enter" onClick={() => onChoose("following")}>
             <Repeat2 size={17} />
             <span>
               <strong>This and following</strong>

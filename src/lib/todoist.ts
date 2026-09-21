@@ -1,3 +1,5 @@
+import { TodoistDestinationsCache } from "./todoist-destinations-cache";
+
 export const TODOIST_TOKEN_STORAGE_KEY = "todoist_api_key";
 export const TODOIST_PROJECT_STORAGE_KEY = "todoist_project_id";
 export const TODOIST_SECTION_STORAGE_KEY = "todoist_section_id";
@@ -339,14 +341,14 @@ export const loadTodoistTasks = async (
     );
 };
 
-export const loadTodoistDestinations = async (
-  token: string,
-  signal?: AbortSignal,
-) => {
+const destinationsCache = new TodoistDestinationsCache();
+export const invalidateTodoistDestinations = (token: string) => destinationsCache.invalidate(token);
+
+const fetchTodoistDestinations = async (token: string) => {
   const data = await todoistRequest<{
     projects: TodoistProjectPayload[];
     sections: TodoistSectionPayload[];
-  }>("/api/todoist/destinations", token, { signal });
+  }>("/api/todoist/destinations", token);
   return {
     projects: data.projects.map((project) => ({
       id: String(project.id),
@@ -362,6 +364,14 @@ export const loadTodoistDestinations = async (
   };
 };
 
+export const loadTodoistDestinations = async (token: string, signal?: AbortSignal) => {
+  signal?.throwIfAborted();
+  // A caller cancelling its task refresh must not cancel another consumer's metadata read.
+  const destinations = await destinationsCache.load(token, () => fetchTodoistDestinations(token));
+  signal?.throwIfAborted();
+  return destinations;
+};
+
 export const createTodoistProject = async (token: string, name: string) => {
   const data = await todoistRequest<{ project: TodoistProjectPayload }>(
     "/api/todoist/destinations",
@@ -371,6 +381,7 @@ export const createTodoistProject = async (token: string, name: string) => {
       body: JSON.stringify({ name }),
     },
   );
+  invalidateTodoistDestinations(token);
   return {
     id: String(data.project.id),
     inbox: data.project.inbox_project ?? false,
