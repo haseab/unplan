@@ -627,6 +627,7 @@ export function TaskTriageDialog({
       <div aria-label="Priority task review" aria-modal="true" className="modal-backdrop task-triage-backdrop" role="dialog">
         <PriorityTaskReview
           tasks={priorityReviewTasks(tasks, folderPreferences.groupParents)}
+          groupParents={folderPreferences.groupParents}
           calendars={calendars}
           onSchedule={onScheduleTask}
           onDelete={onDeleteTask}

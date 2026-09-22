@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createPriorityReviewState, priorityReviewReducer, remainingPriorityReviewTasks, priorityReviewTasks, prioritySwipeDirection } from "./priority-task-review";
+import { createPriorityReviewState, priorityReviewReducer, remainingPriorityReviewTasks, priorityReviewSection, priorityReviewTasks, prioritySwipeDirection } from "./priority-task-review";
 import { todoistContentWithGroup, todoistContentWithGroupChange } from "./todoist-calendar";
 import type { TodoistTask } from "./todoist";
 
@@ -51,14 +51,14 @@ test("priority swipes require deliberate horizontal movement", () => {
   assert.equal(prioritySwipeDirection(0, 0), null);
 });
 
-test("priority review starts with the most recently filed tasks across priority folders", () => {
+test("priority review reviews Now before Today even when Today was filed more recently", () => {
   const older = { ...task("older", "Ungrouped"), createdAt: "2026-09-16T12:00:00Z" };
   const justFlagged = { ...task("just-flagged", "Ungrouped"), createdAt: "2026-01-01T12:00:00Z" };
   const tasks = [
     { ...older, content: todoistContentWithGroupChange(older.content, "Priority Now", new Date("2026-09-15T12:00:00Z")) },
     { ...justFlagged, content: todoistContentWithGroupChange(justFlagged.content, "Launch", new Date("2026-09-16T12:00:00Z")) },
   ];
-  assert.deepEqual(priorityReviewTasks(tasks, { Launch: "Priority Today" }).map(({ id }) => id), ["just-flagged", "older"]);
+  assert.deepEqual(priorityReviewTasks(tasks, { Launch: "Priority Today" }).map(({ id }) => id), ["older", "just-flagged"]);
   assert.deepEqual(tasks.map(({ id }) => id), ["older", "just-flagged"], "source order is unchanged");
 });
 
@@ -67,7 +67,7 @@ test("equal filing times keep their order and missing or invalid times come last
     ...task(id, "Priority Today"),
     content: todoistContentWithGroupChange(id, "Priority Today", new Date("2026-09-16T12:00:00Z")),
   });
-  const invalid = task("invalid", "Priority Now");
+  const invalid = task("invalid", "Priority Today");
   invalid.content = invalid.content.replace("]]", ";groupChangedAt=invalid]]");
   assert.deepEqual(priorityReviewTasks([
     task("legacy", "Priority Today"), filed("first"), invalid, filed("second"),
@@ -108,4 +108,11 @@ test("a reopened review starts with the undone task even if its source order cha
   const tasks = [task("a", "Priority"), task("b", "Priority")];
   const state = createPriorityReviewState({ task: tasks[1], direction: "left" });
   assert.deepEqual(remainingPriorityReviewTasks(tasks, state).map(({ id }) => id), ["b", "a"]);
+});
+
+test("section labels recognize aliases, paths, and descendant folders", () => {
+  assert.equal(priorityReviewSection(task("now", "Work/ PRIORITY NOW "), {}), "Priority Right Now");
+  assert.equal(priorityReviewSection(task("child", "Launch"), { Launch: "Priority right now" }), "Priority Right Now");
+  assert.equal(priorityReviewSection(task("child", "Launch"), { Launch: "Work/PRIORITY TODAY" }), "Priority Today");
+  assert.equal(priorityReviewSection(task("later", "Priority Later"), {}), null);
 });

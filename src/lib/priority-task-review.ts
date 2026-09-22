@@ -8,14 +8,28 @@ import {
 
 export type PriorityReviewDirection = "left" | "right";
 
+export const PRIORITY_REVIEW_SECTIONS = ["Priority Right Now", "Priority Today"] as const;
+export type PriorityReviewSection = typeof PRIORITY_REVIEW_SECTIONS[number];
+
+export function priorityReviewSection(task: TodoistTask, parents: TodoistGroupParents): PriorityReviewSection | null {
+  const { group } = calendarEventDetailsFromTodoistContent(task.content);
+  if (!group) return null;
+  const priorityGroup = [group, ...todoistGroupAncestors(group, parents)].find(isImmediatePriorityTodoistGroup);
+  if (!priorityGroup) return null;
+  return priorityGroup.split("/").at(-1)?.trim().toLocaleLowerCase() === "priority today"
+    ? "Priority Today" : "Priority Right Now";
+}
+
 export function priorityReviewTasks(tasks: TodoistTask[], parents: TodoistGroupParents) {
   return tasks.flatMap((task) => {
-    const { group, groupChangedAt } = calendarEventDetailsFromTodoistContent(task.content);
-    if (!group || ![group, ...todoistGroupAncestors(group, parents)].some(isImmediatePriorityTodoistGroup)) return [];
+    const section = priorityReviewSection(task, parents);
+    if (!section) return [];
+    const { groupChangedAt } = calendarEventDetailsFromTodoistContent(task.content);
     const filedAt = Date.parse(groupChangedAt ?? "");
-    return [{ task, filedAt: Number.isFinite(filedAt) ? filedAt : 0 }];
+    return [{ task, section, filedAt: Number.isFinite(filedAt) ? filedAt : 0 }];
   })
-    .sort((first, second) => second.filedAt - first.filedAt)
+    .sort((first, second) => PRIORITY_REVIEW_SECTIONS.indexOf(first.section) - PRIORITY_REVIEW_SECTIONS.indexOf(second.section)
+      || second.filedAt - first.filedAt)
     .map(({ task }) => task);
 }
 

@@ -1463,7 +1463,13 @@ kbd {
 }
 
 /* Priority triage keeps the upcoming calendar blocks clipped inside the queue. */
-.priority-review-window { height: 282px; margin-top: 22px; overflow: hidden; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-muted); mask-image: linear-gradient(to bottom, black 76%, transparent 100%); }
+.priority-review-sections { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 20px; }
+.priority-review-sections > div { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; color: var(--muted); font-size: 11px; }
+.priority-review-sections > div[data-current="true"] { color: var(--ink); border-color: var(--focus-ring, #a4bdfc); background: var(--surface-muted); }
+.priority-review-sections strong { font-variant-numeric: tabular-nums; }
+.priority-review-section-heading { display: flex; align-items: center; gap: 10px; margin: 0; color: var(--ink); font-size: 10px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; }
+.priority-review-section-heading::after { content: ""; height: 1px; flex: 1; background: var(--line); }
+.priority-review-window { height: 282px; margin-top: 12px; overflow: hidden; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-muted); mask-image: linear-gradient(to bottom, black 76%, transparent 100%); }
 .priority-review-track { display: grid; gap: 12px; padding: 18px; animation: priority-review-rise var(--priority-review-duration) cubic-bezier(0.2, 0.78, 0.2, 1) both; }
 .calendar-event.priority-review-block { position: relative; inset: auto; display: flex; width: 100%; height: 94px; min-height: 94px; flex-direction: column; gap: 10px; padding: 14px 16px; border-radius: 7px; box-shadow: none; opacity: 0.45; pointer-events: none; animation: none; }
 .calendar-event.priority-review-block[data-active="true"] { outline: 1px solid white; outline-offset: -1px; opacity: 1; pointer-events: auto; touch-action: pan-y; user-select: none; cursor: grab; }

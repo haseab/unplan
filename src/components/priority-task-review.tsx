@@ -8,13 +8,14 @@ import { CalendarEventContent } from "@/components/calendar-event-content";
 import { usePriorityTaskReview } from "@/hooks/use-priority-task-review";
 import type { CalendarSource } from "@/lib/calendar-types";
 import { getEventPalette } from "@/lib/event-color";
-import { PRIORITY_REVIEW_ANIMATION_MS, prioritySwipeDirection, type PriorityReviewCard } from "@/lib/priority-task-review";
+import { PRIORITY_REVIEW_ANIMATION_MS, PRIORITY_REVIEW_SECTIONS, priorityReviewSection, prioritySwipeDirection, type PriorityReviewCard } from "@/lib/priority-task-review";
 import type { TodoistTask } from "@/lib/todoist";
-import { calendarEventDetailsFromTodoistContent, todoistGroupDisplayName } from "@/lib/todoist-calendar";
+import { calendarEventDetailsFromTodoistContent, todoistGroupDisplayName, type TodoistGroupParents } from "@/lib/todoist-calendar";
 
 type Props = {
   tasks: TodoistTask[];
   calendars: CalendarSource[];
+  groupParents: TodoistGroupParents;
   onSchedule: (task: TodoistTask, onRestore?: () => void) => Promise<void>;
   onDelete: (task: TodoistTask, onRestore?: () => void) => Promise<void>;
   onRestore: (card: PriorityReviewCard) => void;
@@ -22,7 +23,7 @@ type Props = {
   onClose: () => void;
 };
 
-export function PriorityTaskReview({ tasks, calendars, onSchedule, onDelete, onClose, onRestore, initialReturning }: Props) {
+export function PriorityTaskReview({ tasks, calendars, groupParents, onSchedule, onDelete, onClose, onRestore, initialReturning }: Props) {
   const { remaining, departure, returning, restoredAtFront, error, resolve, finished } = usePriorityTaskReview(tasks, onSchedule, onDelete, onRestore, initialReturning);
   const reviewRef = React.useRef<HTMLElement>(null);
   const pointer = React.useRef<{ id: number; x: number; y: number } | null>(null);
@@ -83,13 +84,25 @@ export function PriorityTaskReview({ tasks, calendars, onSchedule, onDelete, onC
         </div>
         <button aria-label="Close priority review" onClick={onClose} type="button"><X size={17} /></button>
       </header>
+      <div className="priority-review-sections" aria-label="Remaining tasks by priority">
+        {PRIORITY_REVIEW_SECTIONS.map((section) => (
+          <div key={section} data-current={cards[0] && priorityReviewSection(cards[0], groupParents) === section ? "true" : undefined}>
+            <span>{section}</span>
+            <strong>{remaining.filter((task) => priorityReviewSection(task, groupParents) === section).length}</strong>
+          </div>
+        ))}
+      </div>
       <div className="priority-review-window" aria-label="Priority task queue">
         <div className="priority-review-track" data-returning={restoredAtFront ? "true" : undefined} key={cards[0]?.id}>
           {cards.slice(0, 4).map((task, index) => {
             const details = calendarEventDetailsFromTodoistContent(task.content);
             const calendar = calendars.find(({ id }) => id === details.calendarId) ?? calendars[0];
             const palette = getEventPalette(calendar?.backgroundColor ?? "#a4bdfc");
+            const section = priorityReviewSection(task, groupParents);
+            const startsSection = index === 0 || section !== priorityReviewSection(cards[index - 1], groupParents);
             return (
+              <React.Fragment key={task.id}>
+              {startsSection && <h3 className="priority-review-section-heading">{section}</h3>}
               <article
                 key={task.id}
                 className="calendar-event priority-review-block"
@@ -131,6 +144,7 @@ export function PriorityTaskReview({ tasks, calendars, onSchedule, onDelete, onC
                   detail={todoistGroupDisplayName(details.group ?? "Priority")}
                 />
               </article>
+              </React.Fragment>
             );
           })}
         </div>
