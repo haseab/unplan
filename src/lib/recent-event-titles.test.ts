@@ -30,36 +30,31 @@ const event = (
   provider: "demo",
 });
 
-test("uses a recent timed duration while preserving incompatible all-day durations", () => {
+test("uses fifteen minutes for timed suggestions and preserves all-day durations", () => {
   assert.equal(recentEventPreviewDurationMinutes({
     allDay: false,
     currentDurationMinutes: 30,
-    recentDurationMinutes: 90,
-  }), 90);
+  }), 15);
   assert.equal(recentEventPreviewDurationMinutes({
     allDay: false,
-    currentDurationMinutes: 30,
-    recentDurationMinutes: 24 * 60,
-  }), 30);
+    currentDurationMinutes: 60,
+  }), 15);
   assert.equal(recentEventPreviewDurationMinutes({
     allDay: true,
     currentDurationMinutes: 24 * 60,
-    recentDurationMinutes: 45,
   }), 24 * 60);
 });
 
-test("only pending-created events inherit a recent title's duration", () => {
+test("only pending-created events default to fifteen minutes", () => {
   assert.equal(recentEventEditDurationMinutes({
     allDay: false,
     currentDurationMinutes: 30,
     pendingCreation: true,
-    recentDurationMinutes: 90,
-  }), 90);
+  }), 15);
   assert.equal(recentEventEditDurationMinutes({
     allDay: false,
     currentDurationMinutes: 30,
     pendingCreation: false,
-    recentDurationMinutes: 90,
   }), 30);
 });
 
@@ -68,7 +63,6 @@ test("applies a selected recent title and its metadata in one event update", () 
   const recent = {
     calendarColor: "#c061d6",
     calendarId: "recent-calendar",
-    durationMinutes: 30,
     eventId: "recent-event",
     lastUsedAt: Date.now(),
     normalizedTitle: "mike shin",
@@ -107,7 +101,7 @@ test("history reconciliation deduplicates matching calendar and title signatures
 
   assert.equal(entries.length, 1);
   assert.equal(entries[0].eventId, "1");
-  assert.equal(entries[0].durationMinutes, 45);
+  assert.equal("durationMinutes" in entries[0], false);
   assert.equal(entries[0].usageCount, 0);
 });
 
@@ -210,6 +204,8 @@ test("legacy selection counts migrate to usage counts", () => {
   }]));
   assert.equal(entries[0].eventId, "");
   assert.equal(entries[0].usageCount, 4);
+  assert.equal("durationMinutes" in entries[0], false);
+  assert.deepEqual(parseRecentEventTitles(JSON.stringify(entries)), entries);
 });
 
 test("the recent-title cache is unbounded", () => {
@@ -267,4 +263,16 @@ test("title coverage ranks concise matches first without superseding selection f
   entries = resetRecentEventTitleRanking(entries, longTail);
   assert.equal(entries.find(({ eventId }) => eventId === "long-tail")?.usageCount, 0);
   assert.match(searchRecentEventTitles(entries, "moving")[0].title, /Moving$/);
+});
+
+test("creating from a recent title uses fifteen minutes regardless of source duration", () => {
+  const source = event("source", "Planning", "2026-08-23T10:00:00.000Z");
+  const [recent] = addRecentEventTitle([], source);
+  const selected = applyRecentEventTitleSelection({
+    current: source,
+    pendingCreation: true,
+    recent,
+  });
+  assert.equal(new Date(selected.end).getTime() - new Date(selected.start).getTime(), 15 * 60_000);
+  assert.equal("durationMinutes" in recent, false);
 });

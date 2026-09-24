@@ -17,6 +17,14 @@ test("moves never require bulk confirmation", () => {
 
 test("other bulk actions retain the default confirmation threshold", () => {
   assert.equal(requiresBulkConfirmation({ action: "create", count: 3 }), true);
-  assert.equal(requiresBulkConfirmation({ action: "delete", count: 3 }), true);
   assert.equal(requiresBulkConfirmation({ action: "update", count: 3 }), true);
+});
+
+test("event deletion confirms only above fifteen selected events", () => {
+  for (const count of [1, 3, 5, 15]) {
+    assert.equal(requiresBulkConfirmation({ action: "delete", count }), false);
+  }
+  for (const count of [16, 25]) {
+    assert.equal(requiresBulkConfirmation({ action: "delete", count }), true);
+  }
 });

@@ -3,7 +3,6 @@ import type { CalendarEvent, CalendarSource } from "./calendar-types";
 export type RecentEventTitle = {
   calendarColor: string;
   calendarId: string;
-  durationMinutes: number;
   eventId: string;
   lastUsedAt: number;
   normalizedTitle: string;
@@ -23,14 +22,12 @@ const parseRecentEventTitle = (value: unknown): RecentEventTitle | null => {
   if (
     typeof candidate.title !== "string"
     || typeof candidate.lastUsedAt !== "number"
-    || typeof candidate.durationMinutes !== "number"
     || typeof candidate.calendarId !== "string"
     || typeof candidate.calendarColor !== "string"
   ) return null;
   return {
     calendarColor: candidate.calendarColor,
     calendarId: candidate.calendarId,
-    durationMinutes: candidate.durationMinutes,
     eventId: typeof candidate.eventId === "string" ? candidate.eventId : "",
     lastUsedAt: candidate.lastUsedAt,
     normalizedTitle: normalizeRecentEventTitle(candidate.title),
@@ -56,15 +53,9 @@ export const parseRecentEventTitles = (value: string | null): RecentEventTitle[]
   }
 };
 
-const durationMinutes = (event: CalendarEvent) => Math.max(
-  0,
-  Math.round((new Date(event.end).getTime() - new Date(event.start).getTime()) / 60_000),
-);
-
 const recentEventTitleFromEvent = (event: CalendarEvent): RecentEventTitle => ({
   calendarColor: event.color || event.calendarColor,
   calendarId: event.calendarId,
-  durationMinutes: durationMinutes(event),
   eventId: event.id,
   lastUsedAt: new Date(event.start).getTime(),
   normalizedTitle: normalizeRecentEventTitle(event.title),
@@ -230,24 +221,15 @@ export const searchRecentEventTitles = (
     .map(({ entry }) => entry);
 };
 
+export const RECENT_EVENT_DURATION_MINUTES = 15;
+
 export const recentEventPreviewDurationMinutes = ({
   allDay,
   currentDurationMinutes,
-  recentDurationMinutes,
 }: {
   allDay: boolean;
   currentDurationMinutes: number;
-  recentDurationMinutes: number;
-}) => {
-  if (allDay) {
-    return recentDurationMinutes >= 24 * 60
-      ? Math.max(24 * 60, Math.round(recentDurationMinutes / (24 * 60)) * 24 * 60)
-      : currentDurationMinutes;
-  }
-  return recentDurationMinutes > 0 && recentDurationMinutes < 24 * 60
-    ? recentDurationMinutes
-    : currentDurationMinutes;
-};
+}) => allDay ? currentDurationMinutes : RECENT_EVENT_DURATION_MINUTES;
 
 export const recentEventEditDurationMinutes = ({
   pendingCreation,
@@ -278,7 +260,6 @@ export const applyRecentEventTitleSelection = ({
     allDay: current.allDay === true,
     currentDurationMinutes,
     pendingCreation,
-    recentDurationMinutes: recent.durationMinutes,
   });
 
   return {

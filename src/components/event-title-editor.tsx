@@ -9,6 +9,7 @@ import {
 } from "@/components/event-title-field";
 import type { CalendarSource } from "@/lib/calendar-types";
 import {
+  RECENT_EVENT_DURATION_MINUTES,
   recentEventTitleKey,
   searchRecentEventTitles,
   type RecentEventTitle,
@@ -23,17 +24,6 @@ type EventTitleEditorProps = EventTitleFieldProps & {
   onRecentTitleRankingReset: (entry: RecentEventTitle) => void;
   onRecentTitleUsed: (entry: RecentEventTitle) => void;
   recentTitles: RecentEventTitle[];
-};
-
-const formatDuration = (minutes: number) => {
-  if (minutes >= 24 * 60 && minutes % (24 * 60) === 0) {
-    const days = minutes / (24 * 60);
-    return `${days}d`;
-  }
-  const hours = Math.floor(minutes / 60);
-  const remaining = minutes % 60;
-  if (!hours) return `${remaining}m`;
-  return remaining ? `${hours}h ${remaining}m` : `${hours}h`;
 };
 
 export const EventTitleEditor = React.forwardRef<
@@ -208,7 +198,7 @@ export const EventTitleEditor = React.forwardRef<
                       {formatDistanceToNowStrict(entry.lastUsedAt, { addSuffix: true })}
                     </small>
                   </span>
-                  <em>{formatDuration(entry.durationMinutes)}</em>
+                  <em>{RECENT_EVENT_DURATION_MINUTES}m</em>
                 </button>
                 <button
                   aria-label={`Reset ranking for ${entry.title}`}

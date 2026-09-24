@@ -6853,7 +6853,6 @@ export function CalendarApp() {
               const durationMinutes = recentEventPreviewDurationMinutes({
                 allDay: creationDraft.allDay === true,
                 currentDurationMinutes,
-                recentDurationMinutes: entry.durationMinutes,
               });
               const nextDraft = {
                 ...creationDraft,
