@@ -340,6 +340,7 @@ export async function PATCH(request: NextRequest) {
   if (sources.source.accountId !== sources.destination.accountId) {
     return Response.json({ error: "Moving events between Google accounts is not supported yet" }, { status: 400 });
   }
+  let eventMoved = false;
   if (body.sourceCalendarSourceId && body.sourceCalendarSourceId !== body.calendarSourceId) {
     const moveQuery = new URLSearchParams({
       destination: sources.destination.providerCalendarId,
@@ -351,6 +352,7 @@ export async function PATCH(request: NextRequest) {
       { method: "POST" },
     );
     if (!moved.ok) return Response.json(await moved.json(), { status: moved.status });
+    eventMoved = true;
   }
   const updateQuery = `${sendUpdatesQuery(body.sendUpdates)}&conferenceDataVersion=1&supportsAttachments=true`;
   const response = await googleFetch(
@@ -358,7 +360,8 @@ export async function PATCH(request: NextRequest) {
     `/calendars/${encodeURIComponent(sources.destination.providerCalendarId)}/events/${encodeURIComponent(body.eventId)}?${updateQuery}`,
     { method: "PATCH", body: JSON.stringify(editableEventFields(body)) },
   );
-  return Response.json(await response.json(), { status: response.status });
+  return Response.json(await response.json(), { status: response.status,
+    headers: eventMoved ? { "x-unplan-event-moved": "true" } : undefined });
 }
 
 export async function POST(request: NextRequest) {

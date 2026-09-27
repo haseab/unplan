@@ -1526,3 +1526,24 @@ kbd {
 .follow-up-manager-empty svg { margin: 0 auto 12px; }
 .follow-up-manager-empty h3 { color: var(--ink); font-size: 15px; }
 .follow-up-manager-empty p { font-size: 12px; line-height: 1.6; }
+
+/* Durable event notes and recovery. */
+.note-draft-status { display: flex; align-items: center; gap: 6px; color: var(--text-soft); font-size: 11px; margin: 5px 0; text-align: left; }
+.note-drafts-launcher { position: fixed; bottom: 12px; left: 50%; transform: translateX(-50%); z-index: 70; display: flex; align-items: center; gap: 8px; max-width: min(500px, 90vw); padding: 6px 9px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--surface); color: var(--ink); font-size: 11px; }
+.note-drafts-launcher button { display: flex; align-items: center; gap: 5px; }
+.note-drafts-launcher [role="alert"] { color: #c75243; }
+.note-recovery-dialog { margin: auto; width: min(820px, calc(100vw - 32px)); max-height: 85vh; overflow-y: auto; padding: 20px; border: 1px solid var(--line-strong); border-radius: 12px; background: var(--surface); color: var(--ink); font-size: 13px; }
+.note-recovery-dialog::backdrop { background: var(--modal-backdrop); backdrop-filter: blur(3px); }
+.note-recovery-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+.note-recovery-header h2 { font-size: 18px; font-weight: 600; }
+.note-recovery-dialog h3 { margin: 10px 0; font-weight: 600; }
+.note-recovery-dialog p { margin: 8px 0; color: var(--text-soft); }
+.note-versions { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr)); gap: 14px; margin: 14px 0; }
+.note-version, .note-merge { border: 1px solid var(--line-strong); border-radius: 8px; padding: 12px; min-width: 0; overflow-wrap: anywhere; }
+.note-version .event-description-editor, .note-merge .event-description-editor { min-height: 100px; margin-top: 8px; }
+.note-recovery-actions, .note-draft-list { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 14px 0; }
+.note-recovery-actions button, .note-draft-list button { padding: 7px 10px; border: 1px solid var(--line-strong); border-radius: 6px; }
+.note-draft-list [aria-current="true"] { background: var(--hover-strong); }
+.note-recovery-dialog button:disabled { opacity: .45; cursor: default; }
+.note-recovery-dialog button:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+.note-history-item { border-top: 1px solid var(--line-strong); margin-top: 18px; }

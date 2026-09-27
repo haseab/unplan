@@ -4,6 +4,8 @@ import type {
   GoogleCalendarEventResponsePayload,
   GoogleSendUpdates,
 } from "@/lib/calendar-types";
+import { googleEventMutationKey, noteIdentity } from "@/lib/event-description-identity";
+import { relocateNote } from "@/lib/event-description-draft-store";
 import { MutationQueue } from "@/lib/mutation-queue";
 import { readJsonResponse } from "@/lib/http-client";
 import type { RecurringDeleteScope } from "@/lib/recurring-delete";
@@ -48,8 +50,14 @@ const mutationQueue = new MutationQueue({
     error instanceof GoogleEventMutationError && error.retryable,
 });
 
-const mutationKey = (event: CalendarEvent) =>
-  `${event.calendarId}:${event.id}`;
+const mutationKey = googleEventMutationKey;
+
+export function enqueueGoogleEventMutation<T>(key: string, run: () => Promise<T>): Promise<T> {
+  return mutationQueue.enqueue(key, async () => {
+    if (typeof navigator !== "undefined" && navigator.locks) return await navigator.locks.request(`unplan-event:${key}`, run);
+    return await run();
+  });
+}
 
 const responseError = async (
   response: Response,
@@ -93,7 +101,7 @@ const mutateGoogleEvent = async (
       allDay: event.allDay,
       colorId: method === "PATCH" ? event.colorId ?? null : event.colorId,
       customColor: event.customColor ?? "",
-      description: event.description ?? "",
+      ...(method === "POST" ? { description: event.description ?? "" } : {}),
       location: event.location ?? "",
       timeZone: event.timeZone,
       recurrence: event.recurrence,
@@ -106,6 +114,11 @@ const mutateGoogleEvent = async (
       sendUpdates,
     }),
   });
+  if (sourceCalendarSourceId && sourceCalendarSourceId !== event.calendarId && response.headers.get("x-unplan-event-moved") === "true") {
+    const sourceIdentity = noteIdentity({ ...event, calendarId: sourceCalendarSourceId });
+    const destinationIdentity = noteIdentity(event);
+    if (sourceIdentity && destinationIdentity) await relocateNote(sourceIdentity.key, destinationIdentity);
+  }
   if (!response.ok) {
     throw await responseError(
       response,
@@ -113,10 +126,13 @@ const mutateGoogleEvent = async (
       retryNotFound,
     );
   }
-  return readJsonResponse<GoogleEventResult>(
-    response,
-    "Google Calendar returned an empty response",
-  );
+  const result = await readJsonResponse<GoogleEventResult>(response, "Google Calendar returned an empty response");
+  const identity = noteIdentity(event);
+  if (identity && method === "POST") {
+    const destination = noteIdentity({ ...event, providerEventId: result.id ?? identity.eventId })!;
+    await relocateNote(identity.key, destination, event.description ?? "");
+  }
+  return result;
 };
 
 export const updateGoogleEvent = (
@@ -125,7 +141,7 @@ export const updateGoogleEvent = (
   sourceCalendarSourceId?: string,
   retryNotFound = false,
 ) =>
-  mutationQueue.enqueue(mutationKey(event), () =>
+  enqueueGoogleEventMutation(mutationKey(event), () =>
     mutateGoogleEvent(
       "PATCH",
       event,
@@ -138,7 +154,7 @@ export const updateGoogleEvent = (
 export const respondToGoogleEvent = (
   event: CalendarEvent,
   responseStatus: CalendarEventRsvpStatus,
-) => mutationQueue.enqueue(mutationKey(event), async () => {
+) => enqueueGoogleEventMutation(mutationKey(event), async () => {
   const attendeeEmail = event.attendees?.find((attendee) => attendee.self)?.email;
   if (!attendeeEmail) throw new Error("Your attendee email is unavailable");
   const payload: GoogleCalendarEventResponsePayload = {
@@ -165,7 +181,7 @@ export const createGoogleEvent = (
   event: CalendarEvent,
   sendUpdates: GoogleSendUpdates = "none",
 ) =>
-  mutationQueue.enqueue(mutationKey(event), () =>
+  enqueueGoogleEventMutation(mutationKey(event), () =>
     mutateGoogleEvent("POST", event, sendUpdates),
   );
 
@@ -174,7 +190,7 @@ export const deleteGoogleEvent = (
   sendUpdates: GoogleSendUpdates = "none",
   deleteScope: RecurringDeleteScope = "single",
 ) =>
-  mutationQueue.enqueue(
+  enqueueGoogleEventMutation(
     deleteScope === "following" && event.recurringEventId
       ? `${event.calendarId}:${event.recurringEventId}`
       : mutationKey(event),

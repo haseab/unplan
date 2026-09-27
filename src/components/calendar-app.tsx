@@ -40,6 +40,8 @@ import {
   X,
 } from "lucide-react";
 import * as React from "react";
+import { noteIdentity } from "@/lib/event-description-identity";
+import { notesGeneration, reconcileServerNotes } from "@/lib/event-description-drafts";
 import { flushSync } from "react-dom";
 import { transformKeyboardEventSelection } from "@/lib/keyboard-event-transform";
 import { toast } from "sonner";
@@ -491,7 +493,10 @@ const restoreEventSnapshots = (
   originals: CalendarEvent[],
 ) => {
   const originalById = new Map(originals.map((event) => [event.id, event]));
-  return current.map((event) => originalById.get(event.id) ?? event);
+  return current.map((event) => {
+    const original = originalById.get(event.id);
+    return original ? { ...original, ...(event.provider === "google" ? { description: event.description } : {}) } : event;
+  });
 };
 
 const restoreDeletedEvents = (
@@ -530,6 +535,14 @@ export function CalendarApp() {
   );
   const [calendars, setCalendars] = React.useState<CalendarSource[]>(demoCalendars);
   const [events, setEvents] = React.useState<CalendarEvent[]>(() => makeDemoEvents());
+  React.useEffect(() => {
+    const synced = (event: Event) => {
+      const detail = (event as CustomEvent<{ key: string; description: string }>).detail;
+      setEvents(current => current.map(item => noteIdentity(item)?.key === detail.key ? { ...item, description: detail.description } : item));
+    };
+    window.addEventListener("unplan-notes-synced", synced);
+    return () => window.removeEventListener("unplan-notes-synced", synced);
+  }, []);
   const {
     entries: recentEventTitles,
     recordUse: recordRecentEventTitleUse,
@@ -1501,6 +1514,7 @@ export function CalendarApp() {
       params.append("textColor", calendar.foregroundColor);
     });
     try {
+      const noteGeneration = notesGeneration();
       const data = await loadBrowserGoogleEvents({
         calendars: active,
         signal: controller.signal,
@@ -1511,6 +1525,7 @@ export function CalendarApp() {
         loadVersion !== googleEventsLoadVersionRef.current
         || request.key !== googleEventsDesiredRangeRef.current?.key
       ) return false;
+      data.events = reconcileServerNotes(data.events ?? [], noteGeneration);
       setGoogle(browserGoogleStatus());
       const failedAccountIds = new Set(
         data.errors?.map((error) => error.accountId) ?? [],
@@ -2316,7 +2331,7 @@ export function CalendarApp() {
               const [mutationOrigin] = rememberEventMutationOrigins([resize.original]);
               const restoreMutationOrigin = () =>
                 setEvents((current) => current.map((event) =>
-                  event.id === mutationOrigin.id ? mutationOrigin : event,
+                  event.id === mutationOrigin.id ? { ...mutationOrigin, ...(event.provider === "google" ? { description: event.description } : {}) } : event,
                 ));
               queueActionToast(`Resized ${resized.title}`, {
                 coalesceKey: eventChangeCoalesceKey([resized.id]),
@@ -4868,7 +4883,7 @@ export function CalendarApp() {
 
     const restoreOriginal = () => {
       setEvents((current) => current.map((event) =>
-        event.id === mutationOrigin.id ? mutationOrigin : event,
+        event.id === mutationOrigin.id ? { ...mutationOrigin, ...(event.provider === "google" ? { description: event.description } : {}) } : event,
       ));
       setVisibleCalendars((current) => new Set(current).add(mutationOrigin.calendarId));
     };
@@ -4884,7 +4899,7 @@ export function CalendarApp() {
 
     setEventDetailsPreview(null);
     setEvents((current) => current.map((event) =>
-      event.id === updated.id ? updated : event,
+      event.id === updated.id ? { ...updated, ...(event.provider === "google" ? { description: event.description } : {}) } : event,
     ));
     setVisibleCalendars((current) => new Set(current).add(updated.calendarId));
 

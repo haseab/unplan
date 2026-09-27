@@ -21,6 +21,11 @@ import * as React from "react";
 import { toast } from "sonner";
 import { addDays, differenceInMinutes, format, setHours, startOfDay } from "date-fns";
 import { EventParticipantsEditor } from "@/components/event-participants-editor";
+import { eventHasNotifiableGuests } from "@/lib/event-guest-notifications";
+import { EventDescriptionStatus, openNoteDraft } from "@/components/event-description-drafts";
+import { useEventDescriptionDrafts } from "@/hooks/use-event-description-drafts";
+import { noteValue, saveNote } from "@/lib/event-description-drafts";
+import { noteIdentity } from "@/lib/event-description-identity";
 import { EventDescriptionEditor } from "@/components/event-description-editor";
 import { EventColorPicker } from "@/components/event-color-picker";
 import { EventTitleEditor } from "@/components/event-title-editor";
@@ -181,6 +186,10 @@ function EventDetailsEditor({
   pendingCreation: boolean;
   recentTitles: RecentEventTitle[];
 }) {
+  const notesSnapshot = useEventDescriptionDrafts();
+  const noteBaselineRef = React.useRef({ base: event.description ?? "", revision: 0 });
+  const noteSaveRef = React.useRef<Promise<void>>(Promise.resolve());
+  const descriptionValue = event.provider === "google" ? noteValue(event) : undefined;
   const {
     deferUpdate,
     draft: edited,
@@ -211,7 +220,7 @@ function EventDetailsEditor({
     "attachment" | "location" | "notes" | null
   >(null);
   const [showLocation, setShowLocation] = React.useState(() => Boolean(event.location));
-  const [showNotes, setShowNotes] = React.useState(() => Boolean(event.description));
+  const [showNotes, setShowNotes] = React.useState(() => Boolean(descriptionValue || event.description));
   const [showTimeDetails, setShowTimeDetails] = React.useState(false);
   const [focusedTimeField, setFocusedTimeField] = React.useState<"end" | "start" | null>(null);
   const endInputRef = React.useRef<HTMLInputElement>(null);
@@ -325,9 +334,20 @@ function EventDetailsEditor({
 
   const previewDescription = (description: string) => {
     onPreview({ ...edited, description });
+    if (event.provider === "google") noteSaveRef.current = saveNote({ ...event, description: noteBaselineRef.current.base }, description, pendingCreation, noteBaselineRef.current.revision);
   };
 
   const commitDescription = async (nextDescription: string) => {
+    if (event.provider === "google") {
+      await noteSaveRef.current;
+      const identity = noteIdentity(event);
+      // Guests require one explicit choice per edit; retries reuse that choice.
+      if (identity && eventHasNotifiableGuests(event)) {
+        const draft = notesSnapshot.drafts.get(identity.key);
+        if (draft && draft.status !== "synced" && draft.sendUpdates === undefined) openNoteDraft(identity.key);
+      }
+      return true;
+    }
     const previousDescription = edited.description ?? "";
     if (nextDescription === previousDescription) return true;
     updateDraft((current) => ({ ...current, description: nextDescription }));
@@ -645,8 +665,12 @@ function EventDetailsEditor({
             </button>
           )}
         </div>}
-        {showNotes ? (
-          <div className="event-editor-description"><AlignLeft size={15} /><EventDescriptionEditor autoFocus={focusedOptionalField === "notes"} value={edited.description ?? ""} onChange={previewDescription} onBlur={commitDescription} /></div>
+        {showNotes || Boolean(descriptionValue) ? (
+          <><EventDescriptionStatus event={event} />
+          <div className="event-editor-description"><AlignLeft size={15} /><EventDescriptionEditor autoFocus={focusedOptionalField === "notes"} value={descriptionValue ?? edited.description ?? ""} onChange={previewDescription} onFocus={() => {
+            const identity = noteIdentity(event);
+            noteBaselineRef.current = { base: noteValue(event), revision: identity ? notesSnapshot.drafts.get(identity.key)?.revision ?? 0 : 0 };
+          }} onBlur={commitDescription} readOnly={calendar?.writable === false} /></div></>
         ) : (
           <button className="event-editor-optional-trigger" onClick={() => { setFocusedOptionalField("notes"); setShowNotes(true); }} type="button"><AlignLeft size={15} />Add notes</button>
         )}

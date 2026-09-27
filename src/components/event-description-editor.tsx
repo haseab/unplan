@@ -9,6 +9,9 @@ import { eventDescriptionContentType } from "@/lib/event-description-format";
 
 type EventDescriptionEditorProps = {
   autoFocus?: boolean;
+  readOnly?: boolean;
+  label?: string;
+  onFocus?: () => void;
   onBlur: (description: string) => void | Promise<unknown>;
   onChange: (description: string) => void;
   value: string;
@@ -16,26 +19,32 @@ type EventDescriptionEditorProps = {
 
 export function EventDescriptionEditor({
   autoFocus = false,
+  readOnly = false,
+  label = "Notes",
   onBlur,
+  onFocus,
   onChange,
   value,
 }: EventDescriptionEditorProps) {
+  const onFocusRef = React.useRef(onFocus);
   const onBlurRef = React.useRef(onBlur);
   const onChangeRef = React.useRef(onChange);
   const appliedValueRef = React.useRef(value);
   const emittedValueRef = React.useRef<string | null>(null);
 
   React.useEffect(() => {
+    onFocusRef.current = onFocus;
     onBlurRef.current = onBlur;
     onChangeRef.current = onChange;
-  }, [onBlur, onChange]);
+  }, [onBlur, onFocus, onChange]);
 
   const editor = useEditor({
+    editable: !readOnly,
     content: value,
     contentType: eventDescriptionContentType(value),
     editorProps: {
       attributes: {
-        "aria-label": "Notes",
+        "aria-label": label,
         "aria-multiline": "true",
         class: "event-description-content",
         role: "textbox",
@@ -60,7 +69,9 @@ export function EventDescriptionEditor({
       }),
     ],
     immediatelyRender: false,
+    onFocus: () => onFocusRef.current?.(),
     onBlur: ({ editor: blurredEditor }) => {
+      if (readOnly) return;
       const description = blurredEditor.isEmpty ? "" : blurredEditor.getHTML();
       void onBlurRef.current(description);
     },
@@ -71,6 +82,8 @@ export function EventDescriptionEditor({
       onChangeRef.current(nextDescription);
     },
   });
+
+  React.useEffect(() => { editor?.setEditable(!readOnly, false); }, [editor, readOnly]);
 
   React.useEffect(() => {
     if (
