@@ -55,7 +55,7 @@ export function EventDescriptionEditor({
       StarterKit.configure({
         link: {
           autolink: true,
-          openOnClick: false,
+          openOnClick: true,
         },
       }),
       Markdown.configure({
