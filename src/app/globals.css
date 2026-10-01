@@ -833,13 +833,13 @@ kbd {
 .task-triage-folder-picker input { min-width: 0; border: 0; outline: 0; background: transparent; color: var(--ink); font: inherit; font-size: 11px; }
 .task-triage-folder-picker input::placeholder { color: var(--text-faint); }
 .task-triage-folder-picker > div { display: grid; min-height: 0; max-height: 286px; align-content: start; gap: 3px; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; padding: 4px; border: 1px solid var(--line); border-radius: 11px; background: var(--surface-muted); scrollbar-color: var(--line-strong) transparent; scrollbar-width: thin; touch-action: pan-y; }
-.task-triage-folder-picker > div > button { display: grid; min-height: 42px; grid-template-columns: 18px minmax(0, 1fr) 24px; align-items: center; gap: 8px; padding-top: 5px; padding-right: 9px; padding-bottom: 5px; border: 0; border-radius: 8px; background: transparent; color: var(--muted); font: inherit; text-align: left; cursor: pointer; }
-.task-triage-folder-picker > div > button:hover,
-.task-triage-folder-picker > div > button[data-highlighted="true"] { background: var(--blue-soft); color: var(--blue-ink); }
-.task-triage-folder-picker > div > button > span { display: grid; min-width: 0; gap: 2px; }
-.task-triage-folder-picker > div > button strong { overflow: hidden; color: inherit; font-size: 10.5px; font-weight: 590; text-overflow: ellipsis; white-space: nowrap; }
-.task-triage-folder-picker > div > button small { overflow: hidden; color: var(--text-faint); font-size: 8.5px; font-weight: 450; text-overflow: ellipsis; white-space: nowrap; }
-.task-triage-folder-picker > div > button kbd { justify-self: end; }
+.task-triage-folder-picker .task-folder-option { display: grid; min-height: 42px; grid-template-columns: 18px minmax(0, 1fr) 24px; align-items: center; gap: 8px; padding-top: 5px; padding-right: 9px; padding-bottom: 5px; border: 0; border-radius: 8px; background: transparent; color: var(--muted); font: inherit; text-align: left; cursor: pointer; }
+.task-triage-folder-picker .task-folder-option:hover,
+.task-triage-folder-picker .task-folder-option[data-highlighted="true"] { background: var(--blue-soft); color: var(--blue-ink); }
+.task-triage-folder-picker .task-folder-option > span { display: grid; min-width: 0; gap: 2px; }
+.task-triage-folder-picker .task-folder-option strong { overflow: hidden; color: inherit; font-size: 10.5px; font-weight: 590; text-overflow: ellipsis; white-space: nowrap; }
+.task-triage-folder-picker .task-folder-option small { overflow: hidden; color: var(--text-faint); font-size: 8.5px; font-weight: 450; text-overflow: ellipsis; white-space: nowrap; }
+.task-triage-folder-picker .task-folder-option kbd { justify-self: end; }
 .task-triage-folder-picker > div > p { margin: 0; padding: 18px; color: var(--text-faint); font-size: 9px; text-align: center; }
 .task-triage-secondary-actions { display: flex; justify-content: space-between; gap: 8px; margin-top: 10px; }
 .task-triage-extracted-secondary-actions { justify-content: flex-start; }
@@ -1547,3 +1547,17 @@ kbd {
 .note-recovery-dialog button:disabled { opacity: .45; cursor: default; }
 .note-recovery-dialog button:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
 .note-history-item { border-top: 1px solid var(--line-strong); margin-top: 18px; }
+
+.multi-event-task-folder { display: flex; align-items: center; gap: 9px; width: 100%; padding: 13px 15px; border: 1px solid var(--blue-border); border-radius: 11px; background: var(--blue-soft); color: var(--blue-ink); font: inherit; cursor: pointer; }
+.multi-event-task-folder span { flex: 1; text-align: left; }
+.multi-event-task-folder kbd { font-size: 10px; }
+.task-folder-create-trigger { display: flex; align-items: center; gap: 8px; padding: 11px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--surface-muted); color: var(--blue-ink); font: inherit; font-size: 11px; cursor: pointer; }
+.task-folder-option-row { display: grid; grid-template-columns: minmax(0, 1fr) 30px; gap: 3px; }
+.task-triage-folder-picker .task-folder-option { min-width: 0; }
+.task-folder-create-child { display: grid; place-items: center; border: 0; border-radius: 8px; background: transparent; color: var(--text-faint); cursor: pointer; }
+.task-folder-create-child:hover { background: var(--blue-soft); color: var(--blue-ink); }
+.task-folder-create-form { display: flex; flex-wrap: wrap; gap: 10px; padding: 12px; border: 1px solid var(--line-strong); border-radius: 10px; }
+.task-folder-create-form label { display: grid; width: 100%; gap: 6px; color: var(--text-soft); font-size: 11px; }
+.task-folder-create-form input, .task-folder-create-form select { padding: 9px; border: 1px solid var(--line-strong); border-radius: 6px; background: var(--surface); color: var(--ink); }
+.task-folder-create-form button { padding: 8px 12px; border: 1px solid var(--line-strong); border-radius: 6px; background: var(--surface); color: var(--ink); cursor: pointer; }
+.task-folder-create-form p { color: #ef8982; font-size: 11px; }

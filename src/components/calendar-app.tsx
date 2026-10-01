@@ -283,6 +283,8 @@ import {
   type TodoistTask,
 } from "@/lib/todoist";
 import { isLocalTask } from "@/lib/local-tasks";
+import { CalendarTaskFolderDialog } from "@/components/calendar-task-folder-dialog";
+import { createTaskFolder, TASK_FOLDERS_CHANGED } from "@/lib/task-folder-creation";
 import { TODOIST_CUSTOM_GROUPS_STORAGE_KEY } from "@/lib/todoist-folder-backup";
 import {
   calendarEventDurationMinutes,
@@ -593,6 +595,7 @@ export function CalendarApp() {
   const [showSettings, setShowSettings] = React.useState(false);
   const [showDateCommandDialog, setShowDateCommandDialog] = React.useState(false);
   const [showNewTimeEntry, setShowNewTimeEntry] = React.useState(false);
+  const [folderSelection, setFolderSelection] = React.useState<CalendarEvent[] | null>(null);
   const [showTaskTriage, setShowTaskTriage] = React.useState(false);
   const [taskTriageMode, setTaskTriageMode] = React.useState<TaskTriageMode>("extracted");
   const [returningTriageTask, setReturningTriageTask] = React.useState<{
@@ -1059,6 +1062,13 @@ export function CalendarApp() {
     });
     return [...groups.values()].sort((left, right) => left.localeCompare(right));
   }, [todoistCustomGroups, visibleTodoistTasks]);
+  const createFolderFromPicker = React.useCallback((name: string, parent: string | null) => {
+    const group = createTaskFolder(window.localStorage, todoistGroups, name, parent);
+    setTodoistCustomGroups((current) => [...current, group]);
+    window.dispatchEvent(new Event(TASK_FOLDERS_CHANGED));
+    return group;
+  }, [setTodoistCustomGroups, todoistGroups]);
+
   useTaskAgingReconciliation({
     enabled: todoistConnected,
     tasks: visibleTodoistTasks,
@@ -3991,6 +4001,17 @@ export function CalendarApp() {
         }
       }
       if (isEditableTarget(event.target)) return;
+      if (modifier && event.shiftKey && !event.altKey && event.key.toLowerCase() === "p"
+        && (activeSelectionSurface === "calendar" || rightSidebarTab === "events")
+        && selected.size && !document.querySelector(".modal-backdrop")) {
+        event.preventDefault();
+        event.stopPropagation();
+        if (!event.repeat) {
+          const selection = eventsRef.current.filter(({ id }) => selected.has(id));
+          if (selection.length) setFolderSelection(selection);
+        }
+        return;
+      }
       const creationMode = eventCreationShortcutMode(event);
       const requestedTaskTriageMode = taskTriageShortcutMode({
         altKey: event.altKey,
@@ -4608,17 +4629,19 @@ export function CalendarApp() {
     }
   }, [defaultTaskCalendar, pixelsPerMinute, renderedDayCount, renderedDays, scheduleTodoistTasks]);
 
-  const moveCalendarEventsToTriage = React.useCallback(async (
+  const moveCalendarEventsToTaskFolder = React.useCallback(async (
     requestedEvents: CalendarEvent[],
     keyboardAnchorKey: string | null,
+    group = "Ungrouped",
   ) => {
+    const destination = group === "Ungrouped" ? "Triage" : group;
     const candidates = partitionCalendarEventsForTodoist(requestedEvents, calendars);
     if (!candidates.eligible.length) {
-      toast.error("Events from the Todoist calendar can’t be added to Triage");
+      toast.error(`Events from the Todoist calendar can’t be added to ${destination}`);
       return;
     }
     if (!todoistConnected) {
-      toast.error("Connect Todoist in Settings before moving events to Triage");
+      toast.error("Connect Todoist in Settings before moving events to a task folder");
       setShowSettings(true);
       return;
     }
@@ -4627,7 +4650,7 @@ export function CalendarApp() {
     if (!sendUpdates) return;
     const pendingMoves = candidates.eligible.map((event) => ({
       event,
-      input: todoistTaskInputFromCalendarEvent(event, { group: "Ungrouped" }),
+      input: todoistTaskInputFromCalendarEvent(event, { group }),
     }));
     const stagedTasks = stageTodoistTasks(pendingMoves.map(({ input }) => input));
     const stagedMoves = pendingMoves.map((move, index) => ({
@@ -4693,8 +4716,8 @@ export function CalendarApp() {
     }
     queueActionToast(
       stagedMoves.length === 1
-        ? `Moved ${stagedMoves[0].event.title} to Triage`
-        : `Moved ${stagedMoves.length} events to Triage`,
+        ? `Moved ${stagedMoves[0].event.title} to ${destination}`
+        : `Moved ${stagedMoves.length} events to ${destination}`,
       {
         duration: toastDuration,
         onUndo: () => {
@@ -4756,7 +4779,7 @@ export function CalendarApp() {
               ),
             ));
             toast.warning(
-              `${deleteFailures.length} ${deleteFailures.length === 1 ? "event was" : "events were"} added to Triage but could not be removed from the calendar`,
+              `${deleteFailures.length} ${deleteFailures.length === 1 ? "event was" : "events were"} added to ${destination} but could not be removed from the calendar`,
             );
           }
         },
@@ -4764,7 +4787,7 @@ export function CalendarApp() {
           setSyncing(false);
           removeLocalTodoistTasks(stagedTaskIds);
           restoreEvents();
-          toast.error(error instanceof Error ? error.message : "Event could not be moved to Triage");
+          toast.error(error instanceof Error ? error.message : `Event could not be moved to ${destination}`);
         },
         submittingMessage: "Creating Todoist task…",
       },
@@ -4841,11 +4864,11 @@ export function CalendarApp() {
         focusedEventKey,
         requestedEventKeys,
       ) ?? requestedEventKeys[0] ?? null;
-      void moveCalendarEventsToTriage(requestedEvents, keyboardAnchorKey);
+      void moveCalendarEventsToTaskFolder(requestedEvents, keyboardAnchorKey);
     };
     document.addEventListener("keydown", handleCrossSurfaceMove, true);
     return () => document.removeEventListener("keydown", handleCrossSurfaceMove, true);
-  }, [activeSelectionSurface, moveCalendarEventsToTriage, renderedDays, renderedEventElements, scheduleTodoistTaskAtPresent, selected, visibleTodoistTasks]);
+  }, [activeSelectionSurface, moveCalendarEventsToTaskFolder, renderedDays, renderedEventElements, scheduleTodoistTaskAtPresent, selected, visibleTodoistTasks]);
 
   React.useLayoutEffect(() => {
     const pending = pendingKeyboardScheduledEventRef.current;
@@ -6328,6 +6351,7 @@ export function CalendarApp() {
               <span>Focus calendar / sidebar</span><span><kbd>⌘ ←</kbd> <kbd>⌘ →</kbd></span>
               <span>Toggle left sidebar</span><kbd>⌘ \\</kbd>
               <span>Schedule sidebar task now</span><kbd>⌘ ⇧ ←</kbd>
+              <span>Add selected events to task folder</span><kbd>⌘ ⇧ P</kbd>
               <span>Move calendar event to Triage</span><kbd>⌘ ⇧ →</kbd>
               <span>Go to any date</span><kbd>⌘ G</kbd>
               <span>Find visible calendar events</span><kbd>⌘ F</kbd>
@@ -6418,7 +6442,18 @@ export function CalendarApp() {
         onClose={() => setFollowUpSource(null)}
       />}
       {showFollowUpReview && <FollowUpReviewDialog items={followUps.due} onResolve={resolveFollowUp} onClose={closeFollowUpReview} onComplete={completeFollowUpReview} />}
+      {folderSelection && <CalendarTaskFolderDialog
+        count={folderSelection.length}
+        groups={todoistGroups}
+        onCreateFolder={createFolderFromPicker}
+        onClose={() => setFolderSelection(null)}
+        onAssign={(group) => {
+          setFolderSelection(null);
+          void moveCalendarEventsToTaskFolder(folderSelection, null, group);
+        }}
+      />}
       <TaskTriageDialog
+        onCreateFolder={createFolderFromPicker}
         calendars={writableCalendars}
         tasks={visibleTodoistTasks}
         extractedTasks={extractedTasks}
@@ -6827,6 +6862,7 @@ export function CalendarApp() {
             calendarSources={calendars}
             calendars={writableCalendars}
             draft={creationDraft}
+            onAddToTaskFolder={() => setFolderSelection(selectedEvents)}
             onBulkUpdateEvents={bulkUpdateEventDetails}
             onCancel={dismissCreationDraft}
             onCancelPendingCreation={cancelSelectedPendingEventCreation}

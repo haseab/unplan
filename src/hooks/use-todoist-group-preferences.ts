@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { TASK_FOLDERS_CHANGED } from "../lib/task-folder-creation";
 
 import {
   TODOIST_COLLAPSED_GROUPS_STORAGE_KEY,
@@ -59,6 +60,15 @@ export function useTodoistGroupPreferences() {
     setCollapsedGroups(new Set(readStoredNames(TODOIST_COLLAPSED_GROUPS_STORAGE_KEY)));
     setGroupOrder(readStoredNames(TODOIST_GROUP_ORDER_STORAGE_KEY));
     setGroupParents(readStoredParents());
+  }, []);
+
+  React.useEffect(() => {
+    const reload = () => {
+      setGroupOrder(readStoredNames(TODOIST_GROUP_ORDER_STORAGE_KEY));
+      setGroupParents(readStoredParents());
+    };
+    window.addEventListener(TASK_FOLDERS_CHANGED, reload);
+    return () => window.removeEventListener(TASK_FOLDERS_CHANGED, reload);
   }, []);
 
   const toggleGroup = React.useCallback((group: string) => {

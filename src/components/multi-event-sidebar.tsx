@@ -4,6 +4,7 @@ import {
   CalendarDays,
   Clipboard,
   Clock3,
+  FolderInput,
   Copy,
   Trash2,
   X,
@@ -25,6 +26,7 @@ type MultiEventSidebarProps = {
   editableCalendars: CalendarSource[];
   events: CalendarEvent[];
   openCalendarPicker: boolean;
+  onAddToTaskFolder: () => void;
   onBulkUpdate: (events: CalendarEvent[]) => Promise<boolean>;
   onCalendarPickerClose: () => void;
   onCopy: () => void;
@@ -45,6 +47,7 @@ export function MultiEventSidebar({
   editableCalendars,
   events,
   openCalendarPicker,
+  onAddToTaskFolder,
   onBulkUpdate,
   onCalendarPickerClose,
   onCopy,
@@ -98,6 +101,10 @@ export function MultiEventSidebar({
         <div><small>Calendars</small><strong>{summary.calendarCount}</strong></div>
         <div><small>All-day</small><strong>{summary.allDayCount}</strong></div>
       </section>
+
+      <button className="multi-event-task-folder" type="button" onClick={onAddToTaskFolder}>
+        <FolderInput size={17} /><span>Add to task folder</span><kbd>⌘ ⇧ P</kbd>
+      </button>
 
       <section className="multi-event-section">
         <div className="multi-event-section-heading"><span>Bulk edit</span>{saving && <small>Saving…</small>}</div>

@@ -5,15 +5,13 @@ import {
   ArrowRight,
   CalendarPlus,
   ExternalLink,
-  Folder,
-  FolderOpen,
   LoaderCircle,
   RefreshCw,
-  Search,
   Trash2,
   X,
 } from "lucide-react";
 import * as React from "react";
+import { TaskFolderPicker } from "@/components/task-folder-picker";
 import type { CalendarSource } from "@/lib/calendar-types";
 import { PriorityTaskReview } from "@/components/priority-task-review";
 import { PRIORITY_REVIEW_ANIMATION_MS, priorityReviewTasks, type PriorityReviewCard } from "@/lib/priority-task-review";
@@ -39,6 +37,7 @@ type TaskTriageDialogProps = {
   tasks: TodoistTask[];
   extractedTasks: TodoistTask[];
   groups: string[];
+  onCreateFolder: (name: string, parent: string | null) => string;
   initialMode: TaskTriageMode;
   onAssignGroup: (task: TodoistTask, group: string) => Promise<void>;
   onDeleteTask: (task: TodoistTask, onRestore?: () => void) => Promise<void>;
@@ -114,6 +113,8 @@ type NormalTaskReviewProps = {
   error: string | null;
   folderScrollTop: number;
   folders: TaskTriageFolder[];
+  allFolders: TaskTriageFolder[];
+  onCreateFolder: (name: string, parent: string | null) => string;
   highlightedFolder: number;
   onAssign: (group: string) => void;
   onDelete: () => void;
@@ -134,6 +135,8 @@ function NormalTaskReview({
   error,
   folderScrollTop,
   folders,
+  allFolders,
+  onCreateFolder,
   highlightedFolder,
   onAssign,
   onDelete,
@@ -159,8 +162,6 @@ function NormalTaskReview({
   const [titleDraft, setTitleDraft] = React.useState(title);
   const [savingTitle, setSavingTitle] = React.useState(false);
   const titleFieldRef = React.useRef<HTMLTextAreaElement>(null);
-  const folderListRef = React.useRef<HTMLDivElement>(null);
-  const folderOptionRefs = React.useRef<Array<HTMLButtonElement | null>>([]);
   const titleFocusAtEndRef = React.useRef(false);
   const titleCommitRef = React.useRef(false);
   const titleCancelRef = React.useRef(false);
@@ -176,18 +177,6 @@ function NormalTaskReview({
       field.setSelectionRange(field.value.length, field.value.length);
     }
   }, [editingTitle, titleDraft]);
-
-  React.useLayoutEffect(() => {
-    if (!folderListRef.current) return;
-    folderListRef.current.scrollTop = folderScrollTop;
-  }, [folderScrollTop]);
-
-  const highlightFolder = (index: number) => {
-    onHighlight(index);
-    window.requestAnimationFrame(() => {
-      folderOptionRefs.current[index]?.scrollIntoView({ block: "nearest" });
-    });
-  };
 
   const beginTitleEdit = (focusAtEnd = false) => {
     if (resolving || savingTitle) return;
@@ -306,79 +295,13 @@ function NormalTaskReview({
         )}
       </article>
       {error && <p className="task-triage-error">{error}</p>}
-      <div className="task-triage-folder-picker">
-        <label>
-          <Search size={16} />
-          <input
-            aria-autocomplete="list"
-            aria-controls="task-triage-folders"
-            aria-label="Search folders"
-            onChange={(event) => {
-              onFolderScroll(0);
-              if (folderListRef.current) folderListRef.current.scrollTop = 0;
-              onQueryChange(event.target.value);
-            }}
-            onKeyDown={(event) => {
-              if (
-                event.key === "Tab"
-                && !event.shiftKey
-                && !event.altKey
-                && !event.ctrlKey
-                && !event.metaKey
-                && !resolving
-                && !savingTitle
-              ) {
-                event.preventDefault();
-                beginTitleEdit(true);
-              } else if (event.key === "ArrowDown" && folders.length) {
-                event.preventDefault();
-                highlightFolder((highlightedFolder + 1) % folders.length);
-              } else if (event.key === "ArrowUp" && folders.length) {
-                event.preventDefault();
-                highlightFolder((highlightedFolder - 1 + folders.length) % folders.length);
-              } else if (event.key === "Enter" && folders.length) {
-                event.preventDefault();
-                onAssign(folders[Math.min(highlightedFolder, folders.length - 1)].name);
-              }
-            }}
-            placeholder="Search folders…"
-            ref={searchInputRef}
-            value={query}
-          />
-          {resolving && <LoaderCircle className="spin" size={14} />}
-        </label>
-        <div
-          id="task-triage-folders"
-          onScroll={(event) => onFolderScroll(event.currentTarget.scrollTop)}
-          ref={folderListRef}
-          role="listbox"
-        >
-          {folders.length ? folders.map((folder, index) => (
-            <button
-              aria-label={`Move to ${folder.path}`}
-              aria-selected={index === highlightedFolder}
-              data-highlighted={index === highlightedFolder ? "true" : undefined}
-              key={folder.name}
-              onClick={() => onAssign(folder.name)}
-              onMouseDown={(event) => event.preventDefault()}
-              onMouseEnter={() => onHighlight(index)}
-              ref={(element) => { folderOptionRefs.current[index] = element; }}
-              role="option"
-              style={{ paddingLeft: 12 + folder.depth * 18 }}
-              type="button"
-            >
-              {folder.depth ? <Folder size={14} /> : <FolderOpen size={14} />}
-              <span>
-                <strong>{folder.label}</strong>
-                {folder.depth > 0 && <small>{folder.path}</small>}
-              </span>
-              {index === highlightedFolder && <kbd>↵</kbd>}
-            </button>
-          )) : (
-            <p>{totalFolders ? "No matching folder" : "Create a folder in the sidebar first"}</p>
-          )}
-        </div>
-      </div>
+      <TaskFolderPicker
+        folderScrollTop={folderScrollTop} folders={folders} allFolders={allFolders}
+        highlightedFolder={highlightedFolder} onAssign={onAssign} onCreateFolder={onCreateFolder}
+        onHighlight={onHighlight} onQueryChange={onQueryChange} onFolderScroll={onFolderScroll}
+        onEditTitle={() => beginTitleEdit(true)} query={query} resolving={resolving || savingTitle}
+        searchInputRef={searchInputRef} totalFolders={totalFolders}
+      />
       <div className="task-triage-secondary-actions">
         {!task.optimistic && (
           <button className="task-triage-open-original" onClick={onOpenOriginal} type="button">
@@ -420,6 +343,7 @@ export function TaskTriageDialog({
   extractedTasks,
   groups,
   initialMode,
+  onCreateFolder,
   onAssignGroup,
   onDeleteTask,
   onOpenChange,
@@ -468,7 +392,7 @@ export function TaskTriageDialog({
       setFolderPreferences(readTodoistFolderPreferences(window.localStorage));
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [open]);
+  }, [open, groups]);
 
   React.useEffect(() => {
     if (!open || phase !== "normal" || !currentTask) return;
@@ -549,6 +473,7 @@ export function TaskTriageDialog({
   React.useEffect(() => {
     if (!open) return;
     const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.target instanceof Element && event.target.closest(".task-folder-create-form")) return;
       if (event.key === "Escape") {
         if (
           event.target instanceof HTMLElement
@@ -683,6 +608,8 @@ export function TaskTriageDialog({
           <NormalTaskReview
             error={error}
             folderScrollTop={folderScrollTop}
+            allFolders={taskTriageFolders({ groups, order: folderPreferences.groupOrder, parents: folderPreferences.groupParents })}
+            onCreateFolder={onCreateFolder}
             folders={folders}
             highlightedFolder={highlightedFolder}
             key={`${currentTask.id}:${currentTask.content}`}

@@ -1,5 +1,7 @@
 "use client";
 
+import { normalizeTaskFolderName as normalizeTodoistGroupName } from "@/lib/task-folder-creation";
+
 import {
   CalendarPlus,
   ChevronRight,
@@ -74,8 +76,7 @@ const GROUP_HOVER_EXPAND_DELAY_MS = 750;
 const REORDER_BUG_FLAG = "[BUG:SIDEBAR-REORDER]";
 const FOLDER_REORDER_BUG_FLAG = "[BUG:FOLDER-REORDER]";
 
-const normalizeTodoistGroupName = (name: string) =>
-  name.trim().replace(/\s+/g, " ").replaceAll("/", "-");
+
 
 const logSidebarReorder = (
   phase: string,

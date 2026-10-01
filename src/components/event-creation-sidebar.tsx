@@ -69,6 +69,7 @@ type EventCreationSidebarProps = {
   onCancel: () => void;
   onCancelPendingCreation: () => void;
   onClearSelection: () => void;
+  onAddToTaskFolder: () => void;
   onBulkUpdateEvents: (events: CalendarEvent[]) => Promise<boolean>;
   onCopySelection: () => void;
   onCreate: (title: string, calendarId: string) => void;
@@ -768,6 +769,7 @@ export function EventCreationSidebar({
   onCancel,
   onCancelPendingCreation,
   onClearSelection,
+  onAddToTaskFolder,
   onBulkUpdateEvents,
   onCopySelection,
   onCreate,
@@ -947,6 +949,7 @@ export function EventCreationSidebar({
           editableCalendars={calendars}
           events={selectedEvents}
           openCalendarPicker={openSelectedEventCalendarPicker}
+          onAddToTaskFolder={onAddToTaskFolder}
           onBulkUpdate={onBulkUpdateEvents}
           onCalendarPickerClose={onSelectedEventCalendarPickerClose}
           onCopy={onCopySelection}
