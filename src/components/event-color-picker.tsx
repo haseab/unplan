@@ -177,7 +177,7 @@ export function EventColorPicker({
     submittedRef.current = false;
     const selected = buttonRefs.current.get(selectedKey);
     selected?.focus({ preventScroll: true });
-    selected?.scrollIntoView({ block: "nearest" });
+    rootRef.current?.scrollIntoView({ block: "nearest", inline: "nearest" });
     onAutoFocused?.();
   }, [autoFocus, onAutoFocused, selectedKey, showMore]);
 
