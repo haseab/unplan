@@ -327,7 +327,7 @@ export const eventMoveShortcut = ({
   if (key === "ArrowLeft") return { dayDelta: -1, minuteDelta: 0 };
   if (key === "ArrowRight") return { dayDelta: 1, minuteDelta: 0 };
   if (includesAllDay) return null;
-  const minuteDelta = repeat ? 30 : 15;
+  const minuteDelta = repeat ? 60 : 15;
   if (key === "ArrowUp") return { dayDelta: 0, minuteDelta: -minuteDelta };
   if (key === "ArrowDown") return { dayDelta: 0, minuteDelta };
   return null;

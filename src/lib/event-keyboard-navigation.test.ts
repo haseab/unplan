@@ -203,11 +203,11 @@ test("Option+arrows resolve to calendar event moves", () => {
   assert.equal(shortcut("ArrowLeft", { modalOpen: true }), null);
   assert.deepEqual(shortcut("ArrowUp", { repeat: true }), {
     dayDelta: 0,
-    minuteDelta: -30,
+    minuteDelta: -60,
   });
   assert.deepEqual(shortcut("ArrowDown", { repeat: true }), {
     dayDelta: 0,
-    minuteDelta: 30,
+    minuteDelta: 60,
   });
   assert.equal(shortcut("ArrowLeft", { selectedCount: 0 }), null);
   assert.equal(shortcut("ArrowLeft", { shiftKey: true }), null);

@@ -447,7 +447,7 @@ const EVENT_CREATION_DRAG_THRESHOLD = 5;
 const CROSS_SERVICE_DRAG_THRESHOLD = 12;
 const TODOIST_KEYBOARD_MOVE_TOAST_DEBOUNCE_MS = 350;
 const KEYBOARD_MOVE_REPEAT_DELAY_MS = 180;
-const KEYBOARD_MOVE_REPEAT_INTERVAL_MS = 95;
+const KEYBOARD_MOVE_REPEAT_INTERVAL_MS = 50;
 const EVENT_NAVIGATION_REPEAT_DELAY_MS = 160;
 const EVENT_NAVIGATION_REPEAT_INTERVAL_MS = 70;
 const EVENT_NAVIGATION_VERTICAL_REPEAT_INTERVAL_MS = 60;
@@ -3346,6 +3346,22 @@ export function CalendarApp() {
     return true;
   }, [renderedEventElements]);
 
+  const focusEventAfterEditing = React.useCallback((event: CalendarEvent) => {
+    window.requestAnimationFrame(() => {
+      // A picker can change the calendar during this same key event. Resolve
+      // the rendered identity after React commits instead of using its old key.
+      const element = renderedEventElements().find(
+        (candidate) => candidate.dataset.calendarEventId === event.id,
+      );
+      const eventKey = element?.dataset.eventKey;
+      if (eventKey) focusRenderedEvent(eventKey, false);
+      else console.debug("[BUG:EVENT-EDIT-FOCUS] Edited event is not rendered", {
+        eventId: event.id,
+        calendarId: event.calendarId,
+      });
+    });
+  }, [focusRenderedEvent, renderedEventElements]);
+
   const viewportEventCandidates = React.useCallback(() => {
     const scrollContainer = scrollRef.current;
     if (!scrollContainer) return [];
@@ -5096,7 +5112,17 @@ export function CalendarApp() {
     return true;
   }, [calendars, chooseGuestNotifications, clearEventMutationOrigins, confirmBulkAction, persistMovedEvents, rememberEventMutationOrigins, toastDuration]);
 
+  const keyboardMoveDependenciesRef = React.useRef<Record<string, unknown> | null>(null);
   React.useEffect(() => {
+    const dependencies = { activeSelectionSurface, chooseGuestNotifications, persistMovedEvents, renderedDays, selected, toastDuration, updateEventDetails };
+    const previous = keyboardMoveDependenciesRef.current;
+    if (previous) console.debug("[BUG:KEYBOARD-MOVE] Handler dependencies changed", {
+      changed: Object.keys(dependencies).filter((key) =>
+        previous[key] !== dependencies[key as keyof typeof dependencies]
+      ),
+      activeSelectionSurface,
+    });
+    keyboardMoveDependenciesRef.current = dependencies;
     type KeyboardMoveSession = NonNullable<typeof keyboardMoveSessionRef.current>;
 
     const restoreEvents = (originals: CalendarEvent[], eventIds?: Set<string>) => {
@@ -5263,8 +5289,17 @@ export function CalendarApp() {
     let repeatDelayTimer: number | null = null;
     let repeatIntervalTimer: number | null = null;
     let repeatedKey: string | null = null;
+    let repeatStartedAt = 0;
+    let repeatTicks = 0;
+    let lastMoveLogAt = 0;
 
-    const stopKeyboardMoveRepeat = () => {
+    const stopKeyboardMoveRepeat = (reason = "restart") => {
+      if (repeatedKey) console.debug("[BUG:KEYBOARD-MOVE] Repeat stopped", {
+        key: repeatedKey,
+        reason,
+        ticks: repeatTicks,
+        elapsedMs: Math.round(performance.now() - repeatStartedAt),
+      });
       if (repeatDelayTimer !== null) window.clearTimeout(repeatDelayTimer);
       if (repeatIntervalTimer !== null) window.clearInterval(repeatIntervalTimer);
       repeatDelayTimer = null;
@@ -5295,7 +5330,12 @@ export function CalendarApp() {
       const moveToPresent = isEventMoveToPresentShortcut(shortcutContext);
       const gapFillDirection = eventGapFillShortcut(shortcutContext);
       const stackDirection = eventStackShortcut(shortcutContext);
-      if (!moveShortcut && !resizeShortcut && !moveToPresent && !gapFillDirection && !stackDirection) return false;
+      if (!moveShortcut && !resizeShortcut && !moveToPresent && !gapFillDirection && !stackDirection) {
+        if (keyboardEvent.altKey && keyboardEvent.key.startsWith("Arrow")) {
+          console.debug("[BUG:KEYBOARD-MOVE] Shortcut rejected", shortcutContext);
+        }
+        return false;
+      }
 
       keyboardEvent.preventDefault();
       keyboardEvent.stopPropagation();
@@ -5396,6 +5436,33 @@ export function CalendarApp() {
       }
 
       const moved = keyboardEventUpdates(session, selection);
+      const logTime = performance.now();
+      if (moveShortcut && (!shortcutContext.repeat || logTime - lastMoveLogAt >= 250)) {
+        lastMoveLogAt = logTime;
+        console.debug("[BUG:KEYBOARD-MOVE] Move applied", {
+          key: keyboardEvent.key,
+          source: repeatOverride ? "timer" : keyboardEvent.repeat ? "native-repeat" : "keydown",
+          ticks: repeatTicks,
+          intervalMs: KEYBOARD_MOVE_REPEAT_INTERVAL_MS,
+          dayDelta: session.dayDelta,
+          minuteDelta: session.minuteDelta,
+          stepMinutes: moveShortcut.minuteDelta,
+          selectedCount: selection.length,
+        });
+        const movedId = moved[0]?.id;
+        window.requestAnimationFrame(() => {
+          const element = renderedCalendarEventElements().find(
+            (candidate) => candidate.dataset.calendarEventId === movedId,
+          );
+          console.debug("[BUG:KEYBOARD-MOVE] Render sample", {
+            frameDelayMs: Math.round(performance.now() - logTime),
+            rendered: Boolean(element),
+            startMinute: element?.dataset.eventStartMinute,
+            top: element?.style.top,
+            scrollTop: scrollRef.current?.scrollTop,
+          });
+        });
+      }
       const movedById = new Map(moved.map((event) => [event.id, event]));
       setActionToastResourceHold(
         CALENDAR_KEYBOARD_TRANSFORM_HOLD_SCOPE,
@@ -5489,15 +5556,24 @@ export function CalendarApp() {
 
       stopKeyboardMoveRepeat();
       repeatedKey = keyboardEvent.key;
+      repeatStartedAt = performance.now();
+      repeatTicks = 0;
+      console.debug("[BUG:KEYBOARD-MOVE] Repeat started", {
+        key: repeatedKey,
+        delayMs: KEYBOARD_MOVE_REPEAT_DELAY_MS,
+        intervalMs: KEYBOARD_MOVE_REPEAT_INTERVAL_MS,
+      });
       repeatDelayTimer = window.setTimeout(() => {
         repeatDelayTimer = null;
+        repeatTicks += 1;
         if (!moveSelectedEventsWithKeyboard(keyboardEvent, true)) {
-          stopKeyboardMoveRepeat();
+          stopKeyboardMoveRepeat("shortcut-rejected");
           return;
         }
         repeatIntervalTimer = window.setInterval(() => {
+          repeatTicks += 1;
           if (!moveSelectedEventsWithKeyboard(keyboardEvent, true)) {
-            stopKeyboardMoveRepeat();
+            stopKeyboardMoveRepeat("shortcut-rejected");
           }
         }, KEYBOARD_MOVE_REPEAT_INTERVAL_MS);
       }, KEYBOARD_MOVE_REPEAT_DELAY_MS);
@@ -5505,19 +5581,20 @@ export function CalendarApp() {
 
     const handleKeyboardMoveKeyUp = (keyboardEvent: KeyboardEvent) => {
       if (keyboardEvent.key === repeatedKey || keyboardEvent.key === "Alt") {
-        stopKeyboardMoveRepeat();
+        stopKeyboardMoveRepeat(`keyup:${keyboardEvent.key}`);
       }
     };
 
     window.addEventListener("keydown", handleKeyboardMoveKeyDown);
     window.addEventListener("keyup", handleKeyboardMoveKeyUp);
-    window.addEventListener("blur", stopKeyboardMoveRepeat);
+    const stopOnWindowBlur = () => stopKeyboardMoveRepeat("window-blur");
+    window.addEventListener("blur", stopOnWindowBlur);
     return () => {
       submitKeyboardMoveRef.current = null;
-      stopKeyboardMoveRepeat();
+      stopKeyboardMoveRepeat("effect-cleanup");
       window.removeEventListener("keydown", handleKeyboardMoveKeyDown);
       window.removeEventListener("keyup", handleKeyboardMoveKeyUp);
-      window.removeEventListener("blur", stopKeyboardMoveRepeat);
+      window.removeEventListener("blur", stopOnWindowBlur);
     };
   }, [activeSelectionSurface, chooseGuestNotifications, persistMovedEvents, renderedDays, selected, toastDuration, updateEventDetails]);
 
@@ -6879,12 +6956,7 @@ export function CalendarApp() {
               setCreationPreviewTitle(title);
             }}
             onFocusWithinChange={setEventDetailsFocused}
-            onFocusEvent={(event) => {
-              const eventKey = calendarEventKey(event.calendarId, event.id);
-              window.requestAnimationFrame(() => {
-                focusRenderedEvent(eventKey, false);
-              });
-            }}
+            onFocusEvent={focusEventAfterEditing}
             onRemoveSelection={(eventId) => setSelected((current) => {
               const next = new Set(current);
               next.delete(eventId);

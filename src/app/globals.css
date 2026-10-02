@@ -1559,11 +1559,17 @@ kbd {
 .task-triage-folder-picker .task-folder-option { min-width: 0; }
 .task-folder-create-child { display: grid; place-items: center; border: 0; border-radius: 8px; background: transparent; color: var(--text-faint); cursor: pointer; }
 .task-folder-create-child:hover { background: var(--blue-soft); color: var(--blue-ink); }
-.task-folder-create-form { display: flex; flex-wrap: wrap; gap: 10px; padding: 12px; border: 1px solid var(--line-strong); border-radius: 10px; }
-.task-folder-create-form label { display: grid; width: 100%; gap: 6px; color: var(--text-soft); font-size: 11px; }
-.task-folder-create-form input, .task-folder-create-form select { padding: 9px; border: 1px solid var(--line-strong); border-radius: 6px; background: var(--surface); color: var(--ink); }
-.task-folder-create-form button { padding: 8px 12px; border: 1px solid var(--line-strong); border-radius: 6px; background: var(--surface); color: var(--ink); cursor: pointer; }
-.task-folder-create-form p { color: #ef8982; font-size: 11px; }
+.task-folder-create-form { display: flex; flex-wrap: wrap; gap: 10px 8px; padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-muted); font: inherit; font-size: 11px; line-height: 1.4; }
+.task-folder-create-form label { display: grid; width: 100%; min-width: 0; gap: 6px; color: var(--text-soft); font-size: 10px; font-weight: 500; }
+.task-folder-create-form input, .task-folder-create-form select { width: 100%; min-width: 0; height: 36px; padding: 0 10px; border: 1px solid var(--line-strong); border-radius: 8px; outline: none; background: var(--surface); color: var(--ink); font: inherit; font-size: 11px; font-weight: 450; line-height: 1.4; }
+.task-folder-create-form input:focus, .task-folder-create-form select:focus-visible { border-color: var(--blue-border); box-shadow: 0 0 0 3px var(--blue-soft); }
+.task-folder-create-form button { display: inline-flex; height: 32px; align-items: center; justify-content: center; padding: 0 12px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--surface); color: var(--muted); font: inherit; font-size: 11px; font-weight: 560; line-height: 1; cursor: pointer; transition: background 140ms ease, border-color 140ms ease; }
+.task-folder-create-form button[type="submit"] { border-color: var(--blue-border); background: var(--blue-soft); color: var(--blue-ink); }
+.task-folder-create-form button:hover:not(:disabled) { background: var(--surface-hover); color: var(--ink); }
+.task-folder-create-form button:focus-visible { outline: 2px solid var(--blue-ink); outline-offset: 2px; }
+.task-folder-create-form button:disabled { opacity: 0.45; cursor: default; }
+.task-folder-create-form p { width: 100%; margin: 0; color: #ef8982; font-size: 10px; }
+
 
 .event-editor .event-editor-hero textarea[data-link-preview="true"] { position: absolute; width: 1px; height: 1px !important; min-height: 0; overflow: hidden; opacity: 0; pointer-events: none; }
 .event-title-link-preview { display: flex; align-items: flex-start; gap: 10px; min-height: 30px; color: var(--ink); font-size: 18px; font-weight: 540; line-height: 1.3; letter-spacing: -0.02em; }
