@@ -20,6 +20,7 @@ export function usePriorityTaskReview(
   onDelete: (task: TodoistTask, onRestore?: () => void) => Promise<void>,
   onRestore: (card: PriorityReviewCard) => void,
   initialReturning: PriorityReviewCard | null,
+  onAssignGroup: (task: TodoistTask, group: string, onRestore?: () => void) => Promise<void>,
 ) {
   const [state, dispatch] = React.useReducer(priorityReviewReducer, initialReturning, createPriorityReviewState);
   const [error, setError] = React.useState<string | null>(null);
@@ -28,8 +29,8 @@ export function usePriorityTaskReview(
   const remaining = remainingPriorityReviewTasks(tasks, state);
   const current = remaining[0];
 
-  const resolve = React.useCallback((action: PriorityReviewDirection | "delete") => {
-    if (!current || locked.current) return;
+  const resolve = React.useCallback((action: PriorityReviewDirection | "up" | "delete", group?: string) => {
+    if (!current || locked.current || (action === "up" && !group)) return;
     locked.current = true;
     setError(null);
     const card: PriorityReviewCard = { task: current, direction: action === "delete" ? "up" : action };
@@ -41,10 +42,12 @@ export function usePriorityTaskReview(
     };
     // Queue the mutation immediately so Undo also works during the exit animation.
     if (action !== "right") {
-      const mutate = action === "delete" ? onDelete : onSchedule;
+      const mutate = action === "up"
+        ? (task: TodoistTask, onRestore: () => void) => onAssignGroup(task, group!, onRestore)
+        : action === "delete" ? onDelete : onSchedule;
       void mutate(current, restore).catch((caught) => {
         restore();
-        setError(caught instanceof Error ? caught.message : `That task could not be ${action === "delete" ? "deleted" : "scheduled"}`);
+        setError(caught instanceof Error ? caught.message : `That task could not be ${action === "up" ? "retriaged" : action === "delete" ? "deleted" : "scheduled"}`);
       });
     } else {
       queueActionToast(`Kept ${todoistTaskDisplayTitle(current.content)} in folder`, {
@@ -53,7 +56,7 @@ export function usePriorityTaskReview(
         onSubmit: () => {},
       });
     }
-  }, [current, duration, onDelete, onRestore, onSchedule]);
+  }, [current, duration, onAssignGroup, onDelete, onRestore, onSchedule]);
 
   React.useEffect(() => {
     const card = state.departure ?? state.returning;

@@ -1577,3 +1577,9 @@ kbd {
 .event-title-link-preview a { color: var(--blue-ink); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
 .event-title-link-preview > button { display: grid; place-items: center; flex-shrink: 0; width: 26px; height: 26px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--text-soft); cursor: pointer; }
 .event-title-link-preview > button:hover { background: var(--surface-hover); color: var(--ink); }
+
+.priority-review-actions { grid-template-columns: repeat(3, 1fr); }
+@media (max-width: 540px) {
+  .priority-review-actions { grid-template-columns: 1fr; }
+  .priority-review-modal .task-triage-shortcuts { flex-wrap: wrap; }
+}

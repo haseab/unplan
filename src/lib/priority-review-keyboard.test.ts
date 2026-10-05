@@ -21,7 +21,7 @@ function press(key: string, options: Partial<KeyboardEvent> = {}) {
 }
 
 test("all navigation is isolated from background selection, including modifiers and repeats", () => {
-  for (const key of ["ArrowUp", "ArrowDown", "Home", "End", "PageUp", "PageDown"]) {
+  for (const key of ["ArrowDown", "Home", "End", "PageUp", "PageDown"]) {
     assert.deepEqual(press(key), { calls: [], prevented: true });
   }
   assert.deepEqual(press("ArrowLeft"), { calls: ["left"], prevented: true });
@@ -45,4 +45,11 @@ test("modal retains Undo, submit, close and trapped Tab navigation", () => {
   assert.deepEqual(press("Escape").calls, ["close"]);
   assert.deepEqual(press("Tab"), { calls: ["next"], prevented: true });
   assert.deepEqual(press("Tab", { shiftKey: true }), { calls: ["previous"], prevented: true });
+});
+
+test("Up retriages once without modifiers and stays isolated from the calendar", () => {
+  assert.deepEqual(press("ArrowUp"), { calls: ["up"], prevented: true });
+  for (const options of [{ repeat: true }, { metaKey: true }, { ctrlKey: true }, { altKey: true }, { shiftKey: true }]) {
+    assert.deepEqual(press("ArrowUp", options), { calls: [], prevented: true });
+  }
 });

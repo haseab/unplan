@@ -1,9 +1,10 @@
 "use client";
 
 import * as React from "react";
-import { ArrowLeft, ArrowRight, CalendarPlus, Check, Folder, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, ArrowUp, RefreshCw, CalendarPlus, Check, Folder, X } from "lucide-react";
 import { handlePriorityReviewKeyDown } from "@/lib/priority-review-keyboard";
 import { triggerToastUndo, triggerToastSubmit } from "@/lib/action-toast";
+import { CalendarTaskFolderDialog } from "@/components/calendar-task-folder-dialog";
 import { CalendarEventContent } from "@/components/calendar-event-content";
 import { usePriorityTaskReview } from "@/hooks/use-priority-task-review";
 import type { CalendarSource } from "@/lib/calendar-types";
@@ -14,6 +15,9 @@ import { calendarEventDetailsFromTodoistContent, todoistGroupDisplayName, type T
 
 type Props = {
   tasks: TodoistTask[];
+  groups: string[];
+  onCreateFolder: (name: string, parent: string | null) => string;
+  onAssignGroup: (task: TodoistTask, group: string, onRestore?: () => void) => Promise<void>;
   calendars: CalendarSource[];
   groupParents: TodoistGroupParents;
   onSchedule: (task: TodoistTask, onRestore?: () => void) => Promise<void>;
@@ -23,8 +27,9 @@ type Props = {
   onClose: () => void;
 };
 
-export function PriorityTaskReview({ tasks, calendars, groupParents, onSchedule, onDelete, onClose, onRestore, initialReturning }: Props) {
-  const { remaining, departure, returning, restoredAtFront, error, resolve, finished } = usePriorityTaskReview(tasks, onSchedule, onDelete, onRestore, initialReturning);
+export function PriorityTaskReview({ tasks, calendars, groupParents, groups, onCreateFolder, onAssignGroup, onSchedule, onDelete, onClose, onRestore, initialReturning }: Props) {
+  const { remaining, departure, returning, restoredAtFront, error, resolve, finished } = usePriorityTaskReview(tasks, onSchedule, onDelete, onRestore, initialReturning, onAssignGroup);
+  const [retriaging, setRetriaging] = React.useState(false);
   const reviewRef = React.useRef<HTMLElement>(null);
   const pointer = React.useRef<{ id: number; x: number; y: number } | null>(null);
   const [dragX, setDragX] = React.useState(0);
@@ -49,8 +54,12 @@ export function PriorityTaskReview({ tasks, calendars, groupParents, onSchedule,
   }, []);
 
   React.useEffect(() => {
+    if (retriaging) return;
     const onKeyDown = (event: KeyboardEvent) => handlePriorityReviewKeyDown(event, {
-      resolve,
+      resolve: (action) => {
+        if (action === "up") { if (!departure) setRetriaging(true); }
+        else resolve(action);
+      },
       undo: triggerToastUndo,
       submit: triggerToastSubmit,
       close: onClose,
@@ -64,7 +73,16 @@ export function PriorityTaskReview({ tasks, calendars, groupParents, onSchedule,
     });
     window.addEventListener("keydown", onKeyDown, true);
     return () => window.removeEventListener("keydown", onKeyDown, true);
-  }, [onClose, resolve]);
+  }, [onClose, resolve, retriaging, departure]);
+
+  if (retriaging && remaining[0]) return (
+    <CalendarTaskFolderDialog
+      count={1} groups={groups} taskTitle={calendarEventDetailsFromTodoistContent(remaining[0].content).title || remaining[0].content}
+      onCreateFolder={onCreateFolder}
+      onClose={() => { setRetriaging(false); window.requestAnimationFrame(() => reviewRef.current?.focus()); }}
+      onAssign={(group) => { setRetriaging(false); resolve("up", group); window.requestAnimationFrame(() => reviewRef.current?.focus()); }}
+    />
+  );
 
   if (finished) return (
     <section ref={reviewRef} tabIndex={-1} className="task-triage-modal task-triage-complete" aria-live="polite">
@@ -80,7 +98,7 @@ export function PriorityTaskReview({ tasks, calendars, groupParents, onSchedule,
         <div>
           <span className="task-triage-eyebrow">Priority tasks</span>
           <h2>Make time for these?</h2>
-          <p aria-live="polite">{remaining.length} left · schedule now or keep in folder</p>
+          <p aria-live="polite">{remaining.length} left · schedule, retriage, or keep in folder</p>
         </div>
         <button aria-label="Close priority review" onClick={onClose} type="button"><X size={17} /></button>
       </header>
@@ -150,15 +168,18 @@ export function PriorityTaskReview({ tasks, calendars, groupParents, onSchedule,
         </div>
       </div>
       {error && <p className="task-triage-error" role="alert">{error}</p>}
-      <div className="task-triage-actions">
+      <div className="task-triage-actions priority-review-actions">
         <button className="task-triage-keep" disabled={!!departure} onClick={() => resolve("left")} type="button">
           <CalendarPlus size={15} /><span>Schedule now</span><ArrowLeft size={15} />
+        </button>
+        <button disabled={!!departure} onClick={() => setRetriaging(true)} type="button">
+          <RefreshCw size={15} /><span>Retriage</span><ArrowUp size={15} />
         </button>
         <button disabled={!!departure} onClick={() => resolve("right")} type="button">
           <Folder size={15} /><span>Keep in folder</span><ArrowRight size={15} />
         </button>
       </div>
-      <p className="task-triage-shortcuts"><kbd>←</kbd> stack at present <span /> keep in folder <kbd>→</kbd><span /><kbd>⌫</kbd> delete</p>
+      <p className="task-triage-shortcuts"><kbd>←</kbd> stack at present <span /> keep in folder <kbd>→</kbd><span /><kbd>↑</kbd> retriage<span /><kbd>⌫</kbd> delete</p>
     </section>
   );
 }

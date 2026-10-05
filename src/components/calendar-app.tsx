@@ -6536,7 +6536,7 @@ export function CalendarApp() {
         extractedTasks={extractedTasks}
         groups={todoistGroups}
         initialMode={taskTriageMode}
-        onAssignGroup={async (task, group) => {
+        onAssignGroup={async (task, group, onRestore) => {
           const title = todoistTaskDisplayTitle(task.content);
           const taskDetails = calendarEventDetailsFromTodoistContent(task.content);
           const taskCalendar = writableCalendars.find(
@@ -6557,8 +6557,9 @@ export function CalendarApp() {
           queueActionToast(`Moved ${title} to ${group}`, {
             duration: toastDuration,
             onUndo: () => {
-              setTaskTriageMode("normal");
-              setReturningTriageTask({ direction: "right", id: task.id });
+              onRestore?.();
+              setTaskTriageMode(onRestore ? "priority" : "normal");
+              setReturningTriageTask({ direction: onRestore ? "up" : "right", id: task.id });
               replaceLocalTodoistTask(task);
               setShowTaskTriage(true);
             },
@@ -6569,8 +6570,9 @@ export function CalendarApp() {
               });
             },
             onError: (error) => {
-              setTaskTriageMode("normal");
-              setReturningTriageTask({ direction: "right", id: task.id });
+              onRestore?.();
+              setTaskTriageMode(onRestore ? "priority" : "normal");
+              setReturningTriageTask({ direction: onRestore ? "up" : "right", id: task.id });
               replaceLocalTodoistTask(task);
               setShowTaskTriage(true);
               toast.error(error instanceof Error ? error.message : "Task group could not be updated");

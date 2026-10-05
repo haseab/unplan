@@ -1,5 +1,5 @@
 type ReviewKeyboardActions = {
-  resolve: (action: "left" | "right" | "delete") => void;
+  resolve: (action: "left" | "right" | "up" | "delete") => void;
   undo: () => void;
   submit: () => void;
   close: () => void;
@@ -36,7 +36,7 @@ export function handlePriorityReviewKeyDown(event: KeyboardEvent, actions: Revie
   if (event.altKey || event.shiftKey || event.repeat) return;
   if (event.key === "Delete" || event.key === "Backspace") {
     actions.resolve("delete");
-  } else if (!modifier && (event.key === "ArrowLeft" || event.key === "ArrowRight")) {
-    actions.resolve(event.key === "ArrowLeft" ? "left" : "right");
+  } else if (!modifier && (event.key === "ArrowLeft" || event.key === "ArrowRight" || event.key === "ArrowUp")) {
+    actions.resolve(event.key === "ArrowUp" ? "up" : event.key === "ArrowLeft" ? "left" : "right");
   }
 }

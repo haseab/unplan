@@ -39,7 +39,7 @@ type TaskTriageDialogProps = {
   groups: string[];
   onCreateFolder: (name: string, parent: string | null) => string;
   initialMode: TaskTriageMode;
-  onAssignGroup: (task: TodoistTask, group: string) => Promise<void>;
+  onAssignGroup: (task: TodoistTask, group: string, onRestore?: () => void) => Promise<void>;
   onDeleteTask: (task: TodoistTask, onRestore?: () => void) => Promise<void>;
   onOpenChange: (open: boolean) => void;
   onScheduleTask: (task: TodoistTask, onRestore?: () => void) => Promise<void>;
@@ -473,6 +473,7 @@ export function TaskTriageDialog({
   React.useEffect(() => {
     if (!open) return;
     const handleKeyDown = (event: KeyboardEvent) => {
+      if (phase === "priority") return;
       if (event.target instanceof Element && event.target.closest(".task-folder-create-form")) return;
       if (event.key === "Escape") {
         if (
@@ -554,6 +555,9 @@ export function TaskTriageDialog({
           tasks={priorityReviewTasks(tasks, folderPreferences.groupParents)}
           groupParents={folderPreferences.groupParents}
           calendars={calendars}
+          groups={groups}
+          onCreateFolder={onCreateFolder}
+          onAssignGroup={onAssignGroup}
           onSchedule={onScheduleTask}
           onDelete={onDeleteTask}
           onRestore={onRestorePriorityTask}

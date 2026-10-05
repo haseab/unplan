@@ -6,8 +6,9 @@ import { TaskFolderPicker } from "@/components/task-folder-picker";
 import { taskTriageFolders } from "@/lib/task-triage";
 import { readTodoistFolderPreferences } from "@/lib/todoist-folder-backup";
 
-export function CalendarTaskFolderDialog({ count, groups, onAssign, onClose, onCreateFolder }: {
+export function CalendarTaskFolderDialog({ count, groups, taskTitle, onAssign, onClose, onCreateFolder }: {
   count: number;
+  taskTitle?: string;
   groups: string[];
   onAssign: (group: string) => void;
   onClose: () => void;
@@ -39,7 +40,7 @@ export function CalendarTaskFolderDialog({ count, groups, onAssign, onClose, onC
     }}>
     <section className="task-triage-modal" ref={dialogRef}>
       <header className="task-triage-heading">
-        <div><span className="task-triage-eyebrow">Add to task folder</span><h2 id="calendar-task-folder-title">{count} selected {count === 1 ? "task" : "tasks"}</h2><p>Choose a folder to move these events into Tasks.</p></div>
+        <div><span className="task-triage-eyebrow">{taskTitle ? "Retriage priority task" : "Add to task folder"}</span><h2 id="calendar-task-folder-title">{taskTitle ?? `${count} selected ${count === 1 ? "task" : "tasks"}`}</h2><p>{taskTitle ? "Choose a new folder for this task." : "Choose a folder to move these events into Tasks."}</p></div>
         <button type="button" aria-label="Close folder picker" onClick={onClose}><X size={17} /></button>
       </header>
       <TaskFolderPicker folders={taskTriageFolders({ ...options, query })} allFolders={taskTriageFolders(options)} folderScrollTop={scrollTop}
