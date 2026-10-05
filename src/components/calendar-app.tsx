@@ -6289,6 +6289,7 @@ export function CalendarApp() {
                     data-event-start-minute={geometry.top / pixelsPerMinute}
                     data-marquee-event-id={event.id}
                     data-marquee-stack={layout.zIndex}
+                    data-overlapping={layout.overlapping || undefined}
                     data-sync-status={unsyncedEventIds.has(event.id) ? "pending" : undefined}
                     style={{
                       ...eventInlinePosition(
@@ -6305,7 +6306,6 @@ export function CalendarApp() {
                       "--event-surface-light": palette.lightSurface,
                     } as React.CSSProperties}
                     onPointerDown={(pointer) => beginEventDrag(pointer, event)}
-                    onDoubleClick={() => event.htmlLink && window.open(event.htmlLink, "_blank")}
                     aria-label={`${event.title}, ${formatEventTime(event)}${unsyncedEventIds.has(event.id) ? ", unsynced" : ""}`}
                     data-past={isEventPast(event, now)}
                   >

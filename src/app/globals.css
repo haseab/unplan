@@ -531,6 +531,7 @@ kbd {
 .calendar-event.event-density-title { justify-content: center; }
 @keyframes event-in { from { opacity: 0; transform: translateY(3px) scale(0.985); } }
 .calendar-event:hover { filter: brightness(1.07); box-shadow: none; }
+.calendar-event[data-overlapping="true"] { box-shadow: 0 0 0 1px var(--paper), 0 2px 5px var(--shadow-color); }
 .all-day-event[data-attendance="unaccepted"],
 .calendar-event[data-attendance="unaccepted"] { border: 1px dashed color-mix(in oklab, var(--event-accent) 82%, var(--event-text)); background: color-mix(in oklab, var(--event-accent) 7%, transparent); color: color-mix(in oklab, var(--event-accent) 58%, var(--event-text)); box-shadow: none; }
 .all-day-event[data-attendance="unaccepted"]:hover,
