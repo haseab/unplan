@@ -390,6 +390,20 @@ export const createTodoistProject = async (token: string, name: string) => {
   } satisfies TodoistProject;
 };
 
+export const createTodoistSection = async (token: string, projectId: string, name: string) => {
+  const data = await todoistRequest<{ section: TodoistSectionPayload }>(
+    "/api/todoist/destinations",
+    token,
+    { method: "POST", body: JSON.stringify({ kind: "section", projectId, name }) },
+  );
+  invalidateTodoistDestinations(token);
+  return {
+    id: String(data.section.id),
+    name: data.section.name,
+    projectId: String(data.section.project_id),
+  } satisfies TodoistSection;
+};
+
 export const createTodoistTask = async (
   token: string,
   input: CreateTodoistTaskInput,

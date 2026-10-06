@@ -48,24 +48,33 @@ export async function POST(request: NextRequest) {
   });
   if (rateLimited) return rateLimited;
 
-  const body = await request.json().catch(() => null) as { name?: string } | null;
-  const name = body?.name?.trim();
-  if (!name) {
-    return Response.json({ error: "A Todoist project name is required" }, { status: 400 });
+  const body = await request.json().catch(() => null) as { kind?: string; name?: string; projectId?: string } | null;
+  const kind = body?.kind ?? "project";
+  if (kind !== "project" && kind !== "section") {
+    return Response.json({ error: "Invalid Todoist destination kind" }, { status: 400 });
   }
-  const response = todoistProviderFetch(request, "/projects", {
+  const name = typeof body?.name === "string" ? body.name.trim() : "";
+  const projectId = typeof body?.projectId === "string" ? body.projectId.trim() : "";
+  if (!name) {
+    return Response.json({ error: `A Todoist ${kind} name is required` }, { status: 400 });
+  }
+  if (kind === "section" && !projectId) {
+    return Response.json({ error: "A Todoist project ID is required for a section" }, { status: 400 });
+  }
+  const response = todoistProviderFetch(request, kind === "section" ? "/sections" : "/projects", {
     method: "POST",
-    body: JSON.stringify({ name }),
+    body: JSON.stringify({ name, ...(kind === "section" ? { project_id: projectId } : {}) }),
   });
   if (!response) {
     return Response.json({ error: "Todoist API token is required" }, { status: 401 });
   }
   try {
-    const project = await readTodoistProviderResponse(await response);
-    return Response.json({ project });
+    const destination = await readTodoistProviderResponse(await response);
+    return Response.json({ [kind]: destination });
   } catch (caught) {
     const error = caught as Error & { status?: number };
-    console.warn("[TODOIST:BUCKET] Automatic project creation failed", {
+    console.warn("[TODOIST:DESTINATION] Destination creation failed", {
+      kind,
       name,
       status: error.status,
     });

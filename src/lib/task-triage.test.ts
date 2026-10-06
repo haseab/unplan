@@ -1,10 +1,37 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  orderTaskTriageTasks,
   taskTriageFolders,
   taskTriagePhase,
   taskTriageShortcutMode,
 } from "./task-triage";
+import type { TodoistTask } from "./todoist";
+import { todoistContentReturnedToTriage } from "./todoist-calendar";
+
+const task = (id: string, content = id): TodoistTask => ({
+  id, content, description: "", due: null, priority: 1, projectId: "inbox",
+});
+
+test("fresh Todoist tasks precede monthly and priority returns without mutating the queue", () => {
+  const monthly = task("monthly", todoistContentReturnedToTriage("Monthly", "Work"));
+  const priority = task("priority", todoistContentReturnedToTriage("Priority", "Priority Later"));
+  const direct = task("direct");
+  const ungrouped = task("ungrouped", "Fresh [[unplan:v1;group=Ungrouped]]");
+  const input = Object.freeze([monthly, direct, priority, ungrouped]);
+  assert.deepEqual(orderTaskTriageTasks(input), [direct, ungrouped, monthly, priority]);
+  assert.deepEqual(input, [monthly, direct, priority, ungrouped]);
+  assert.deepEqual(orderTaskTriageTasks([monthly, priority]), [monthly, priority]);
+  assert.deepEqual(orderTaskTriageTasks([]), []);
+});
+
+test("new arrivals take precedence even after the fresh queue was exhausted", () => {
+  const returned = task("returned", todoistContentReturnedToTriage("Old", "Later"));
+  const incoming = task("incoming");
+  assert.equal(orderTaskTriageTasks([returned])[0], returned);
+  assert.equal(orderTaskTriageTasks([returned, incoming])[0], incoming);
+  assert.equal(taskTriagePhase("extracted", 1, 2), "extracted");
+});
 
 test("Cmd/Ctrl + E opens extraction, task triage, then Priority review", () => {
   const shortcut = (

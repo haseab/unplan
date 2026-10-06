@@ -1,8 +1,21 @@
 import {
+  calendarEventDetailsFromTodoistContent,
   flattenTodoistGroupTree,
   todoistGroupAncestors,
   type TodoistGroupParents,
 } from "./todoist-calendar";
+import type { TodoistTask } from "./todoist";
+
+/** Fresh tasks come before aging returns, preserving order within each queue. */
+export const orderTaskTriageTasks = (tasks: readonly TodoistTask[]): TodoistTask[] => {
+  const fresh: TodoistTask[] = [];
+  const returned: TodoistTask[] = [];
+  for (const task of tasks) {
+    const { triageSourceGroup } = calendarEventDetailsFromTodoistContent(task.content);
+    (triageSourceGroup ? returned : fresh).push(task);
+  }
+  return [...fresh, ...returned];
+};
 
 export type TaskTriageFolder = {
   depth: number;

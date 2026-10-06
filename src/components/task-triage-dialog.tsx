@@ -24,6 +24,7 @@ import {
 } from "@/lib/todoist-calendar";
 import { readTodoistFolderPreferences } from "@/lib/todoist-folder-backup";
 import {
+  orderTaskTriageTasks,
   taskTriageFolders,
   taskTriagePhase,
   type TaskTriageFolder,
@@ -366,10 +367,11 @@ export function TaskTriageDialog({
     groupParents: {},
   });
   const searchInputRef = React.useRef<HTMLInputElement>(null);
+  const orderedTasks = React.useMemo(() => orderTaskTriageTasks(ungroupedTasks), [ungroupedTasks]);
   const phase = taskTriagePhase(initialMode, extractedTasks.length, ungroupedTasks.length);
   const currentTask = phase === "extracted"
     ? extractedTasks[0] ?? null
-    : phase === "normal" ? ungroupedTasks[0] ?? null : null;
+    : phase === "normal" ? orderedTasks[0] ?? null : null;
   const priorityReviewVisible = open && phase === "priority" && !resolving;
   const folders = React.useMemo(() => taskTriageFolders({
     groups,
