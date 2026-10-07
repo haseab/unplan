@@ -600,3 +600,19 @@ test("enclosing backgrounds do not hide genuine adjacent resize conflicts", () =
     candidates: [event, background, next], events: [event], minuteDelta: 15, preferredEdge: null,
   }), "start");
 });
+
+
+test("keyboard resize extends downward through an existing partial overlap", () => {
+  const selected = { ...event, start: new Date(2026, 9, 7, 18).toISOString(), end: new Date(2026, 9, 7, 21).toISOString() };
+  const overlapping = { ...selected, id: "overlapping", start: new Date(2026, 9, 7, 19).toISOString(), end: new Date(2026, 9, 7, 22).toISOString() };
+  const edge = resolveKeyboardResizeEdge({ candidates: [selected, overlapping], events: [selected], minuteDelta: 15, preferredEdge: null });
+  assert.equal(edge, "end");
+  const resized = applyKeyboardResizeTransform(selected, advanceKeyboardResizeTransform({ activeEdge: edge, startMinuteDelta: 0, endMinuteDelta: 0 }, 15, [selected]));
+  assert.equal(resized.start, selected.start);
+  assert.equal(Date.parse(resized.end), Date.parse(selected.end) + 15 * 60_000);
+});
+
+test("keyboard resize extends upward through an existing partial overlap", () => {
+  const overlapping = { ...event, id: "overlapping", start: new Date(Date.parse(event.start) - 30 * 60_000).toISOString(), end: new Date(Date.parse(event.start) + 15 * 60_000).toISOString() };
+  assert.equal(resolveKeyboardResizeEdge({ candidates: [event, overlapping], events: [event], minuteDelta: -15, preferredEdge: null }), "start");
+});
