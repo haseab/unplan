@@ -9,6 +9,7 @@ import {
   FolderPlus,
   FolderOpen,
   Pencil,
+  Power,
   Plus,
   RefreshCw,
   Repeat2,
@@ -17,6 +18,8 @@ import {
 import * as React from "react";
 import { TodoistEventCard } from "@/components/todoist-event-card";
 import { TodoistGroupDeleteBlockedDialog } from "@/components/todoist-group-delete-blocked-dialog";
+import { TaskFolderIcon } from "@/components/task-folder-icon";
+import { taskFolderActivityState } from "@/lib/task-folder-activity";
 import { TaskTriageCard } from "@/components/task-triage-card";
 import { TaskCalendarPickerDialog } from "@/components/task-calendar-picker-dialog";
 import { useListMarqueeSelection } from "@/hooks/use-list-marquee-selection";
@@ -280,6 +283,8 @@ export function TodoistSidebar({
     taskId: string;
   } | null>(null);
   const {
+    folderActivity,
+    toggleFolderActive,
     collapseGroup,
     collapsedGroups,
     expandGroup,
@@ -1516,6 +1521,8 @@ export function TodoistSidebar({
             }}
           />
           {visibleTaskGroups.map(([group, items]) => {
+            const activity = taskFolderActivityState(group, folderActivity, groupParents);
+            const directlyActive = Boolean(folderActivity[group]?.active);
             const isRoot = group === TODOIST_ROOT_GROUP;
             const collapsed = !isRoot && collapsedGroups.has(group);
             const groupPath = todoistGroupPath(group);
@@ -1877,10 +1884,24 @@ export function TodoistSidebar({
                     type="button"
                   >
                     <ChevronRight aria-hidden="true" size={13} />
-                    {collapsed
-                      ? <Folder aria-hidden="true" size={13} />
-                      : <FolderOpen aria-hidden="true" size={13} />}
+                    <TaskFolderIcon active={activity.active} inherited={activity.inherited} collapsed={collapsed} />
                     <strong title={group}>{groupLabel}</strong>
+                  </button>
+                )}
+                {group !== "Ungrouped" && renamingGroup !== group && (
+                  <button
+                    aria-label={directlyActive ? `Unmark ${group} as active` : activity.inherited ? `${group} is active through a parent folder` : `Mark ${group} as active`}
+                    aria-pressed={activity.active}
+                    className="todo-event-group-active-button"
+                    data-active={activity.active || undefined}
+                    disabled={activity.inherited && !directlyActive}
+                    title={activity.inherited
+                      ? "Active through a parent folder. Unmark the active ancestor to turn this off."
+                      : directlyActive ? "Unmark as active" : "Mark active: refresh this folder and its subfolders at month end"}
+                    onClick={() => toggleFolderActive(group)}
+                    type="button"
+                  >
+                    <Power aria-hidden="true" size={12} />
                   </button>
                 )}
                 {group !== "Ungrouped" && renamingGroup !== group && (

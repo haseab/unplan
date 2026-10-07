@@ -1,14 +1,20 @@
+import {
+  latestMonthEnd,
+  taskFolderActivityState,
+  type TaskFolderActivity,
+} from "./task-folder-activity";
 import type { TodoistTask } from "./todoist";
 import {
+  type TodoistGroupParents,
   calendarEventDetailsFromTodoistContent,
-  isPriorityLaterTodoistGroup,
+  isThreeDayRefreshPriorityTodoistGroup,
   isPriorityTodoistGroup,
   isTodoistTriageGroup,
   todoistContentReturnedToTriage,
   todoistContentWithGroupChangedAt,
 } from "./todoist-calendar";
 
-export const PRIORITY_LATER_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1_000;
+export const PRIORITY_REFRESH_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1_000;
 export const TASK_AGING_MAX_WRITES_PER_RUN = 30;
 export const TASK_AGING_RECONCILIATION_COOLDOWN_MS = 15 * 60 * 1_000;
 export const TASK_AGING_RECONCILIATION_STORAGE_KEY =
@@ -20,28 +26,26 @@ export type TaskAgingUpdate = {
   task: TodoistTask;
 };
 
-export const oneCalendarMonthAfter = (date: Date) => {
-  const deadline = new Date(date);
-  const originalDay = deadline.getUTCDate();
-  deadline.setUTCDate(1);
-  deadline.setUTCMonth(deadline.getUTCMonth() + 1);
-  const daysInTargetMonth = new Date(Date.UTC(
-    deadline.getUTCFullYear(),
-    deadline.getUTCMonth() + 1,
-    0,
-  )).getUTCDate();
-  deadline.setUTCDate(Math.min(originalDay, daysInTargetMonth));
-  return deadline;
+export type TaskAgingFolders = {
+  activity: TaskFolderActivity;
+  parents: TodoistGroupParents;
 };
+
+const inactiveFolders: TaskAgingFolders = { activity: {}, parents: {} };
 
 export const taskAgingUpdate = (
   task: TodoistTask,
   now: Date,
+  folders: TaskAgingFolders = inactiveFolders,
 ): TaskAgingUpdate | null => {
   if (task.optimistic) return null;
   const details = calendarEventDetailsFromTodoistContent(task.content);
   const group = details.group?.trim() ?? "";
   if (isTodoistTriageGroup(group)) return null;
+
+  const priority = isPriorityTodoistGroup(group);
+  const activity = taskFolderActivityState(group, folders.activity, folders.parents);
+  if (priority ? !isThreeDayRefreshPriorityTodoistGroup(group) : !activity.active) return null;
 
   const changedAtMs = Date.parse(details.groupChangedAt ?? "");
   const nowMs = now.getTime();
@@ -53,10 +57,9 @@ export const taskAgingUpdate = (
     };
   }
 
-  if (isPriorityTodoistGroup(group)) {
+  if (priority) {
     if (
-      isPriorityLaterTodoistGroup(group)
-      && nowMs - changedAtMs >= PRIORITY_LATER_MAX_AGE_MS
+      nowMs - changedAtMs >= PRIORITY_REFRESH_MAX_AGE_MS
     ) {
       return {
         content: todoistContentReturnedToTriage(task.content, group, now),
@@ -67,7 +70,8 @@ export const taskAgingUpdate = (
     return null;
   }
 
-  if (nowMs >= oneCalendarMonthAfter(new Date(changedAtMs)).getTime()) {
+  const monthEndMs = latestMonthEnd(now).getTime();
+  if (changedAtMs < monthEndMs && Date.parse(activity.changedAt) <= monthEndMs) {
     return {
       content: todoistContentReturnedToTriage(task.content, group, now),
       reason: "retriage-monthly",
@@ -81,8 +85,9 @@ export const taskAgingUpdate = (
 export const taskAgingUpdates = (
   tasks: TodoistTask[],
   now: Date,
+  folders: TaskAgingFolders = inactiveFolders,
 ) => tasks.flatMap((task) => {
-  const update = taskAgingUpdate(task, now);
+  const update = taskAgingUpdate(task, now, folders);
   return update ? [update] : [];
 });
 
@@ -96,8 +101,9 @@ export const taskAgingBatch = (
   tasks: TodoistTask[],
   now: Date,
   limit = TASK_AGING_MAX_WRITES_PER_RUN,
+  folders: TaskAgingFolders = inactiveFolders,
 ) => {
-  const pending = taskAgingUpdates(tasks, now).sort(
+  const pending = taskAgingUpdates(tasks, now, folders).sort(
     (left, right) => taskAgingReasonPriority[left.reason]
       - taskAgingReasonPriority[right.reason],
   );

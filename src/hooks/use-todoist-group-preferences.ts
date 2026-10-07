@@ -1,6 +1,12 @@
 "use client";
 
 import * as React from "react";
+import {
+  parseTaskFolderActivity,
+  TASK_FOLDER_ACTIVITY_STORAGE_KEY,
+  type TaskFolderActivity,
+} from "../lib/task-folder-activity";
+
 import { TASK_FOLDERS_CHANGED } from "../lib/task-folder-creation";
 
 import {
@@ -9,6 +15,13 @@ import {
   TODOIST_GROUP_ORDER_STORAGE_KEY,
   TODOIST_GROUP_PARENTS_STORAGE_KEY,
 } from "../lib/todoist-folder-backup";
+
+const notifyFoldersChanged = () => queueMicrotask(() => window.dispatchEvent(new Event(TASK_FOLDERS_CHANGED)));
+const readActivity = () => parseTaskFolderActivity(window.localStorage.getItem(TASK_FOLDER_ACTIVITY_STORAGE_KEY));
+const writeActivity = (activity: TaskFolderActivity) => {
+  window.localStorage.setItem(TASK_FOLDER_ACTIVITY_STORAGE_KEY, JSON.stringify(activity));
+  notifyFoldersChanged();
+};
 
 const readStoredNames = (key: string) => {
   if (typeof window === "undefined") return [];
@@ -45,12 +58,14 @@ const readStoredParents = () => {
 
 const writeStoredParents = (parents: Record<string, string | null>) => {
   window.localStorage.setItem(TODOIST_GROUP_PARENTS_STORAGE_KEY, JSON.stringify(parents));
+  notifyFoldersChanged();
 };
 
 export function useTodoistGroupPreferences() {
   const [collapsedGroups, setCollapsedGroups] = React.useState<Set<string>>(
     () => new Set(),
   );
+  const [folderActivity, setFolderActivity] = React.useState<TaskFolderActivity>({});
   const [groupOrder, setGroupOrder] = React.useState<string[]>([]);
   const [groupParents, setGroupParents] = React.useState<Record<string, string | null>>({});
 
@@ -60,15 +75,31 @@ export function useTodoistGroupPreferences() {
     setCollapsedGroups(new Set(readStoredNames(TODOIST_COLLAPSED_GROUPS_STORAGE_KEY)));
     setGroupOrder(readStoredNames(TODOIST_GROUP_ORDER_STORAGE_KEY));
     setGroupParents(readStoredParents());
+    setFolderActivity(readActivity());
   }, []);
 
   React.useEffect(() => {
     const reload = () => {
       setGroupOrder(readStoredNames(TODOIST_GROUP_ORDER_STORAGE_KEY));
       setGroupParents(readStoredParents());
+      setFolderActivity(readActivity());
     };
     window.addEventListener(TASK_FOLDERS_CHANGED, reload);
-    return () => window.removeEventListener(TASK_FOLDERS_CHANGED, reload);
+    window.addEventListener("storage", reload);
+    return () => {
+      window.removeEventListener(TASK_FOLDERS_CHANGED, reload);
+      window.removeEventListener("storage", reload);
+    };
+  }, []);
+
+  const toggleFolderActive = React.useCallback((group: string) => {
+    const current = readActivity();
+    const next = {
+      ...current,
+      [group]: { active: !current[group]?.active, changedAt: new Date().toISOString() },
+    };
+    writeActivity(next);
+    setFolderActivity(next);
   }, []);
 
   const toggleGroup = React.useCallback((group: string) => {
@@ -122,6 +153,13 @@ export function useTodoistGroupPreferences() {
   }, []);
 
   const renameGroupPreferences = React.useCallback((group: string, nextGroup: string) => {
+    const activity = readActivity();
+    if (activity[group]) {
+      activity[nextGroup] = activity[group];
+      delete activity[group];
+      writeActivity(activity);
+      setFolderActivity(activity);
+    }
     setCollapsedGroups((current) => {
       if (!current.has(group)) return current;
       const next = new Set(current);
@@ -146,6 +184,10 @@ export function useTodoistGroupPreferences() {
   }, []);
 
   const removeGroupPreferences = React.useCallback((group: string) => {
+    const activity = readActivity();
+    delete activity[group];
+    writeActivity(activity);
+    setFolderActivity(activity);
     setCollapsedGroups((current) => {
       if (!current.has(group)) return current;
       const next = new Set(current);
@@ -171,6 +213,8 @@ export function useTodoistGroupPreferences() {
   }, []);
 
   return {
+    folderActivity,
+    toggleFolderActive,
     collapseGroup,
     collapsedGroups,
     expandGroup,

@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { useTodoistGroupPreferences } from "./use-todoist-group-preferences";
 import type { TodoistTask, UpdateTodoistTaskInput } from "@/lib/todoist";
 import {
   isTaskAgingReconciliationCoolingDown,
@@ -22,6 +23,11 @@ export function useTaskAgingReconciliation({
   tasks,
   updateTask,
 }: TaskAgingReconciliationOptions) {
+  const { folderActivity, groupParents } = useTodoistGroupPreferences();
+  const foldersRef = React.useRef({ activity: folderActivity, parents: groupParents });
+  React.useEffect(() => {
+    foldersRef.current = { activity: folderActivity, parents: groupParents };
+  }, [folderActivity, groupParents]);
   const runningRef = React.useRef(false);
   const tasksRef = React.useRef(tasks);
   const updateTaskRef = React.useRef(updateTask);
@@ -54,7 +60,7 @@ export function useTaskAgingReconciliation({
       String(now.getTime()),
     );
 
-    const { deferred, pending, updates } = taskAgingBatch(tasksRef.current, now);
+    const { deferred, pending, updates } = taskAgingBatch(tasksRef.current, now, undefined, foldersRef.current);
     console.debug("[TASK-AGING:RECONCILE]", "check started", {
       deferred,
       pending,
@@ -97,7 +103,7 @@ export function useTaskAgingReconciliation({
   React.useEffect(() => {
     if (!enabled || tasks.length === 0) return;
     void requestReconciliation("tasks-ready");
-  }, [enabled, requestReconciliation, tasks]);
+  }, [enabled, requestReconciliation, tasks, folderActivity, groupParents]);
 
   React.useEffect(() => {
     if (!enabled) return;
@@ -109,7 +115,9 @@ export function useTaskAgingReconciliation({
     const requestFocusCheck = () => void requestReconciliation("window-focus");
     document.addEventListener("visibilitychange", requestVisibleCheck);
     window.addEventListener("focus", requestFocusCheck);
+    const timer = window.setInterval(() => void requestReconciliation("month-end-check"), 60_000);
     return () => {
+      window.clearInterval(timer);
       document.removeEventListener("visibilitychange", requestVisibleCheck);
       window.removeEventListener("focus", requestFocusCheck);
     };

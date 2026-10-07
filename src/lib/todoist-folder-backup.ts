@@ -1,3 +1,4 @@
+import { parseTaskFolderActivity, TASK_FOLDER_ACTIVITY_STORAGE_KEY, type TaskFolderActivity } from "./task-folder-activity";
 export const TODOIST_CUSTOM_GROUPS_STORAGE_KEY = "unplan:todoist-custom-groups:v1";
 export const TODOIST_GROUP_ORDER_STORAGE_KEY = "unplan:todoist-group-order:v1";
 export const TODOIST_GROUP_PARENTS_STORAGE_KEY = "unplan:todoist-group-parents:v1";
@@ -7,6 +8,7 @@ const BACKUP_KIND = "unplan-todoist-folder-hierarchy";
 const BACKUP_VERSION = 1;
 
 const hierarchyStorageKeys = [
+  TASK_FOLDER_ACTIVITY_STORAGE_KEY,
   TODOIST_CUSTOM_GROUPS_STORAGE_KEY,
   TODOIST_GROUP_ORDER_STORAGE_KEY,
   TODOIST_GROUP_PARENTS_STORAGE_KEY,
@@ -14,6 +16,7 @@ const hierarchyStorageKeys = [
 ] as const;
 
 export type TodoistFolderHierarchyBackup = {
+  folderActivity: TaskFolderActivity;
   collapsedGroups: string[];
   customGroups: string[];
   exportedAt: string;
@@ -98,6 +101,7 @@ export const createTodoistFolderHierarchyBackup = (
   storage: Storage,
   exportedAt = new Date().toISOString(),
 ): TodoistFolderHierarchyBackup => ({
+  folderActivity: parseTaskFolderActivity(storage.getItem(TASK_FOLDER_ACTIVITY_STORAGE_KEY)),
   collapsedGroups: readStringArray(storage, TODOIST_COLLAPSED_GROUPS_STORAGE_KEY),
   customGroups: readStringArray(storage, TODOIST_CUSTOM_GROUPS_STORAGE_KEY),
   exportedAt,
@@ -124,6 +128,7 @@ export const parseTodoistFolderHierarchyBackup = (
     throw new Error("This file is not a supported unplan hierarchy backup");
   }
   return {
+    folderActivity: parseTaskFolderActivity(JSON.stringify(candidate.folderActivity ?? {})),
     collapsedGroups: parseStringArray(candidate.collapsedGroups, "Collapsed folders"),
     customGroups: parseStringArray(candidate.customGroups, "Custom folders"),
     exportedAt: typeof candidate.exportedAt === "string"
@@ -142,6 +147,7 @@ export const restoreTodoistFolderHierarchyBackup = (
 ) => {
   const backup = parseTodoistFolderHierarchyBackup(serialized);
   const values = new Map<string, string>([
+    [TASK_FOLDER_ACTIVITY_STORAGE_KEY, JSON.stringify(backup.folderActivity)],
     [TODOIST_CUSTOM_GROUPS_STORAGE_KEY, JSON.stringify(backup.customGroups)],
     [TODOIST_GROUP_ORDER_STORAGE_KEY, JSON.stringify(backup.groupOrder)],
     [TODOIST_GROUP_PARENTS_STORAGE_KEY, JSON.stringify(backup.groupParents)],

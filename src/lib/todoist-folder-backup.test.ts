@@ -1,3 +1,4 @@
+import { TASK_FOLDER_ACTIVITY_STORAGE_KEY } from "./task-folder-activity";
 import assert from "node:assert/strict";
 import test from "node:test";
 
@@ -26,6 +27,8 @@ test("folder hierarchy backup round-trips local preferences", () => {
   source.setItem(TODOIST_GROUP_ORDER_STORAGE_KEY, JSON.stringify(["Easy Tasks", "Systems"]));
   source.setItem(TODOIST_GROUP_PARENTS_STORAGE_KEY, JSON.stringify({ "Easy Tasks": "Systems" }));
 
+  source.setItem(TASK_FOLDER_ACTIVITY_STORAGE_KEY, JSON.stringify({ Systems: { active: true, changedAt: "2026-08-01T00:00:00.000Z" } }));
+
   const backup = createTodoistFolderHierarchyBackup(source, "2026-08-23T00:00:00.000Z");
   const destination = new MemoryStorage();
   restoreTodoistFolderHierarchyBackup(JSON.stringify(backup), destination);
@@ -45,4 +48,11 @@ test("folder hierarchy backup rejects circular nesting", () => {
     })),
     /circular nesting/,
   );
+});
+
+
+test("older hierarchy backups default to inactive folders", () => {
+  const { folderActivity, ...oldBackup } = createTodoistFolderHierarchyBackup(new MemoryStorage());
+  void folderActivity;
+  assert.deepEqual(parseTodoistFolderHierarchyBackup(JSON.stringify(oldBackup)).folderActivity, {});
 });

@@ -230,7 +230,7 @@ function NormalTaskReview({
                 {refreshedFromPriority ? "Refreshed priority task" : "Refreshed task"}
               </strong>
               <small>
-                Returned from {todoistGroupDisplayName(details.triageSourceGroup)} after {refreshedFromPriority ? "3 days" : "1 month"}
+                Returned from {todoistGroupDisplayName(details.triageSourceGroup)} {refreshedFromPriority ? "after 3 days" : "at month end"}
               </small>
             </span>
           </div>
