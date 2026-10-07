@@ -375,6 +375,11 @@ const keyboardResizeCreatesConflict = (
   return candidates.some((candidate) =>
     !candidate.allDay
     && (candidate.id !== event.id || candidate.calendarId !== event.calendarId)
+    // An existing enclosing event is a background span, not an adjacent boundary.
+    && !(parseISO(candidate.start).getTime() <= parseISO(event.start).getTime()
+      && parseISO(candidate.end).getTime() >= parseISO(event.end).getTime()
+      && (parseISO(candidate.start).getTime() < parseISO(event.start).getTime()
+        || parseISO(candidate.end).getTime() > parseISO(event.end).getTime()))
     && overlapDuration(resized, candidate) > overlapDuration(event, candidate)
   );
 });

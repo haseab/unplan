@@ -10,6 +10,7 @@ import {
   eventResizeShortcut,
   eventTitleEditAction,
   findClosestEventKey,
+  findEventAfterRemovalKey,
   findEventNavigationBacktrackKey,
   findEventClosestToTime,
   findRenderedEventClosestToPresent,
@@ -831,4 +832,20 @@ test("stack shortcuts require multiple timed calendar events and command-option 
     { metaKey: false }, { altKey: false }, { activeCalendar: false },
     { ctrlKey: true }, { key: "ArrowLeft" },
   ]) assert.equal(eventStackShortcut({ ...context, ...override }), null);
+});
+
+
+test("post-removal focus prefers an adjacent peer over its enclosing background event", () => {
+  const anchor = { ...rect("removed", 1, 110, 300), startMinute: 600, endMinute: 615 };
+  const background = { ...rect("background", 1, 100, 0), bottom: 900, startMinute: 0, endMinute: 1440 };
+  const below = { ...rect("below", 1, 110, 410), startMinute: 615, endMinute: 630 };
+  assert.equal(findClosestEventKey(anchor, [background, below]), "background");
+  assert.equal(findEventAfterRemovalKey(anchor, [background, below]), "below");
+  assert.equal(findEventAfterRemovalKey(anchor, [background]), "background");
+  assert.equal(findEventAfterRemovalKey(anchor, []), null);
+});
+
+test("post-removal focus still allows peers with identical times", () => {
+  const anchor = rect("removed", 1, 100, 100);
+  assert.equal(findEventAfterRemovalKey(anchor, [{ ...anchor, eventKey: "peer" }]), "peer");
 });

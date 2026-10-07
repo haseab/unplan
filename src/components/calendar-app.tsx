@@ -187,6 +187,7 @@ import {
   eventNavigationRangeKeys,
   eventResizeShortcut,
   findClosestEventKey,
+  findEventAfterRemovalKey,
   findEventClosestToTime,
   findRenderedEventClosestToPresent,
   findEventNavigationBacktrackKey,
@@ -3113,7 +3114,7 @@ export function CalendarApp() {
 
     const focusNearestRemainingEvent = (removedIds: ReadonlySet<string>) => {
       const nearestEventKey = deletionAnchor
-        ? findClosestEventKey(
+        ? findEventAfterRemovalKey(
             deletionAnchor,
             renderedBeforeDeletion
               .filter((element) =>

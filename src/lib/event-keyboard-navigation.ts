@@ -603,6 +603,21 @@ export const findClosestEventKey = (
   null,
 )?.eventKey ?? null;
 
+/** Keep post-deletion focus among nearby peers before falling back to a background event. */
+export const findEventAfterRemovalKey = (
+  anchor: EventNavigationRect,
+  candidates: EventNavigationRect[],
+) => {
+  const peers = candidates.filter((candidate) =>
+    candidate.dayIndex === anchor.dayIndex
+    && !(candidate.startMinute <= anchor.startMinute
+      && candidate.endMinute >= anchor.endMinute
+      && (candidate.startMinute < anchor.startMinute
+        || candidate.endMinute > anchor.endMinute))
+  );
+  return findClosestEventKey(anchor, peers.length ? peers : candidates);
+};
+
 export const resolveEventNavigationAnchorKey = (
   selectedKey: string | null,
   focusedKey: string | null,

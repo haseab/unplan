@@ -561,3 +561,42 @@ test("calendar scrolling reveals a next-day resize tail at the top", () => {
     viewportHeight: 600,
   }), 0);
 });
+
+
+test("keyboard resizing ignores a background event enclosing the selected task", () => {
+  const background = {
+    ...event,
+    id: "background",
+    start: new Date(new Date(event.start).getTime() - 60 * 60_000).toISOString(),
+    end: new Date(new Date(event.end).getTime() + 60 * 60_000).toISOString(),
+  };
+  for (const minuteDelta of [-15, 15]) {
+    const edge = resolveKeyboardResizeEdge({
+      candidates: [event, background], events: [event], minuteDelta, preferredEdge: null,
+    });
+    assert.equal(edge, minuteDelta < 0 ? "start" : "end");
+    const transform = advanceKeyboardResizeTransform({
+      activeEdge: edge, startMinuteDelta: 0, endMinuteDelta: 0,
+    }, minuteDelta, [event]);
+    const resized = applyKeyboardResizeTransform(event, transform);
+    if (minuteDelta > 0) {
+      assert.equal(resized.start, event.start);
+      assert.equal(Date.parse(resized.end), Date.parse(event.end) + 15 * 60_000);
+    } else {
+      assert.equal(resized.end, event.end);
+      assert.equal(Date.parse(resized.start), Date.parse(event.start) - 15 * 60_000);
+    }
+  }
+});
+
+test("enclosing backgrounds do not hide genuine adjacent resize conflicts", () => {
+  const background = {
+    ...event, id: "background",
+    start: new Date(Date.parse(event.start) - 60 * 60_000).toISOString(),
+    end: new Date(Date.parse(event.end) + 60 * 60_000).toISOString(),
+  };
+  const next = { ...event, id: "next", start: event.end, end: background.end };
+  assert.equal(resolveKeyboardResizeEdge({
+    candidates: [event, background, next], events: [event], minuteDelta: 15, preferredEdge: null,
+  }), "start");
+});
