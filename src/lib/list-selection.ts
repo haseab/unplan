@@ -85,9 +85,10 @@ export const advanceKeyboardSelection = (
   destinationId: string,
   extendSelection: boolean,
   previous: KeyboardSelectionRange | null,
+  resumeSingle = false,
 ): { selection: Set<string>; range: KeyboardSelectionRange | null } => {
   if (!extendSelection) return {
-    selection: selection.size > 1 ? new Set(selection) : new Set([destinationId]),
+    selection: !resumeSingle && selection.size > 1 ? new Set(selection) : new Set([destinationId]),
     range: null,
   };
   const canContinue = previous?.path.at(-1) === originId

@@ -714,6 +714,15 @@ export function TodoistSidebar({
     const dismissSelection = (event: KeyboardEvent | PointerEvent) => {
       if (calendarPickerOpen) return;
       if (event instanceof KeyboardEvent) {
+        if (event.key === "Escape" && selectedTaskIds.size > 1 && !draggedTaskIdRef.current) {
+          const cursorId = selectionAnchorRef.current ?? [...selectedTaskIds][0];
+          event.preventDefault();
+          event.stopPropagation();
+          selectionAnchorRef.current = cursorId;
+          setSelectedTaskIds(new Set([cursorId]));
+          focusTaskElement(cursorId);
+          return;
+        }
         const nativeFocusNavigation = event.key === "Tab"
           && !event.altKey
           && !event.ctrlKey
@@ -734,7 +743,7 @@ export function TodoistSidebar({
       document.removeEventListener("keydown", dismissSelection, true);
       document.removeEventListener("pointerdown", dismissSelection, true);
     };
-  }, [calendarPickerOpen, selectedTaskIds.size]);
+  }, [calendarPickerOpen, focusTaskElement, selectedTaskIds]);
 
   const draggedItem = taskGroups
     .flatMap(([, items]) => items)

@@ -790,7 +790,7 @@ export function CalendarApp() {
   const marqueeRef = React.useRef<ActiveMarquee | null>(null);
   const creationRef = React.useRef<ActiveEventCreation | null>(null);
   const clipboardRef = React.useRef<CalendarEvent[]>([]);
-  const { navigateSelection: navigateListSelection, navigationActive } = useKeyboardSelection();
+  const { navigateSelection: navigateListSelection, navigationActive, finishOperation } = useKeyboardSelection();
   const selectionAnchorRef = React.useRef<string | null>(null);
   const deactivatedEventFocusRef = React.useRef<{
     eventId: string;
@@ -1992,6 +1992,10 @@ export function CalendarApp() {
               originalsById.get(event.id)?.calendarId,
               retryNotFoundEventIds.has(event.id),
             );
+            if (selectionAnchorRef.current === calendarEventKey(event.calendarId, event.id)) {
+              const saved = applyGoogleEventSaveResult(event, result);
+              selectionAnchorRef.current = calendarEventKey(saved.calendarId, saved.id);
+            }
             setEvents((current) => current.map((candidate) =>
               candidate.id === event.id && candidate.calendarId === event.calendarId
                 ? applyGoogleEventSaveResult(candidate, result) : candidate));
@@ -2325,6 +2329,7 @@ export function CalendarApp() {
           resize.minuteDelta,
         );
         if (!eventTimesMatch(resized, resize.original)) {
+          finishOperation();
           setEvents((current) =>
             current.map((event) =>
               event.id === resized.id ? resized : event,
@@ -2385,6 +2390,7 @@ export function CalendarApp() {
         const drag = dragRef.current;
         dragRef.current = null;
         setActiveEventDrag(null);
+        if (drag.hasDragged) finishOperation();
         const droppedOnTodoist = !drag.duplicateOnDrag
           && todoDropActiveRef.current
           && Math.hypot(pointer.clientX - drag.startX, pointer.clientY - drag.startY) >= CROSS_SERVICE_DRAG_THRESHOLD;
@@ -2795,7 +2801,7 @@ export function CalendarApp() {
       clearTodoistDropFeedback();
       clearActionToastResourceHold("calendar-pointer");
     };
-  }, [calendars, chooseGuestNotifications, clearEventMutationOrigins, clearPendingEventCreation, clearTodoistDropFeedback, commitStagedTodoistTask, confirmBulkAction, gridHeight, persistMovedEvents, persistTodoistTaskOrder, pixelsPerMinute, registerPendingEventCreation, rememberEventMutationOrigins, removeLocalTodoistTasks, renderStart, renderedDayCount, renderedDays, stageTodoistTasks, toastDuration, todoistConnected, updateCalendarTaskDropProjection]);
+  }, [calendars, chooseGuestNotifications, clearEventMutationOrigins, clearPendingEventCreation, clearTodoistDropFeedback, commitStagedTodoistTask, confirmBulkAction, finishOperation, gridHeight, persistMovedEvents, persistTodoistTaskOrder, pixelsPerMinute, registerPendingEventCreation, rememberEventMutationOrigins, removeLocalTodoistTasks, renderStart, renderedDayCount, renderedDays, stageTodoistTasks, toastDuration, todoistConnected, updateCalendarTaskDropProjection]);
 
   const beginEventDrag = (pointer: React.PointerEvent, event: CalendarEvent) => {
     if (pointer.button !== 0) return;
@@ -3889,6 +3895,27 @@ export function CalendarApp() {
       }
       if (
         event.key === "Escape"
+        && activeSelectionSurface === "calendar"
+        && selected.size > 1
+        && !document.querySelector(".modal-backdrop")
+      ) {
+        const cursor = eventsRef.current.find(item =>
+          calendarEventKey(item.calendarId, item.id) === selectionAnchorRef.current
+        ) ?? eventsRef.current.find(item => selected.has(item.id));
+        if (cursor) {
+          event.preventDefault();
+          event.stopPropagation();
+          const cursorKey = calendarEventKey(cursor.calendarId, cursor.id);
+          selectionAnchorRef.current = cursorKey;
+          setSelected(new Set([cursor.id]));
+          setEventDetailsPreview(null);
+          setRightSidebarTab("todos");
+          focusRenderedEvent(cursorKey, false);
+          return;
+        }
+      }
+      if (
+        event.key === "Escape"
         && selected.size
         && rightSidebarTab === "events"
         && !document.querySelector(".modal-backdrop")
@@ -4892,6 +4919,10 @@ export function CalendarApp() {
       setEventDetailsPreview(null);
       return false;
     }
+    finishOperation();
+    if (selectionAnchorRef.current === calendarEventKey(original.calendarId, original.id)) {
+      selectionAnchorRef.current = calendarEventKey(updated.calendarId, updated.id);
+    }
     const [mutationOrigin] = rememberEventMutationOrigins([original]);
 
     const restoreOriginal = () => {
@@ -4946,7 +4977,7 @@ export function CalendarApp() {
       submittingMessage: "Saving event changes…",
     });
     return true;
-  }, [chooseGuestNotifications, clearEventMutationOrigins, rememberEventMutationOrigins, toastDuration]);
+  }, [chooseGuestNotifications, clearEventMutationOrigins, finishOperation, rememberEventMutationOrigins, toastDuration]);
 
   const respondToEventInvitation = React.useCallback(async (
     event: CalendarEvent,
@@ -5037,6 +5068,11 @@ export function CalendarApp() {
     if (!sendUpdates) return false;
     const mutationOrigins = rememberEventMutationOrigins(originals);
     const updatedEventIds = updatedEvents.map(({ id }) => id);
+    finishOperation();
+    const cursorOriginal = originals.find(event =>
+      calendarEventKey(event.calendarId, event.id) === selectionAnchorRef.current);
+    const cursorUpdated = cursorOriginal && updatedById.get(cursorOriginal.id);
+    if (cursorUpdated) selectionAnchorRef.current = calendarEventKey(cursorUpdated.calendarId, cursorUpdated.id);
 
     setEvents((current) => current.map((event) =>
       updatedById.get(event.id) ?? event,
@@ -5087,7 +5123,7 @@ export function CalendarApp() {
     );
     setRightSidebarTab("todos");
     return true;
-  }, [calendars, chooseGuestNotifications, clearEventMutationOrigins, confirmBulkAction, persistMovedEvents, rememberEventMutationOrigins, toastDuration]);
+  }, [calendars, chooseGuestNotifications, clearEventMutationOrigins, confirmBulkAction, finishOperation, persistMovedEvents, rememberEventMutationOrigins, toastDuration]);
 
   const keyboardMoveDependenciesRef = React.useRef<Record<string, unknown> | null>(null);
   React.useEffect(() => {
@@ -5499,6 +5535,7 @@ export function CalendarApp() {
       eventsRef.current = eventsRef.current.map(
         (event) => movedById.get(event.id) ?? event,
       );
+      finishOperation();
       setEvents((current) => current.map((event) => movedById.get(event.id) ?? event));
       if (cancelKeyboardMoveAtOrigin(session)) return true;
       const idleDelay = resizeShortcut
@@ -5573,7 +5610,7 @@ export function CalendarApp() {
       window.removeEventListener("keyup", handleKeyboardMoveKeyUp);
       window.removeEventListener("blur", stopOnWindowBlur);
     };
-  }, [activeSelectionSurface, chooseGuestNotifications, persistMovedEvents, renderedDays, selected, toastDuration, updateEventDetails]);
+  }, [activeSelectionSurface, chooseGuestNotifications, finishOperation, persistMovedEvents, renderedDays, selected, toastDuration, updateEventDetails]);
 
   const updateSidebarTodoistTask = React.useCallback(async (
     task: TodoistTask,

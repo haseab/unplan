@@ -149,3 +149,13 @@ test("subtraction remains subtractive when moving beyond the selected range", ()
   state = advanceKeyboardSelection(state.selection, "1", "0", true, state.range);
   assert.deepEqual([...state.selection], ["5", "6"]);
 });
+
+test("navigation after an operation returns to a single destination from the saved cursor", () => {
+  const selection = new Set(["1", "2", "3", "5", "6"]);
+  const next = advanceKeyboardSelection(selection, "3", "4", false, null, true);
+  assert.deepEqual([...next.selection], ["4"]);
+  const back = advanceKeyboardSelection(next.selection, "4", "3", false, next.range);
+  assert.deepEqual([...back.selection], ["3"]);
+  const shifted = advanceKeyboardSelection(selection, "3", "4", true, null, true);
+  assert.deepEqual([...shifted.selection], ["1", "2", "3", "5", "6", "4"]);
+});
