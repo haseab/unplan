@@ -37,6 +37,11 @@ export function GuestNotificationDialog({
   onChoose,
   request,
 }: GuestNotificationDialogProps) {
+  const actionsRef = React.useRef<HTMLDivElement>(null);
+  const quietRef = React.useRef<HTMLButtonElement>(null);
+  React.useLayoutEffect(() => {
+    if (request) quietRef.current?.focus({ preventScroll: true });
+  }, [request]);
   React.useEffect(() => {
     if (!request) return;
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -92,9 +97,21 @@ export function GuestNotificationDialog({
           ))}
           {request.attendees.length > 4 && <small className="guest-notification-more">+{request.attendees.length - 4} more guests</small>}
         </div>
-        <div className="confirmation-actions guest-notification-actions">
+        <div
+          className="confirmation-actions guest-notification-actions"
+          ref={actionsRef}
+          onKeyDown={(event) => {
+            if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+            event.preventDefault();
+            event.stopPropagation();
+            const buttons = [...(actionsRef.current?.querySelectorAll<HTMLButtonElement>("button") ?? [])];
+            const index = buttons.indexOf(document.activeElement as HTMLButtonElement);
+            const next = (index + (event.key === "ArrowRight" ? 1 : -1) + buttons.length) % buttons.length;
+            buttons[next]?.focus({ preventScroll: true });
+          }}
+        >
           <button className="confirmation-cancel" onClick={onCancel}>Cancel</button>
-          <button autoFocus onClick={() => onChoose("none")}>{copy.quietLabel}</button>
+          <button autoFocus ref={quietRef} onClick={() => onChoose("none")}>{copy.quietLabel}</button>
           <button className="confirmation-primary" onClick={() => onChoose("all")}>
             {copy.sendLabel}
           </button>

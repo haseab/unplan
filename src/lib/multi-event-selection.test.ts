@@ -5,6 +5,7 @@ import {
   calendarsForEventSelection,
   multiEventSelectionSummary,
   moveSelectionToCalendar,
+  recolorEventSelection,
   sharedSelectionValue,
   stackEventSelection,
 } from "./multi-event-selection";
@@ -113,4 +114,24 @@ test("stacking ignores all-day selections and handles empty selections", () => {
   assert.deepEqual(stackEventSelection([]), []);
   const selection = [{ ...event("day", "2026-08-22", "2026-08-23"), allDay: true }];
   assert.deepEqual(stackEventSelection(selection), selection);
+});
+
+
+test("bulk colors apply to every event and replace obsolete custom colors", () => {
+  const events = [event("a", "2026-10-11T10:00:00Z", "2026-10-11T11:00:00Z"),
+    { ...event("b", "2026-10-11T11:00:00Z", "2026-10-11T12:00:00Z"), customColor: "#123456" }];
+  const changed = recolorEventSelection(events, { color: "#dc2127", colorId: "11", textColor: "#ffffff" }, []);
+  assert.ok(changed.every(item => item.color === "#dc2127" && item.colorId === "11" && !item.customColor));
+  assert.deepEqual(changed.map(item => item.id), ["a", "b"]);
+  const custom = recolorEventSelection(events, { color: "#ff3b30", colorId: "11", customColor: "#ff3b30", textColor: "#ffffff" }, []);
+  assert.ok(custom.every(item => item.customColor === "#ff3b30"));
+  assert.equal(events[1].customColor, "#123456");
+});
+
+test("bulk calendar-default color restores each event's own calendar color", () => {
+  const events = [event("a", "2026-10-11T10:00:00Z", "2026-10-11T11:00:00Z"),
+    { ...event("b", "2026-10-11T11:00:00Z", "2026-10-11T12:00:00Z", "calendar-b"), calendarColor: "#ffffff", customColor: "#123456", colorId: "11" }];
+  const changed = recolorEventSelection(events, { color: "#000", textColor: "#ffffff" }, []);
+  assert.deepEqual(changed.map(item => item.color), ["#000", "#ffffff"]);
+  assert.ok(changed.every(item => !item.colorId && !item.customColor));
 });

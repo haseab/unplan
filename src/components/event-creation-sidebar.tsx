@@ -920,6 +920,9 @@ export function EventCreationSidebar({
           editableCalendars={calendars}
           events={selectedEvents}
           openCalendarPicker={openSelectedEventCalendarPicker}
+          colorPickerFocusRequested={selectedEventColorPickerFocusRequested}
+          onColorPickerAutoFocused={onSelectedEventColorPickerAutoFocused}
+          onFocusEvent={onFocusEvent}
           onAddToTaskFolder={onAddToTaskFolder}
           onBulkUpdate={onBulkUpdateEvents}
           onCalendarPickerClose={onSelectedEventCalendarPickerClose}

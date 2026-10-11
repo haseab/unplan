@@ -12,11 +12,14 @@ import {
 import * as React from "react";
 import { format, isSameDay } from "date-fns";
 import { CalendarPicker } from "@/components/calendar-picker";
+import { EventColorPicker } from "@/components/event-color-picker";
+import { type EventColorChange } from "@/lib/event-color";
 import type { CalendarEvent, CalendarSource } from "@/lib/calendar-types";
 import {
   calendarsForEventSelection,
   multiEventSelectionSummary,
   moveSelectionToCalendar,
+  recolorEventSelection,
   sharedSelectionValue,
 } from "@/lib/multi-event-selection";
 import { moveEvent } from "@/lib/calendar-utils";
@@ -26,6 +29,9 @@ type MultiEventSidebarProps = {
   editableCalendars: CalendarSource[];
   events: CalendarEvent[];
   openCalendarPicker: boolean;
+  colorPickerFocusRequested: boolean;
+  onColorPickerAutoFocused: () => void;
+  onFocusEvent: (event: CalendarEvent) => void;
   onAddToTaskFolder: () => void;
   onBulkUpdate: (events: CalendarEvent[]) => Promise<boolean>;
   onCalendarPickerClose: () => void;
@@ -47,6 +53,9 @@ export function MultiEventSidebar({
   editableCalendars,
   events,
   openCalendarPicker,
+  colorPickerFocusRequested,
+  onColorPickerAutoFocused,
+  onFocusEvent,
   onAddToTaskFolder,
   onBulkUpdate,
   onCalendarPickerClose,
@@ -56,6 +65,7 @@ export function MultiEventSidebar({
   onRemoveSelection,
 }: MultiEventSidebarProps) {
   const [saving, setSaving] = React.useState(false);
+  const [colorPreview, setColorPreview] = React.useState<EventColorChange | null>(null);
   const summary = multiEventSelectionSummary(events);
   const availability = sharedSelectionValue(
     events.map((event) => event.transparency ?? "opaque"),
@@ -133,6 +143,21 @@ export function MultiEventSidebar({
             </small>
           )}
         </div>
+        <EventColorPicker
+          autoFocus={colorPickerFocusRequested}
+          calendarColor={calendars.find(calendar => calendar.id === calendarId)?.backgroundColor ?? events[0].calendarColor}
+          calendarTextColor={calendars.find(calendar => calendar.id === calendarId)?.foregroundColor ?? "#ffffff"}
+          colorId={sharedSelectionValue(events.map(event => event.colorId)) ?? undefined}
+          customColor={sharedSelectionValue(events.map(event => event.customColor)) ?? undefined}
+          onAutoFocused={onColorPickerAutoFocused}
+          onCancel={() => setColorPreview(null)}
+          onCommit={change => {
+            setColorPreview(null);
+            void apply(recolorEventSelection(events, change, calendars));
+          }}
+          onExit={() => onFocusEvent(events[0])}
+          onPreview={setColorPreview}
+        />
         <div className="multi-event-field-grid">
           <label>
             <span>Availability</span>
@@ -184,7 +209,7 @@ export function MultiEventSidebar({
       <section className="multi-event-section multi-event-selection-list">
         <div className="multi-event-section-heading"><span>Selected events</span><small>{events.length}</small></div>
         <div>
-          {events.map((event) => {
+          {(colorPreview ? recolorEventSelection(events, colorPreview, calendars) : events).map((event) => {
             const calendar = calendars.find((item) => item.id === event.calendarId);
             return (
               <div className="multi-event-selection-row" key={`${event.calendarId}-${event.id}`}>

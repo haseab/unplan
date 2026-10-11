@@ -12,6 +12,7 @@ type ActionToastController = {
 };
 
 type PendingAction = {
+  supersede: (ids: ReadonlySet<string>) => ((restoreIds?: ReadonlySet<string>) => void) | null;
   coalesceKey?: string;
   completion: Promise<boolean>;
   controls: ActionToastController;
@@ -32,8 +33,9 @@ type ActionToastOptions = {
   duration: number;
   submitImmediately?: boolean;
   onSettled?: () => void;
-  onUndo: () => void;
-  onSubmit: (reportProgress: (message: string) => void) => Promise<void> | void;
+  resourceScoped?: boolean;
+  onUndo: (resourceIds: ReadonlySet<string>) => void;
+  onSubmit: (reportProgress: (message: string) => void, resourceIds: ReadonlySet<string>) => Promise<void> | void;
   onError?: (error: unknown) => void;
   resourceIds?: Iterable<string>;
   submittingMessage?: string;
@@ -217,7 +219,7 @@ export function queueActionToast(
     }
     activeActions.delete(toastId);
     publishSyncSnapshot();
-    initialOnUndo();
+    initialOnUndo(new Set(resourceIds));
     currentOptions.onSettled?.();
     settleCompletion(false);
     toast.dismiss(toastId);
@@ -279,7 +281,7 @@ export function queueActionToast(
 
     const runSubmit = () => {
       try {
-        return Promise.resolve(currentOptions.onSubmit(reportProgress));
+        return Promise.resolve(currentOptions.onSubmit(reportProgress, new Set(resourceIds)));
       } catch (error) {
         return Promise.reject(error);
       }
@@ -368,6 +370,26 @@ export function queueActionToast(
     publishSyncSnapshot();
   };
   const action: PendingAction = {
+    supersede: (ids) => {
+      if (state !== "pending" || !currentOptions.resourceScoped || createdResourceIds.size) return null;
+      const removed = new Set([...resourceIds].filter(id => ids.has(id)));
+      if (!removed.size) return null;
+      const savedOptions = { ...currentOptions, coalesceKey: undefined };
+      const savedMessage = currentMessage;
+      removed.forEach(id => resourceIds.delete(id));
+      if (!resourceIds.size) cancel();
+      else {
+        currentMessage = `Saving changes to ${resourceIds.size} remaining events`;
+        renderPendingToast();
+        publishSyncSnapshot();
+      }
+      const alreadyRestored = new Set<string>();
+      return (restoreIds = removed) => {
+        const restored = [...removed].filter(id => restoreIds.has(id) && !alreadyRestored.has(id));
+        restored.forEach(id => alreadyRestored.add(id));
+        if (restored.length) queueActionToast(savedMessage, { ...savedOptions, resourceIds: restored });
+      };
+    },
     coalesceKey: options.coalesceKey,
     completion,
     controls,
@@ -510,4 +532,13 @@ export const reconcileActionToastSyncProtection = (
     if (selectedResourceIds.has(resourceId)) nextProtectedResourceIds.add(resourceId);
   });
   return nextProtectedResourceIds;
+};
+
+/** A removal supersedes pending edits, while unrelated resources remain queued. */
+export const supersedePendingResourceUpdates = (ids: ReadonlySet<string>) => {
+  const restorers = [...pendingActions.values()].flatMap(action => {
+    const restore = action.supersede(ids);
+    return restore ? [restore] : [];
+  });
+  return (restoreIds: ReadonlySet<string> = ids) => restorers.forEach(restore => restore(restoreIds));
 };

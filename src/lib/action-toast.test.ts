@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  supersedePendingResourceUpdates,
   actionToastSyncIntersectsResources,
   clearActionToastResourceHold,
   getActionToastSyncProtectedResourceIds,
@@ -273,4 +274,44 @@ test("sync protection stays latched if selection moves during a mutation", () =>
 
   assert.deepEqual([...protectedAfterSelectionMoves], ["selected-task"]);
   assert.deepEqual([...protectedAfterMutationSettles], []);
+});
+
+
+test("resource removal cancels a pending edit and Undo can restore it", async () => {
+  const submitted: string[][] = [];
+  let undos = 0;
+  const controller = queueActionToast("Moved a", {
+    duration: 60_000, resourceIds: ["removed-a"], resourceScoped: true,
+    onUndo: () => { undos++; },
+    onSubmit: (_, ids) => { submitted.push([...ids]); },
+  });
+  const restore = supersedePendingResourceUpdates(new Set(["removed-a"]));
+  assert.equal(controller.submit(), false);
+  assert.equal(undos, 0);
+  assert.deepEqual(submitted, []);
+  restore();
+  assert.equal(triggerToastSubmit(), true);
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.deepEqual(submitted, [["removed-a"]]);
+});
+
+test("removing one event from a pending batch preserves the other updates", async () => {
+  const submitted: string[][] = [];
+  const controller = queueActionToast("Moved two", {
+    duration: 60_000, resourceIds: ["batch-a", "batch-b"], resourceScoped: true,
+    onUndo: () => {}, onSubmit: (_, ids) => { submitted.push([...ids]); },
+  });
+  supersedePendingResourceUpdates(new Set(["batch-a"]));
+  controller.submit();
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.deepEqual(submitted, [["batch-b"]]);
+});
+
+test("resource supersession preserves event creation dependencies", () => {
+  const controller = queueActionToast("Create", {
+    duration: 60_000, resourceIds: ["new-event"], createsResourceIds: ["new-event"],
+    resourceScoped: true, onUndo: () => {}, onSubmit: () => {},
+  });
+  supersedePendingResourceUpdates(new Set(["new-event"]));
+  assert.equal(controller.cancel(), true);
 });

@@ -421,7 +421,7 @@ export const isEventColorPickerShortcut = ({
   && !modifier
   && !modalOpen
   && !repeat
-  && selectedCount === 1
+  && selectedCount > 0
   && !shiftKey
   && key.toLowerCase() === "p"
 );

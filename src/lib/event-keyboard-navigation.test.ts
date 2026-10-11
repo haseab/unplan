@@ -372,7 +372,7 @@ test("C opens the calendar picker for any event selection", () => {
   assert.equal(shortcut({ modalOpen: true }), false);
 });
 
-test("P focuses the color picker for a single event selection", () => {
+test("P focuses the color picker for single and multiple event selections", () => {
   const shortcut = (overrides: Partial<Parameters<typeof isEventColorPickerShortcut>[0]> = {}) =>
     isEventColorPickerShortcut({
       altKey: false,
@@ -388,7 +388,7 @@ test("P focuses the color picker for a single event selection", () => {
   assert.equal(shortcut(), true);
   assert.equal(shortcut({ key: "P" }), true);
   assert.equal(shortcut({ selectedCount: 0 }), false);
-  assert.equal(shortcut({ selectedCount: 2 }), false);
+  assert.equal(shortcut({ selectedCount: 2 }), true);
   assert.equal(shortcut({ modifier: true }), false);
   assert.equal(shortcut({ shiftKey: true }), false);
   assert.equal(shortcut({ repeat: true }), false);

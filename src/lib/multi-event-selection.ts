@@ -1,5 +1,6 @@
 import { differenceInMinutes, parseISO } from "date-fns";
 import type { CalendarEvent, CalendarSource } from "./calendar-types";
+import { type EventColorChange, getEventTextColor } from "./event-color";
 
 export type MultiEventSelectionSummary = {
   allDayCount: number;
@@ -63,6 +64,21 @@ export const moveSelectionToCalendar = (
   color: event.colorId ? event.color : calendar.backgroundColor,
   textColor: event.colorId ? event.textColor : calendar.foregroundColor,
 }));
+
+export const recolorEventSelection = (
+  events: CalendarEvent[],
+  change: EventColorChange,
+  calendars: CalendarSource[],
+) => events.map(event => {
+  const calendar = calendars.find(item => item.id === event.calendarId);
+  const color = change.colorId ? change.color : calendar?.backgroundColor ?? event.calendarColor;
+  const next = {
+    ...event, ...change, color, colorId: change.colorId,
+    textColor: change.colorId ? change.textColor : calendar?.foregroundColor ?? getEventTextColor(color),
+  };
+  if (!change.customColor) delete next.customColor;
+  return next;
+});
 
 /** Pack chronologically while retaining input order for selection and undo reconciliation. */
 export const stackEventSelection = (events: CalendarEvent[], start?: Date) => {

@@ -733,10 +733,12 @@ kbd {
 .confirmation-actions button { min-height: 36px; padding: 0 13px; border: 1px solid var(--line-strong); border-radius: 8px; outline: none; background: var(--surface); color: var(--muted); font-size: 10.5px; font-weight: 650; letter-spacing: -0.004em; cursor: pointer; transition: border-color 140ms ease, background 140ms ease, color 140ms ease, box-shadow 140ms ease, transform 120ms ease; }
 .confirmation-actions button:hover { border-color: color-mix(in oklab, var(--line-strong) 72%, var(--ink)); background: var(--surface-hover); color: var(--ink); }
 .confirmation-actions button:focus-visible { border-color: var(--blue); box-shadow: 0 0 0 3px var(--blue-soft); }
+.guest-notification-actions button:focus { outline: 2px solid white; outline-offset: 0; box-shadow: none; }
 .confirmation-actions button:active { transform: translateY(1px); }
 .confirmation-actions .confirmation-cancel { margin-right: auto; border-color: transparent; background: transparent; color: var(--text-soft); }
 .confirmation-actions .confirmation-primary { border-color: color-mix(in oklab, var(--blue) 82%, white); background: var(--blue); color: white; box-shadow: 0 7px 18px color-mix(in oklab, var(--blue) 24%, transparent); }
 .confirmation-actions .confirmation-primary:hover { border-color: color-mix(in oklab, var(--blue) 62%, white); background: color-mix(in oklab, var(--blue) 90%, white); color: white; }
+.guest-notification-modal .guest-notification-actions button { border-color: transparent; box-shadow: none; }
 .confirmation-actions .confirmation-danger { border-color: color-mix(in oklab, #d94d44 78%, white); background: #d94d44; color: white; box-shadow: 0 7px 18px rgba(217, 77, 68, 0.2); }
 .confirmation-actions .confirmation-danger:hover { border-color: #ef7770; background: #e05a51; color: white; }
 .guest-notification-attendees { display: flex; max-height: 152px; flex-direction: column; gap: 3px; overflow-y: auto; margin: 0 16px 16px; padding: 8px; border: 1px solid var(--line); border-radius: 10px; background: color-mix(in oklab, var(--surface-muted) 62%, transparent); }

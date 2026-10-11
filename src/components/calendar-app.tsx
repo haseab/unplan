@@ -105,6 +105,7 @@ import { useTodoist } from "@/hooks/use-todoist";
 import { useTodoistCustomGroups } from "@/hooks/use-todoist-group-preferences";
 import { useTodoistTaskExtraction } from "@/hooks/use-todoist-task-extraction";
 import {
+  supersedePendingResourceUpdates,
   clearActionToastResourceHold,
   getActionToastServerSyncSnapshot,
   getActionToastSyncProtectedResourceIds,
@@ -533,7 +534,7 @@ export function CalendarApp() {
   >("calendar");
   const activateSelectionSurfaceFromTarget = React.useCallback((target: EventTarget | null) => {
     if (!(target instanceof Element)) return;
-    if (target.closest(".calendar-workspace")) {
+    if (target.closest(".calendar-workspace, .event-sidebar-panel")) {
       setActiveSelectionSurface("calendar");
     } else if (target.closest(".right-sidebar")) {
       setActiveSelectionSurface("sidebar");
@@ -749,6 +750,7 @@ export function CalendarApp() {
     stackSelection: boolean;
     idleTimer: ReturnType<typeof setTimeout> | null;
   } | null>(null);
+  const prepareKeyboardMoveForRemovalRef = React.useRef<(() => void) | null>(null);
   const submitKeyboardMoveRef = React.useRef<(() => boolean) | null>(null);
   const keyboardResizeEdgeRef = React.useRef<{
     activeEdge: "end" | "start";
@@ -2356,6 +2358,7 @@ export function CalendarApp() {
                   event.id === mutationOrigin.id ? { ...mutationOrigin, ...(event.provider === "google" ? { description: event.description } : {}) } : event,
                 ));
               queueActionToast(`Resized ${resized.title}`, {
+                resourceScoped: true,
                 coalesceKey: eventChangeCoalesceKey([resized.id]),
                 duration: toastDuration,
                 onSettled: () => clearEventMutationOrigins([resized.id]),
@@ -2707,19 +2710,19 @@ export function CalendarApp() {
                 const originals = mutationOrigins.filter((event) => ids.has(event.id));
                 setEvents((current) => restoreEventSnapshots(current, originals));
               };
-              const restoreMutationOrigins = () => restoreIds(new Set(movedIds));
               const movedMap = new Map(moved.map((event) => [event.id, event]));
               setEvents((current) => current.map((event) => movedMap.get(event.id) ?? event));
               queueActionToast(
                 `Moved ${moved.length === 1 ? moved[0].title : `${moved.length} events`}`,
                 {
+                  resourceScoped: true,
                   coalesceKey: eventChangeCoalesceKey(movedIds),
                   duration: toastDuration,
                   onSettled: () => clearEventMutationOrigins(movedIds),
-                  onUndo: restoreMutationOrigins,
-                  onSubmit: async (reportProgress) => {
+                  onUndo: ids => restoreIds(new Set(ids)),
+                  onSubmit: async (reportProgress, ids) => {
                     const failedIds = await persistMovedEvents(
-                      moved,
+                      moved.filter(event => ids.has(event.id)),
                       reportProgress,
                       sendUpdates,
                       mutationOrigins,
@@ -4676,6 +4679,8 @@ export function CalendarApp() {
     }));
     const stagedTaskIds = stagedMoves.map(({ task }) => task.id);
     const eventIds = new Set(stagedMoves.map(({ event }) => event.id));
+    prepareKeyboardMoveForRemovalRef.current?.();
+    const restorePendingUpdates = supersedePendingResourceUpdates(eventIds);
     const renderedElements = renderedEventElements();
     const keyboardAnchor = renderedElements.find(
       (element) => element.dataset.eventKey === keyboardAnchorKey,
@@ -4701,6 +4706,7 @@ export function CalendarApp() {
       });
       setEvents((current) => restoreDeletedEvents(current, deleted));
       setSelected(new Set(eventIds));
+      restorePendingUpdates();
     };
 
     eventIds.forEach((eventId) => {
@@ -4753,6 +4759,7 @@ export function CalendarApp() {
           }));
           const cancelled = outcomes.filter(({ committed }) => !committed);
           if (cancelled.length) {
+            restorePendingUpdates(new Set(cancelled.map(({ event }) => event.id)));
             cancelled.forEach(({ event }) => {
               pendingTodoistCalendarRemovalIdsRef.current.delete(event.id);
             });
@@ -4786,6 +4793,7 @@ export function CalendarApp() {
             !wasDeleted
           );
           if (deleteFailures.length) {
+            restorePendingUpdates(new Set(deleteFailures.map(({ event }) => event.id)));
             deleteFailures.forEach(({ event }) => {
               pendingTodoistCalendarRemovalIdsRef.current.delete(event.id);
             });
@@ -5093,13 +5101,14 @@ export function CalendarApp() {
         ? `Moved ${updatedEvents.length} events to ${destinationCalendar.name}`
         : `Updated ${updatedEvents.length} events`,
       {
+        resourceScoped: true,
         coalesceKey: eventChangeCoalesceKey(updatedEventIds),
         duration: toastDuration,
         onSettled: () => clearEventMutationOrigins(updatedEventIds),
-        onUndo: () => restoreOriginals(),
-        onSubmit: async (reportProgress) => {
+        onUndo: ids => restoreOriginals(new Set(ids)),
+        onSubmit: async (reportProgress, ids) => {
           const failedIds = new Set(await persistMovedEvents(
-            updatedEvents,
+            updatedEvents.filter(event => ids.has(event.id)),
             reportProgress,
             sendUpdates,
             mutationOrigins,
@@ -5122,8 +5131,15 @@ export function CalendarApp() {
       },
     );
     setRightSidebarTab("todos");
+    setActiveSelectionSurface("calendar");
+    const cursor = cursorUpdated ?? updatedEvents[0];
+    if (cursor) {
+      const cursorKey = calendarEventKey(cursor.calendarId, cursor.id);
+      selectionAnchorRef.current = cursorKey;
+      window.requestAnimationFrame(() => focusRenderedEvent(cursorKey, false));
+    }
     return true;
-  }, [calendars, chooseGuestNotifications, clearEventMutationOrigins, confirmBulkAction, finishOperation, persistMovedEvents, rememberEventMutationOrigins, toastDuration]);
+  }, [calendars, chooseGuestNotifications, clearEventMutationOrigins, confirmBulkAction, finishOperation, focusRenderedEvent, persistMovedEvents, rememberEventMutationOrigins, toastDuration]);
 
   const keyboardMoveDependenciesRef = React.useRef<Record<string, unknown> | null>(null);
   React.useEffect(() => {
@@ -5179,20 +5195,21 @@ export function CalendarApp() {
       session.action = queueActionToast(
         `${resizedOnly ? "Resized" : "Moved"} ${moved.length === 1 ? moved[0].title : `${moved.length} events`}`,
         {
+          resourceScoped: true,
           duration: toastDuration,
           submitImmediately,
-          onUndo: () => {
-            restoreEvents(session.originals);
+          onUndo: (ids) => {
+            restoreEvents(session.originals, new Set(ids));
             if (keyboardMoveSessionRef.current === session) {
               keyboardMoveSessionRef.current = null;
             }
           },
-          onSubmit: async (reportProgress) => {
+          onSubmit: async (reportProgress, ids) => {
             if (keyboardMoveSessionRef.current === session) {
               keyboardMoveSessionRef.current = null;
             }
             const failedIds = new Set(await persistMovedEvents(
-              moved,
+              moved.filter(event => ids.has(event.id)),
               reportProgress,
               session.sendUpdates ?? "none",
               session.originals,
@@ -5244,6 +5261,7 @@ export function CalendarApp() {
       const moved = keyboardEventUpdates(session);
       const sendUpdates = await chooseGuestNotifications("update", moved);
       session.initializing = false;
+      if (keyboardMoveSessionRef.current !== session) return;
       if (!sendUpdates) {
         restoreEvents(session.originals);
         if (keyboardMoveSessionRef.current === session) {
@@ -5282,6 +5300,16 @@ export function CalendarApp() {
         },
         scheduleTimer: setTimeout,
       });
+    };
+
+    prepareKeyboardMoveForRemovalRef.current = () => {
+      const session = keyboardMoveSessionRef.current;
+      if (!session) return;
+      if (session.idleTimer !== null) clearTimeout(session.idleTimer);
+      session.idleTimer = null;
+      if (!session.action) queueKeyboardMoveToast(session);
+      keyboardMoveSessionRef.current = null;
+      clearActionToastResourceHold(CALENDAR_KEYBOARD_TRANSFORM_HOLD_SCOPE);
     };
 
     submitKeyboardMoveRef.current = () => {

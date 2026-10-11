@@ -3,6 +3,7 @@
 import * as React from "react";
 
 export const BULK_CONFIRMATION_THRESHOLD = 3;
+export const EVENT_UPDATE_CONFIRMATION_THRESHOLD = 20;
 export const EVENT_DELETE_CONFIRMATION_THRESHOLD = 16;
 export const TASK_DELETE_CONFIRMATION_THRESHOLD = 4;
 
@@ -21,7 +22,7 @@ export const requiresBulkConfirmation = ({
   count,
   threshold = action === "delete"
     ? EVENT_DELETE_CONFIRMATION_THRESHOLD
-    : BULK_CONFIRMATION_THRESHOLD,
+    : action === "update" ? EVENT_UPDATE_CONFIRMATION_THRESHOLD : BULK_CONFIRMATION_THRESHOLD,
 }: Pick<BulkConfirmationRequest, "action" | "count" | "threshold">) =>
   action !== "move" && count >= threshold;
 
