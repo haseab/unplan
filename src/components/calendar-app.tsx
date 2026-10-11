@@ -790,7 +790,7 @@ export function CalendarApp() {
   const marqueeRef = React.useRef<ActiveMarquee | null>(null);
   const creationRef = React.useRef<ActiveEventCreation | null>(null);
   const clipboardRef = React.useRef<CalendarEvent[]>([]);
-  const navigateListSelection = useKeyboardSelection();
+  const { navigateSelection: navigateListSelection, navigationActive } = useKeyboardSelection();
   const selectionAnchorRef = React.useRef<string | null>(null);
   const deactivatedEventFocusRef = React.useRef<{
     eventId: string;
@@ -5918,6 +5918,8 @@ export function CalendarApp() {
     <main
       className="calendar-shell"
       data-active-selection-surface={activeSelectionSurface}
+      data-calendar-multi-selection={selected.size > 1 ? "true" : undefined}
+      data-selection-navigation={navigationActive ? "true" : undefined}
       data-event-dragging={activeEventDrag ? "true" : undefined}
       onFocusCapture={(event) => activateSelectionSurfaceFromTarget(event.target)}
       onPointerDownCapture={(event) => {

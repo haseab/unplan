@@ -555,16 +555,25 @@ kbd {
 .event-resize-handle::after { content: none; }
 .event-resize-start { top: 0; }
 .event-resize-end { bottom: 0; }
-.event-selected { outline: 2px solid white; box-shadow: 0 0 0 4px rgba(70, 102, 229, 0.55), 0 7px 18px rgba(37, 50, 105, 0.2) !important; }
+.event-selected { outline: 2px solid white; box-shadow: 0 7px 18px rgba(37, 50, 105, 0.2) !important; }
 .calendar-scroll[data-visible-find-active="true"] .calendar-event:not(.event-visible-find-match),
 .calendar-scroll[data-visible-find-active="true"] .all-day-event:not(.event-visible-find-match) { opacity: 0.4; }
 .calendar-event.event-visible-find-match,
 .all-day-event.event-visible-find-match { outline: 1px solid #ffd84d; outline-offset: -1px; opacity: 1; filter: brightness(1.13) saturate(0.72); box-shadow: 0 3px 12px rgba(255, 216, 77, 0.2) !important; }
 .calendar-event.event-visible-find-match.event-selected,
-.all-day-event.event-visible-find-match.event-selected { outline: 2px solid white; outline-offset: 0; box-shadow: 0 0 0 4px rgba(70, 102, 229, 0.55), 0 7px 18px rgba(37, 50, 105, 0.2) !important; }
+.all-day-event.event-visible-find-match.event-selected { outline: 2px solid white; outline-offset: 0; box-shadow: 0 7px 18px rgba(37, 50, 105, 0.2) !important; }
 .calendar-shell[data-active-selection-surface="sidebar"] .calendar-workspace .event-selected,
 .calendar-shell[data-active-selection-surface="calendar"] .right-sidebar .event-selected { outline: 0; box-shadow: none !important; }
 .event-selected-raised { z-index: 9 !important; }
+.calendar-shell[data-active-selection-surface="calendar"][data-calendar-multi-selection="true"][data-selection-navigation="true"] .calendar-workspace :is(.calendar-event, .all-day-event):focus-visible,
+.calendar-shell[data-active-selection-surface="sidebar"] .right-sidebar [data-task-multi-selection="true"][data-selection-navigation="true"] .todo-event-block:focus-visible {
+  outline: 2px solid #3399ff !important;
+  outline-offset: 0;
+  box-shadow: 0 0 8px rgba(51, 153, 255, 0.4) !important;
+  z-index: 10 !important;
+  opacity: 1;
+  filter: none;
+}
 .calendar-event.event-drag-source,
 .all-day-event.event-drag-source { opacity: 0 !important; pointer-events: none; }
 .calendar-shell[data-event-dragging="true"],
@@ -1042,7 +1051,7 @@ kbd {
 .todo-event-group-toggle, .todo-event-group-rename-button, .todo-event-group-add-button, .todo-event-group-delete-button { display: flex; height: 25px; align-items: center; border: 0; border-radius: 7px; background: transparent; color: inherit; cursor: pointer; }
 .todo-event-group-toggle { min-width: 0; gap: 5px; padding: 0 4px 0 calc(var(--folder-depth, 0) * 13px); text-align: left; }
 .todo-event-group-toggle:hover, .todo-event-group-rename-button:hover, .todo-event-group-add-button:hover { background: var(--hover-strong); color: var(--ink); }
-.todo-event-group-toggle:focus-visible { outline: 2px solid white; box-shadow: 0 0 0 4px rgba(70, 102, 229, 0.55), 0 7px 18px rgba(37, 50, 105, 0.2); }
+.todo-event-group-toggle:focus-visible { outline: 2px solid white; box-shadow: 0 7px 18px rgba(37, 50, 105, 0.2); }
 .todo-event-group-toggle > svg:first-child { flex: 0 0 auto; transition: transform 140ms ease; }
 .todo-event-group:not([data-collapsed="true"]) .todo-event-group-toggle > svg:first-child { transform: rotate(90deg); }
 .todo-event-group-toggle > svg:nth-child(2) { flex: 0 0 auto; color: var(--text-faint); }

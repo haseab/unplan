@@ -277,7 +277,7 @@ export function TodoistSidebar({
   const skipNextGroupLayoutAnimationRef = React.useRef(false);
   const skipNextTaskLayoutAnimationRef = React.useRef(false);
   const taskPositionsRef = React.useRef<Map<string, number>>(new Map());
-  const navigateListSelection = useKeyboardSelection();
+  const { navigateSelection: navigateListSelection, navigationActive } = useKeyboardSelection();
   const selectionAnchorRef = React.useRef<string | null>(null);
   const calendarPickerReturnTaskIdRef = React.useRef<string | null>(null);
   const calendarPickerReturnSelectionRef = React.useRef<Set<string>>(new Set());
@@ -1376,7 +1376,7 @@ export function TodoistSidebar({
   };
 
   return (
-    <div className="todoist-panel">
+    <div className="todoist-panel" data-task-multi-selection={selectedTaskIds.size > 1 ? "true" : undefined} data-selection-navigation={navigationActive ? "true" : undefined}>
       <div className="todo-event-list-heading">
         <span><strong>Event Storage</strong><small>{tasks.length} {tasks.length === 1 ? "event task" : "event tasks"}</small></span>
         <div>
