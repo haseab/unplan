@@ -8,12 +8,14 @@ import { googleEventMutationKey, noteIdentity } from "@/lib/event-description-id
 import { relocateNote } from "@/lib/event-description-draft-store";
 import { MutationQueue } from "@/lib/mutation-queue";
 import { readJsonResponse } from "@/lib/http-client";
+import { isCrossAccountCalendarMove, transferCalendarEvent } from "@/lib/google-event-transfer";
 import type { RecurringDeleteScope } from "@/lib/recurring-delete";
 import { googleCalendarAuthorizedFetch } from "@/lib/google-browser-auth";
 
 type GoogleEventResult = {
   htmlLink?: string;
   id?: string;
+  hangoutLink?: string;
 };
 
 type GoogleErrorPayload = {
@@ -87,6 +89,7 @@ const mutateGoogleEvent = async (
   sendUpdates: GoogleSendUpdates = "none",
   sourceCalendarSourceId?: string,
   retryNotFound = false,
+  transferFields?: Record<string, unknown>,
 ) => {
   const response = await googleCalendarAuthorizedFetch(event.calendarId, "/api/google/events", {
     method,
@@ -94,6 +97,7 @@ const mutateGoogleEvent = async (
     body: JSON.stringify({
       calendarSourceId: event.calendarId,
       sourceCalendarSourceId,
+      transferFields,
       eventId: event.providerEventId ?? event.id,
       title: event.title,
       start: event.start,
@@ -110,7 +114,8 @@ const mutateGoogleEvent = async (
       reminders: event.reminders ?? { useDefault: true },
       attachments: event.attachments ?? [],
       createConference: event.conferenceLink === "pending",
-      attendees: event.attendees?.flatMap(({ email, self }) => email && !self ? [{ email }] : []) ?? [],
+      attendees: event.attendees?.flatMap(({ email, self, displayName, optional, responseStatus }) =>
+        email && (transferFields || !self) ? [{ email, displayName, optional, responseStatus }] : []) ?? [],
       sendUpdates,
     }),
   });
@@ -135,21 +140,80 @@ const mutateGoogleEvent = async (
   return result;
 };
 
+// Keep queued edits pointed at the provider identity established by a move.
+const movedEventIdentities = new Map<string, { calendarId: string; providerEventId: string }>();
+const transferIds = new Map<string, string>();
+const resolveMovedIdentity = (event: CalendarEvent): CalendarEvent => {
+  const identity = movedEventIdentities.get(event.id);
+  return identity?.calendarId === event.calendarId ? { ...event, providerEventId: identity.providerEventId } : event;
+};
+
+const deleteGoogleEventNow = async (event: CalendarEvent, sendUpdates: GoogleSendUpdates, deleteScope: RecurringDeleteScope = "single") => {
+  const response = await googleCalendarAuthorizedFetch(event.calendarId, "/api/google/events", {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      calendarSourceId: event.calendarId,
+      eventId: event.providerEventId ?? event.id,
+      recurringEventId: event.recurringEventId,
+      originalStart: event.originalStart ?? event.start,
+      deleteScope,
+      sendUpdates,
+    }),
+  });
+  if (!response.ok) throw await responseError(response, "Google Calendar rejected the deletion");
+};
+
 export const updateGoogleEvent = (
   event: CalendarEvent,
   sendUpdates: GoogleSendUpdates = "none",
   sourceCalendarSourceId?: string,
   retryNotFound = false,
-) =>
-  enqueueGoogleEventMutation(mutationKey(event), () =>
-    mutateGoogleEvent(
-      "PATCH",
-      event,
-      sendUpdates,
-      sourceCalendarSourceId,
-      retryNotFound,
-    ),
-  );
+) => enqueueGoogleEventMutation(JSON.stringify(["event-update", event.id]), async () => {
+  const movedIdentity = movedEventIdentities.get(event.id);
+  const sourceId = movedIdentity?.calendarId ?? sourceCalendarSourceId ?? event.calendarId;
+  const sourceEvent = { ...event, calendarId: sourceId,
+    providerEventId: movedIdentity?.providerEventId ?? event.providerEventId };
+  if (!isCrossAccountCalendarMove(sourceId, event.calendarId)) {
+    const result = await mutateGoogleEvent("PATCH", {
+      ...event, providerEventId: sourceEvent.providerEventId,
+    }, sendUpdates, sourceId, retryNotFound);
+    if (result.id) movedEventIdentities.set(event.id, { calendarId: event.calendarId, providerEventId: result.id });
+    return { ...result, transferred: false };
+  }
+
+  const params = new URLSearchParams({ sourceId, eventId: sourceEvent.providerEventId ?? sourceEvent.id });
+  const response = await googleCalendarAuthorizedFetch(sourceId, `/api/google/events?${params}`);
+  if (!response.ok) throw await responseError(response, "Could not read the original event", retryNotFound);
+  const original = await readJsonResponse<Record<string, unknown>>(response, "Could not read the original event");
+  if (original.eventType && original.eventType !== "default") {
+    throw new Error("This Google event type cannot be recreated in another account.");
+  }
+  const transferKey = JSON.stringify([sourceId, sourceEvent.providerEventId ?? event.id, event.calendarId]);
+  const destinationId = transferIds.get(transferKey) ?? createGoogleCompatibleEventId();
+  transferIds.set(transferKey, destinationId);
+  const copy: CalendarEvent = {
+    ...event, providerEventId: destinationId,
+    description: typeof original.description === "string" ? original.description : event.description,
+    // An occurrence moves on its own; it must not retain the source series identity.
+    recurringEventId: undefined, originalStart: undefined,
+  };
+  const result = await transferCalendarEvent({
+    create: () => mutateGoogleEvent("POST", copy, sendUpdates, undefined, false, original),
+    deleteSource: () => deleteGoogleEventNow(sourceEvent, sendUpdates),
+    rollback: async (created) => {
+      await deleteGoogleEventNow({ ...copy, providerEventId: created.id ?? destinationId }, "none");
+      transferIds.delete(transferKey);
+    },
+  });
+  const identity = { calendarId: event.calendarId, providerEventId: result.id ?? destinationId };
+  movedEventIdentities.set(event.id, identity);
+  transferIds.delete(transferKey);
+  const sourceNote = noteIdentity(sourceEvent);
+  const destinationNote = noteIdentity({ ...copy, ...identity });
+  if (sourceNote && destinationNote) await relocateNote(sourceNote.key, destinationNote, copy.description ?? "");
+  return { ...result, id: identity.providerEventId, transferred: true };
+});
 
 export const respondToGoogleEvent = (
   event: CalendarEvent,
@@ -194,24 +258,5 @@ export const deleteGoogleEvent = (
     deleteScope === "following" && event.recurringEventId
       ? `${event.calendarId}:${event.recurringEventId}`
       : mutationKey(event),
-    async () => {
-    const response = await googleCalendarAuthorizedFetch(event.calendarId, "/api/google/events", {
-      method: "DELETE",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        calendarSourceId: event.calendarId,
-        eventId: event.providerEventId ?? event.id,
-        recurringEventId: event.recurringEventId,
-        originalStart: event.originalStart ?? event.start,
-        deleteScope,
-        sendUpdates,
-      }),
-    });
-    if (!response.ok) {
-      throw await responseError(
-        response,
-        "Google Calendar rejected the deletion",
-      );
-    }
-    },
+    () => deleteGoogleEventNow(resolveMovedIdentity(event), sendUpdates, deleteScope),
   );

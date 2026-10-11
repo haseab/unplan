@@ -1,4 +1,5 @@
 import tinycolor from "tinycolor2";
+import { CATEGORY_CALENDAR_COLORS } from "./calendar-display-colors";
 
 const LIGHT_EVENT_TEXT = "#ffffff";
 const DARK_EVENT_TEXT = "#171714";
@@ -213,6 +214,13 @@ const EVENT_PALETTES = {
 export const getEventPalette = (color: string): EventPalette => {
   const parsed = tinycolor(color);
   const source = parsed.isValid() ? parsed : tinycolor("#7c5ce7");
+  if (Object.values(CATEGORY_CALENDAR_COLORS).includes(source.toHexString())) {
+    return {
+      accent: source.toHexString(),
+      darkSurface: tinycolor.mix(source, "#202020", 45).toHexString(),
+      lightSurface: tinycolor.mix(source, "#ffffff", 65).toHexString(),
+    };
+  }
   const { h, s } = source.toHsl();
 
   if (s < 0.08) return EVENT_PALETTES.neutral;

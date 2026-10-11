@@ -329,7 +329,7 @@ test("keyboard resize keeps the first or remembered edge when both sides are fre
   }), "start");
 });
 
-test("the first keyboard resize only contracts when both sides are locked", () => {
+test("keyboard resize always adjusts the end when both sides are locked", () => {
   const previous = {
     ...event,
     id: "previous",
@@ -355,19 +355,30 @@ test("the first keyboard resize only contracts when both sides are locked", () =
     events: [event],
     minuteDelta: 15,
     preferredEdge: null,
-  }), "start");
+  }), "end");
   assert.equal(resolveKeyboardResizeEdge({
     candidates,
     events: [event],
     minuteDelta: -15,
     preferredEdge: "start",
-  }), "start");
+  }), "end");
   assert.equal(resolveKeyboardResizeEdge({
     candidates,
     events: [event],
     minuteDelta: 15,
     preferredEdge: "end",
   }), "end");
+
+  for (const minuteDelta of [-15, 15]) {
+    const activeEdge = resolveKeyboardResizeEdge({
+      candidates, events: [event], minuteDelta, preferredEdge: null,
+    });
+    const resized = applyKeyboardResizeTransform(event, advanceKeyboardResizeTransform({
+      activeEdge, startMinuteDelta: 0, endMinuteDelta: 0,
+    }, minuteDelta, [event]));
+    assert.equal(resized.start, event.start);
+    assert.equal(Date.parse(resized.end), Date.parse(event.end) + minuteDelta * 60_000);
+  }
 });
 
 test("keyboard resize stays committed to its remembered edge", () => {

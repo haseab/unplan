@@ -1,5 +1,10 @@
 "use client";
 
+
+import { useJoinNextCall } from "@/hooks/use-join-next-call";
+
+import { applyGoogleEventSaveResult } from "@/lib/google-event-transfer";
+
 import { isFollowUpCreationShortcut } from "@/lib/follow-up-keyboard";
 import { scheduleFollowUp } from "@/lib/follow-up-calendar";
 import { isFollowUpTask } from "@/lib/todoist-follow-ups";
@@ -1984,12 +1989,17 @@ export function CalendarApp() {
       try {
         const { failed } = await runMutationBatch(
           googleEvents,
-          (event) => updateGoogleEvent(
-            event,
-            sendUpdatesForEvent(event, sendUpdates),
-            originalsById.get(event.id)?.calendarId,
-            retryNotFoundEventIds.has(event.id),
-          ),
+          async (event) => {
+            const result = await updateGoogleEvent(
+              event,
+              sendUpdatesForEvent(event, sendUpdates),
+              originalsById.get(event.id)?.calendarId,
+              retryNotFoundEventIds.has(event.id),
+            );
+            setEvents((current) => current.map((candidate) =>
+              candidate.id === event.id && candidate.calendarId === event.calendarId
+                ? applyGoogleEventSaveResult(candidate, result) : candidate));
+          },
           (completed, total) => reportProgress?.(`Saving event changes… ${completed}/${total}`),
         );
         return failed.map(({ item }) => item.id);
@@ -4952,12 +4962,15 @@ export function CalendarApp() {
         if (updated.provider !== "google") return;
         setSyncing(true);
         try {
-          await updateGoogleEvent(
+          const result = await updateGoogleEvent(
             updated,
             sendUpdatesForEvent(updated, sendUpdates),
             mutationOrigin.calendarId,
             followsPendingCreation,
           );
+          setEvents((current) => current.map((candidate) =>
+            candidate.id === updated.id && candidate.calendarId === updated.calendarId
+              ? applyGoogleEventSaveResult(candidate, result) : candidate));
         } finally {
           setSyncing(false);
         }
@@ -5900,6 +5913,13 @@ export function CalendarApp() {
         renderedDayCount,
       )
     : [];
+  const joinableVisibleEvents = React.useMemo(() => displayedEvents.filter(event =>
+    visibleCalendars.has(event.calendarId)
+    && new Date(event.end) > renderStart
+    && new Date(event.start) < addDays(renderStart, renderedDayCount)
+  ), [displayedEvents, visibleCalendars, renderStart, renderedDayCount]);
+  useJoinNextCall(joinableVisibleEvents);
+
   const timedEventSegments = displayedEvents
     .filter((event) => !event.allDay && visibleCalendars.has(event.calendarId))
     .flatMap((event, eventIndex) => {
@@ -6409,6 +6429,7 @@ export function CalendarApp() {
           <section className="shortcuts-modal" onMouseDown={(event) => event.stopPropagation()}>
             <div className="modal-heading"><div><Command size={18} /><span><strong>Keyboard shortcuts</strong><small>Move through your week without breaking focus.</small></span></div><button className="icon-button" onClick={() => setShowShortcuts(false)}><X size={16} /></button></div>
             <div className="shortcut-grid">
+              <span>Join the next call</span><kbd>⌘ J</kbd>
               <span>Go to today</span><kbd>T</kbd>
               <span>New time entry</span><kbd>⌘ N</kbd>
               <span>New event at the latest 15-minute block</span><kbd>⌘ ⌥ N</kbd>

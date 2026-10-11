@@ -20,6 +20,7 @@ import {
 import * as React from "react";
 import { toast } from "sonner";
 import { addDays, differenceInMinutes, format, setHours, startOfDay } from "date-fns";
+import { EventDateTimeEditor } from "@/components/event-date-time-editor";
 import { EventParticipantsEditor } from "@/components/event-participants-editor";
 import { eventHasNotifiableGuests } from "@/lib/event-guest-notifications";
 import { EventDescriptionStatus, openNoteDraft } from "@/components/event-description-drafts";
@@ -109,7 +110,6 @@ const formatDuration = (start: Date, end: Date) => {
   return remainingMinutes ? `${hours}h ${remainingMinutes}m` : `${hours}h`;
 };
 
-const dateTimeInputValue = (value: string) => format(new Date(value), "yyyy-MM-dd'T'HH:mm");
 const recurrenceValue = (event: CalendarEvent) => {
   const rule = event.recurrence?.find((item) => item.startsWith("RRULE:")) ?? "";
   if (rule.includes("FREQ=DAILY")) return "daily";
@@ -224,8 +224,6 @@ function EventDetailsEditor({
   const [showNotes, setShowNotes] = React.useState(() => Boolean(descriptionValue || event.description));
   const [showTimeDetails, setShowTimeDetails] = React.useState(false);
   const [focusedTimeField, setFocusedTimeField] = React.useState<"end" | "start" | null>(null);
-  const endInputRef = React.useRef<HTMLInputElement>(null);
-  const startInputRef = React.useRef<HTMLInputElement>(null);
   const titleRef = React.useRef<HTMLTextAreaElement>(null);
   const skipTitleBlurCommitRef = React.useRef(false);
   const titleCommittedRef = React.useRef(event.title);
@@ -241,9 +239,7 @@ function EventDetailsEditor({
   const reminderMinutes = reminderMinutesValue(edited);
   const attachmentUrl = edited.attachments?.[0]?.fileUrl ?? "";
   const editedCalendar = calendars.find((item) => item.id === edited.calendarId) ?? calendar;
-  const editableCalendars = calendars.filter(
-    (item) => !calendar?.accountId || item.accountId === calendar.accountId,
-  );
+  const editableCalendars = calendars.filter((item) => item.writable !== false);
 
   React.useEffect(() => {
     titleCommittedRef.current = event.title;
@@ -359,10 +355,7 @@ function EventDetailsEditor({
     const targetField = edited.allDay ? "start" : field;
     setFocusedTimeField(targetField);
     setShowTimeDetails(true);
-    window.requestAnimationFrame(() => {
-      const input = targetField === "start" ? startInputRef.current : endInputRef.current;
-      input?.focus({ preventScroll: true });
-    });
+
   };
 
   const changeCalendar = (nextCalendarId: string) => {
@@ -601,29 +594,7 @@ function EventDetailsEditor({
           </button>
         </div>
         {showTimeDetails && <div className="event-editor-time-details">
-          <div className="event-editor-time-inputs">
-          {edited.allDay ? (
-            <label>
-              <span>Date</span>
-              <input
-                aria-label="Event date"
-                ref={startInputRef}
-                type="date"
-                value={format(start, "yyyy-MM-dd")}
-                onChange={(input) => {
-                  if (!input.target.value) return;
-                  const nextStart = startOfDay(new Date(`${input.target.value}T12:00:00`));
-                  change({ start: nextStart.toISOString(), end: addDays(nextStart, 1).toISOString() });
-                }}
-              />
-            </label>
-          ) : (
-            <>
-              <label data-active={focusedTimeField === "start" ? "true" : undefined}><span>Starts</span><input aria-label="Event start" ref={startInputRef} type="datetime-local" value={dateTimeInputValue(edited.start)} onChange={(input) => input.target.value && change({ start: new Date(input.target.value).toISOString() })} /></label>
-              <label data-active={focusedTimeField === "end" ? "true" : undefined}><span>Ends</span><input aria-label="Event end" ref={endInputRef} type="datetime-local" value={dateTimeInputValue(edited.end)} onChange={(input) => input.target.value && change({ end: new Date(input.target.value).toISOString() })} /></label>
-            </>
-          )}
-          </div>
+          <EventDateTimeEditor key={focusedTimeField} event={edited} focusField={focusedTimeField} onChange={change} />
           <div className="event-editor-inline-options">
             <label><input type="checkbox" checked={Boolean(edited.allDay)} onChange={(input) => toggleAllDay(input.target.checked)} /> All-day</label>
             <select aria-label="Time zone" value={zone} onChange={(input) => change({ timeZone: input.target.value })}>

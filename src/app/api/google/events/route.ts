@@ -10,6 +10,7 @@ import { providerEventSearchQuery } from "@/lib/event-search";
 import { googleFetch, hasGoogleAuthorization } from "@/lib/google-calendar";
 import { buildGoogleEventsQuery } from "@/lib/google-events-query";
 import { parseGoogleCalendarSourceId } from "@/lib/google-source-id";
+import { transferableGoogleEventFields } from "@/lib/google-event-transfer";
 import { enforceRateLimit } from "@/lib/request-rate-limit";
 import { trimRecurrenceBefore } from "@/lib/recurring-delete";
 import { format, parseISO } from "date-fns";
@@ -225,6 +226,14 @@ export async function GET(request: NextRequest) {
     return Response.json({ error: "Google authorization is required" }, { status: 401 });
   }
   const sourceIds = request.nextUrl.searchParams.getAll("sourceId");
+  const eventId = request.nextUrl.searchParams.get("eventId");
+  if (eventId && sourceIds.length === 1) {
+    const source = parseGoogleCalendarSourceId(sourceIds[0]);
+    if (!source) return Response.json({ error: "Calendar source not found" }, { status: 404 });
+    const response = await googleFetch(request,
+      `/calendars/${encodeURIComponent(source.providerCalendarId)}/events/${encodeURIComponent(eventId)}`);
+    return Response.json(await response.json(), { status: response.status });
+  }
   const timeMin = request.nextUrl.searchParams.get("timeMin");
   const timeMax = request.nextUrl.searchParams.get("timeMax");
   const searchQuery = request.nextUrl.searchParams.get("search")?.trim();
@@ -383,7 +392,20 @@ export async function POST(request: NextRequest) {
     `/calendars/${encodeURIComponent(sources.destination.providerCalendarId)}/events?${insertQuery}`,
     {
       method: "POST",
-      body: JSON.stringify({ ...(body.eventId ? { id: body.eventId } : {}), ...editableEventFields(body) }),
+      body: JSON.stringify({
+        ...transferableGoogleEventFields(body.transferFields ?? {}),
+        ...(body.eventId ? { id: body.eventId } : {}),
+        ...editableEventFields(body),
+        ...(body.transferFields ? {
+          extendedProperties: {
+            ...(body.transferFields.extendedProperties as object ?? {}),
+            private: {
+              ...((body.transferFields.extendedProperties as { private?: Record<string, string> })?.private ?? {}),
+              unplanColor: body.customColor ?? "",
+            },
+          },
+        } : {}),
+      }),
     },
   );
   if (response.status === 409 && body.eventId) {

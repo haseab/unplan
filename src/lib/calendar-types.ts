@@ -69,6 +69,7 @@ export type CalendarEventRsvpStatus = Exclude<
 export type GoogleSendUpdates = "all" | "none";
 
 export type GoogleCalendarEventPayload = {
+  transferFields?: Record<string, unknown>;
   calendarSourceId: string;
   sourceCalendarSourceId?: string;
   eventId?: string;

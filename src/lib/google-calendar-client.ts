@@ -1,6 +1,7 @@
 "use client";
 
 import type { CalendarEvent, CalendarSource } from "./calendar-types";
+import { withCalendarDisplayColor } from "./calendar-display-colors";
 import {
   expireGoogleAccount,
   googleAuthorizedFetch,
@@ -136,7 +137,7 @@ export const loadBrowserGoogleCalendars = async (
     }
     return {
       account,
-      calendars: (data.calendars ?? []).map((calendar) => ({
+      calendars: (data.calendars ?? []).map((calendar) => withCalendarDisplayColor({
         ...calendar,
         accountEmail: account.email,
       })),

@@ -392,8 +392,6 @@ export const resolveKeyboardResizeEdge = ({
   minuteDelta: number;
   preferredEdge: KeyboardResizeEdge | null;
 }): KeyboardResizeEdge => {
-  if (preferredEdge) return preferredEdge;
-
   const fallbackEdge = minuteDelta < 0 ? "start" : "end";
   const lockCheckDelta = Math.abs(minuteDelta);
   const startLocked = keyboardResizeCreatesConflict(
@@ -409,8 +407,9 @@ export const resolveKeyboardResizeEdge = ({
     lockCheckDelta,
   );
   if (startLocked && endLocked) {
-    return minuteDelta < 0 ? "end" : "start";
+    return "end";
   }
+  if (preferredEdge) return preferredEdge;
   if (!startLocked && !endLocked) return fallbackEdge;
   return startLocked ? "end" : "start";
 };
