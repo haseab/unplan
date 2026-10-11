@@ -1,5 +1,6 @@
 "use client";
 
+import { searchEventColors } from "@/lib/event-color-search";
 import { Check, ChevronDown, Palette } from "lucide-react";
 import * as React from "react";
 import {
@@ -66,6 +67,9 @@ export function EventColorPicker({
   }));
   const allOptions = paletteRows.flatMap(({ options }) => options);
   const selectedKey = eventColorSelectionKey(colorId, customColor);
+  const [query, setQuery] = React.useState("");
+  const searchRef = React.useRef<HTMLInputElement>(null);
+  const searching = Boolean(query.trim());
   const [showMore, setShowMore] = React.useState(false);
   const [activeKey, setActiveKey] = React.useState(selectedKey);
   const buttonRefs = React.useRef(new Map<string, HTMLButtonElement>());
@@ -76,7 +80,7 @@ export function EventColorPicker({
   const compactColorKeys = COMPACT_COLOR_KEYS.includes(selectedKey)
     ? COMPACT_COLOR_KEYS
     : [selectedKey, ...COMPACT_COLOR_KEYS];
-  const visibleOptions = showMore
+  const visibleOptions = searching ? searchEventColors(allOptions, query) : showMore
     ? allOptions
     : compactColorKeys.flatMap((key) => {
         const option = allOptions.find((candidate) => candidate.key === key);
@@ -96,10 +100,11 @@ export function EventColorPicker({
   const keyboardStateRef = React.useRef({
     activeKey,
     cancelPreview,
+    commit: onCommit,
     exitPicker: onExit,
     preview,
     selectedKey,
-    showMore,
+    showMore: showMore && !searching,
     visibleOptions,
   });
 
@@ -107,10 +112,11 @@ export function EventColorPicker({
     keyboardStateRef.current = {
       activeKey,
       cancelPreview,
+      commit: onCommit,
       exitPicker: onExit,
       preview,
       selectedKey,
-      showMore,
+      showMore: showMore && !searching,
       visibleOptions,
     };
   });
@@ -127,6 +133,31 @@ export function EventColorPicker({
         keyboardEvent.stopPropagation();
         state.cancelPreview();
         state.exitPicker();
+        return;
+      }
+      if (document.activeElement === searchRef.current) {
+        if (keyboardEvent.key === "Enter") {
+          const option = state.visibleOptions.find(option => option.key === state.activeKey);
+          keyboardEvent.preventDefault();
+          keyboardEvent.stopPropagation();
+          if (option) {
+            submittedRef.current = true;
+            state.commit(eventColorChoiceChange(option), true);
+          }
+          return;
+        }
+        if (!arrowKeys.includes(keyboardEvent.key as ArrowKey)) return;
+        keyboardEvent.preventDefault();
+        keyboardEvent.stopPropagation();
+        const current = state.visibleOptions.findIndex(option => option.key === state.activeKey);
+        const index = eventColorGridNavigationIndex({
+          columns: state.showMore ? 8 : 6,
+          currentIndex: current,
+          key: keyboardEvent.key as ArrowKey,
+          length: state.visibleOptions.length,
+        });
+        const option = index === null ? undefined : state.visibleOptions[index];
+        if (option) state.preview(option);
         return;
       }
       if (!arrowKeys.includes(keyboardEvent.key as ArrowKey)) return;
@@ -175,8 +206,7 @@ export function EventColorPicker({
   React.useLayoutEffect(() => {
     if (!autoFocus) return;
     submittedRef.current = false;
-    const selected = buttonRefs.current.get(selectedKey);
-    selected?.focus({ preventScroll: true });
+    searchRef.current?.focus({ preventScroll: true });
     rootRef.current?.scrollIntoView({ block: "nearest", inline: "nearest" });
     onAutoFocused?.();
   }, [autoFocus, onAutoFocused, selectedKey, showMore]);
@@ -229,14 +259,29 @@ export function EventColorPicker({
       <Palette size={15} />
       <div>
         <small>Event color</small>
+        <input
+          aria-label="Search event colors"
+          className="event-editor-color-search"
+          placeholder="Search colors…"
+          ref={searchRef}
+          value={query}
+          onChange={(event) => {
+            const nextQuery = event.target.value;
+            setQuery(nextQuery);
+            const first = nextQuery.trim() ? searchEventColors(allOptions, nextQuery)[0] : undefined;
+            if (first) preview(first);
+            else cancelPreview();
+          }}
+        />
         <div
           aria-label="Event color"
           className="event-editor-color-options"
-          data-expanded={showMore ? "true" : undefined}
+          data-searching={searching ? "true" : undefined}
+          data-expanded={showMore && !searching ? "true" : undefined}
           data-sidebar-horizontal-arrows="true"
           role="radiogroup"
         >
-          {showMore ? paletteRows.map((row) => (
+          {showMore && !searching ? paletteRows.map((row) => (
             <div
               aria-label={row.label}
               className="event-editor-color-palette-row"
@@ -252,7 +297,8 @@ export function EventColorPicker({
             </div>
           )}
         </div>
-        <button
+        {searching && visibleOptions.length === 0 && <span role="status">No matching colors</span>}
+        {!searching && <button
           aria-expanded={showMore}
           className="event-editor-color-more"
           onClick={() => {
@@ -264,7 +310,7 @@ export function EventColorPicker({
         >
           {showMore ? "See less" : "See more"}
           <ChevronDown aria-hidden="true" size={13} />
-        </button>
+        </button>}
       </div>
     </div>
   );

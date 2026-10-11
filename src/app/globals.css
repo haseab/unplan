@@ -1384,6 +1384,10 @@ kbd {
 .event-editor-color-field > svg { margin-top: 3px; }
 .event-editor-color-field > div { display: grid; min-width: 0; gap: 8px; }
 .event-editor-color-field small { color: var(--text-soft); font-size: 11px; font-weight: 650; letter-spacing: 0.04em; text-transform: uppercase; }
+.event-editor-color-search { width: 100%; min-width: 0; padding: 7px 9px; border: 1px solid var(--line-strong); border-radius: 6px; background: var(--surface); color: var(--ink); font: inherit; font-size: 12px; }
+.event-editor-color-search::placeholder { color: var(--text-soft); }
+.event-editor-color-search:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+.event-editor-color-options[data-searching="true"] .event-editor-color-active { border-color: var(--surface); box-shadow: 0 0 0 2px var(--ink); }
 .event-editor-color-options { display: grid; width: fit-content; gap: 9px; }
 .event-editor-color-quick-row { display: grid; grid-template-columns: repeat(6, 25px); gap: 7px; }
 .event-editor-color-options[data-expanded="true"] { gap: 7px; }
