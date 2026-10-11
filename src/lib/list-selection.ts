@@ -70,3 +70,43 @@ export const updateListSelection = ({
 
   return { anchorId: itemId, selection: new Set([itemId]) };
 };
+
+export type KeyboardSelectionRange = {
+  base: ReadonlySet<string>;
+  mode: "add" | "subtract";
+  path: string[];
+  selection: ReadonlySet<string>;
+};
+
+/** Each Shift gesture expands or contracts its own range over the prior selection. */
+export const advanceKeyboardSelection = (
+  selection: ReadonlySet<string>,
+  originId: string,
+  destinationId: string,
+  extendSelection: boolean,
+  previous: KeyboardSelectionRange | null,
+): { selection: Set<string>; range: KeyboardSelectionRange | null } => {
+  if (!extendSelection) return {
+    selection: selection.size > 1 ? new Set(selection) : new Set([destinationId]),
+    range: null,
+  };
+  const canContinue = previous?.path.at(-1) === originId
+    && previous.selection.size === selection.size
+    && [...selection].every(id => previous.selection.has(id));
+  const base = canContinue ? previous!.base : new Set(selection);
+  const mode = canContinue ? previous!.mode
+    : selection.has(originId) && selection.has(destinationId) ? "subtract" : "add";
+  const path = canContinue ? previous!.path : [originId];
+  const index = path.indexOf(destinationId);
+  const nextPath = index < 0 ? [...path, destinationId] : path.slice(0, index + 1);
+  const nextSelection = mode === "add" ? new Set([...base, ...nextPath]) : new Set(base);
+  if (mode === "subtract") {
+    // At the navigation boundary, the final step removes the focused item too.
+    const removed = originId === destinationId ? nextPath : nextPath.slice(0, -1);
+    removed.forEach(id => nextSelection.delete(id));
+  }
+  return {
+    selection: nextSelection,
+    range: { base, mode, path: nextPath, selection: nextSelection },
+  };
+};

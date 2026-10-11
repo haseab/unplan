@@ -1,5 +1,7 @@
 "use client";
 
+import { useKeyboardSelection } from "@/hooks/use-keyboard-selection";
+
 import { normalizeTaskFolderName as normalizeTodoistGroupName } from "@/lib/task-folder-creation";
 
 import {
@@ -275,6 +277,7 @@ export function TodoistSidebar({
   const skipNextGroupLayoutAnimationRef = React.useRef(false);
   const skipNextTaskLayoutAnimationRef = React.useRef(false);
   const taskPositionsRef = React.useRef<Map<string, number>>(new Map());
+  const navigateListSelection = useKeyboardSelection();
   const selectionAnchorRef = React.useRef<string | null>(null);
   const calendarPickerReturnTaskIdRef = React.useRef<string | null>(null);
   const calendarPickerReturnSelectionRef = React.useRef<Set<string>>(new Set());
@@ -552,7 +555,10 @@ export function TodoistSidebar({
     const rangeTargetTaskId = extendSelection && currentTaskId
       ? adjacentListItemId(orderedVisibleTaskIds, currentTaskId, direction)
       : null;
-    if (extendSelection && currentTaskId && !rangeTargetTaskId) return;
+    if (extendSelection && currentTaskId && !rangeTargetTaskId) {
+      setSelectedTaskIds(navigateListSelection(selectedTaskIds, currentTaskId, currentTaskId, true));
+      return;
+    }
     const targetIndex = currentIndex + (direction === "next" ? 1 : -1);
     const targetItem = rangeTargetTaskId
       ? { id: sidebarTaskNavigationId(rangeTargetTaskId), kind: "task" as const }
@@ -561,15 +567,10 @@ export function TodoistSidebar({
     if (targetItem.kind === "task") {
       const targetTaskId = targetItem.id.slice("task:".length);
       const selectionOriginTaskId = currentTaskId ?? targetTaskId;
-      const result = updateListSelection({
-        anchorId: selectionAnchorRef.current ?? selectionOriginTaskId,
-        intent: extendSelection ? "range" : "replace",
-        itemId: targetTaskId,
-        orderedIds: orderedVisibleTaskIds,
-        selection: selectedTaskIds,
-      });
-      selectionAnchorRef.current = result.anchorId;
-      setSelectedTaskIds(result.selection);
+      selectionAnchorRef.current = targetTaskId;
+      setSelectedTaskIds(navigateListSelection(
+        selectedTaskIds, selectionOriginTaskId, targetTaskId, extendSelection,
+      ));
     }
     window.requestAnimationFrame(() => {
       const target = groupsRef.current?.querySelector<HTMLElement>(
@@ -578,7 +579,7 @@ export function TodoistSidebar({
       target?.focus({ preventScroll: true });
       target?.scrollIntoView({ behavior: "auto", block: "nearest" });
     });
-  }, [orderedVisibleTaskIds, selectedTaskIds, sidebarNavigation]);
+  }, [navigateListSelection, orderedVisibleTaskIds, selectedTaskIds, sidebarNavigation]);
 
   const moveTaskByKeyboard = React.useCallback((
     task: TodoistTask,

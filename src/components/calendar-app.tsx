@@ -1,5 +1,7 @@
 "use client";
 
+import { useKeyboardSelection } from "@/hooks/use-keyboard-selection";
+
 
 import { useJoinNextCall } from "@/hooks/use-join-next-call";
 
@@ -189,7 +191,6 @@ import {
   eventIdsForKeyboardAction,
   eventGapFillShortcut,
   eventMoveShortcut,
-  eventNavigationRangeKeys,
   eventResizeShortcut,
   findClosestEventKey,
   findEventAfterRemovalKey,
@@ -789,17 +790,13 @@ export function CalendarApp() {
   const marqueeRef = React.useRef<ActiveMarquee | null>(null);
   const creationRef = React.useRef<ActiveEventCreation | null>(null);
   const clipboardRef = React.useRef<CalendarEvent[]>([]);
+  const navigateListSelection = useKeyboardSelection();
   const selectionAnchorRef = React.useRef<string | null>(null);
   const deactivatedEventFocusRef = React.useRef<{
     eventId: string;
     eventKey: string;
   } | null>(null);
   const eventNavigationHistoryRef = React.useRef<EventNavigationTransition[]>([]);
-  const eventNavigationRangeRef = React.useRef<{
-    anchorEventId: string;
-    anchorEventKey: string;
-    endpointEventKey: string;
-  } | null>(null);
   const pendingSidebarFocusRef = React.useRef(false);
   const eventSearchCacheRef = React.useRef<Map<string, EventSearchCacheEntry>>(
     new Map(),
@@ -1162,7 +1159,6 @@ export function CalendarApp() {
   const clearEventSelection = React.useCallback(() => {
     deactivatedEventFocusRef.current = null;
     selectionAnchorRef.current = null;
-    eventNavigationRangeRef.current = null;
     setEventDetailsPreview(null);
     setSelected(new Set());
     setRightSidebarTab("todos");
@@ -3668,27 +3664,6 @@ export function CalendarApp() {
     );
     if (!anchorElement || !anchorKey) return false;
     const anchorEventId = anchorElement.dataset.calendarEventId;
-    let range = eventNavigationRangeRef.current;
-    if (
-      extendSelection
-      && anchorEventId
-      && (
-        !range
-        || range.endpointEventKey !== anchorKey
-        || !selected.has(range.anchorEventId)
-      )
-    ) {
-      range = {
-        anchorEventId,
-        anchorEventKey: anchorKey,
-        endpointEventKey: anchorKey,
-      };
-      eventNavigationRangeRef.current = range;
-      eventNavigationHistoryRef.current.length = 0;
-    } else if (!extendSelection) {
-      eventNavigationRangeRef.current = null;
-    }
-
     const anchorRect = eventNavigationRectForElement(anchorElement);
     const history = eventNavigationHistoryRef.current;
     const backtrackKey = findEventNavigationBacktrackKey(
@@ -3726,7 +3701,11 @@ export function CalendarApp() {
         ? elements.find((element) => element.dataset.eventKey === nextKey)
         : undefined;
     }
-    if (!nextKey) return false;
+    if (!nextKey) {
+      if (!extendSelection || !anchorEventId) return false;
+      setSelected(navigateListSelection(selected, anchorEventId, anchorEventId, true));
+      return true;
+    }
     const nextEventId = nextElement?.dataset.calendarEventId;
     if (!nextElement || !nextEventId) return false;
 
@@ -3742,24 +3721,9 @@ export function CalendarApp() {
 
     selectionAnchorRef.current = nextKey;
     dismissCreationDraft();
-    if (extendSelection && range) {
-      const completedRange = { ...range, endpointEventKey: nextKey };
-      eventNavigationRangeRef.current = completedRange;
-      const eventIdsByKey = new Map(elements.flatMap((element) => {
-        const eventKey = element.dataset.eventKey;
-        const eventId = element.dataset.calendarEventId;
-        return eventKey && eventId ? [[eventKey, eventId] as const] : [];
-      }));
-      setSelected(new Set(
-        [...eventNavigationRangeKeys(completedRange.anchorEventKey, history)]
-          .flatMap((eventKey) => {
-            const eventId = eventIdsByKey.get(eventKey);
-            return eventId ? [eventId] : [];
-          }),
-      ));
-    } else {
-      setSelected(new Set([nextEventId]));
-    }
+    setSelected(navigateListSelection(
+      selected, anchorEventId ?? nextEventId, nextEventId, extendSelection,
+    ));
     nextElement.focus({ preventScroll: true });
     nextElement.scrollIntoView({
       behavior: smoothScroll ? "smooth" : "auto",
@@ -3767,7 +3731,7 @@ export function CalendarApp() {
       inline: "nearest",
     });
     return true;
-  }, [dismissCreationDraft, renderedEventElements, selected]);
+  }, [dismissCreationDraft, navigateListSelection, renderedEventElements, selected]);
 
   const eventNavigationRepeat = useKeyboardRepeat({
     delayMs: EVENT_NAVIGATION_REPEAT_DELAY_MS,
@@ -4141,8 +4105,7 @@ export function CalendarApp() {
           return;
         }
         const direction = event.key.slice(5).toLowerCase() as EventNavigationDirection;
-        const extendSelection = event.shiftKey
-          && (direction === "down" || direction === "up");
+        const extendSelection = event.shiftKey;
         const navigated = navigateBetweenEvents(
           direction,
           event.target,

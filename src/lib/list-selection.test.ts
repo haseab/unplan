@@ -1,3 +1,4 @@
+import { advanceKeyboardSelection } from "./list-selection";
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
@@ -92,4 +93,59 @@ test("post-removal selection prefers the next item and falls back to the previou
     orderedIds,
     removedIds: new Set(orderedIds),
   }), null);
+});
+
+
+test("Shift ranges contract and plain arrows preserve earlier selections", () => {
+  let state = advanceKeyboardSelection(new Set(["a"]), "a", "b", true, null);
+  state = advanceKeyboardSelection(state.selection, "b", "c", true, state.range);
+  assert.deepEqual([...state.selection], ["a", "b", "c"]);
+  state = advanceKeyboardSelection(state.selection, "c", "b", true, state.range);
+  assert.deepEqual([...state.selection], ["a", "b"]);
+  state = advanceKeyboardSelection(state.selection, "b", "d", false, state.range);
+  assert.deepEqual([...state.selection], ["a", "b"]);
+  state = advanceKeyboardSelection(state.selection, "d", "e", true, state.range);
+  assert.deepEqual([...state.selection], ["a", "b", "d", "e"]);
+  state = advanceKeyboardSelection(state.selection, "e", "d", true, state.range);
+  assert.deepEqual([...state.selection], ["a", "b", "d"]);
+});
+
+test("releasing Shift starts a fresh range over the preserved selection", () => {
+  const first = advanceKeyboardSelection(new Set(["a"]), "a", "b", true, null);
+  const second = advanceKeyboardSelection(first.selection, "b", "c", true, null);
+  const reversed = advanceKeyboardSelection(second.selection, "c", "b", true, second.range);
+  assert.deepEqual([...reversed.selection], ["a", "b"]);
+});
+
+test("Escape-cleared selection and horizontal backtracking start from current focus", () => {
+  let state = advanceKeyboardSelection(new Set(["a"]), "a", "right", true, null);
+  state = advanceKeyboardSelection(state.selection, "right", "a", true, state.range);
+  assert.deepEqual([...state.selection], ["a"]);
+  state = advanceKeyboardSelection(state.selection, "a", "left", true, state.range);
+  assert.deepEqual([...state.selection], ["a", "left"]);
+  state = advanceKeyboardSelection(new Set(), "left", "next", true, state.range);
+  assert.deepEqual([...state.selection], ["left", "next"]);
+  assert.deepEqual([...advanceKeyboardSelection(new Set(), "next", "last", false, null).selection], ["last"]);
+});
+
+
+test("a new subtractive gesture removes 3, 2, then 1 without affecting 5 and 6", () => {
+  const initial = new Set(["1", "2", "3", "5", "6"]);
+  let state = advanceKeyboardSelection(initial, "3", "2", true, null);
+  assert.deepEqual([...state.selection], ["1", "2", "5", "6"]);
+  state = advanceKeyboardSelection(state.selection, "2", "1", true, state.range);
+  assert.deepEqual([...state.selection], ["1", "5", "6"]);
+  state = advanceKeyboardSelection(state.selection, "1", "1", true, state.range);
+  assert.deepEqual([...state.selection], ["5", "6"]);
+  state = advanceKeyboardSelection(state.selection, "1", "2", true, state.range);
+  assert.deepEqual([...state.selection], ["1", "2", "5", "6"]);
+  state = advanceKeyboardSelection(state.selection, "2", "3", true, state.range);
+  assert.deepEqual([...state.selection], [...initial]);
+});
+
+test("subtraction remains subtractive when moving beyond the selected range", () => {
+  let state = advanceKeyboardSelection(new Set(["1", "2", "3", "5", "6"]), "3", "2", true, null);
+  state = advanceKeyboardSelection(state.selection, "2", "1", true, state.range);
+  state = advanceKeyboardSelection(state.selection, "1", "0", true, state.range);
+  assert.deepEqual([...state.selection], ["5", "6"]);
 });
