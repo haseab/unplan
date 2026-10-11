@@ -6,6 +6,12 @@ import {
 } from "./todoist-calendar";
 import type { TodoistTask } from "./todoist";
 
+export const taskTriagePreviousFolder = (task: TodoistTask | null, groups: readonly string[]): string | null => {
+  if (!task) return null;
+  const { triageSourceGroup } = calendarEventDetailsFromTodoistContent(task.content);
+  return triageSourceGroup && groups.includes(triageSourceGroup) ? triageSourceGroup : null;
+};
+
 /** Fresh tasks come before aging returns, preserving order within each queue. */
 export const orderTaskTriageTasks = (tasks: readonly TodoistTask[]): TodoistTask[] => {
   const fresh: TodoistTask[] = [];

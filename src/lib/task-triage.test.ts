@@ -4,6 +4,7 @@ import {
   orderTaskTriageTasks,
   taskTriageFolders,
   taskTriagePhase,
+  taskTriagePreviousFolder,
   taskTriageShortcutMode,
 } from "./task-triage";
 import type { TodoistTask } from "./todoist";
@@ -11,6 +12,16 @@ import { todoistContentReturnedToTriage } from "./todoist-calendar";
 
 const task = (id: string, content = id): TodoistTask => ({
   id, content, description: "", due: null, priority: 1, projectId: "inbox",
+});
+
+test("refreshed tasks can keep their previous folder only while it exists", () => {
+  for (const group of ["Work", "Priority Later"]) {
+    const refreshed = task("refreshed", todoistContentReturnedToTriage("Plan", group));
+    assert.equal(taskTriagePreviousFolder(refreshed, [group, "Other"]), group);
+    assert.equal(taskTriagePreviousFolder(refreshed, ["Other"]), null);
+  }
+  assert.equal(taskTriagePreviousFolder(task("fresh"), ["Work"]), null);
+  assert.equal(taskTriagePreviousFolder(null, ["Work"]), null);
 });
 
 test("fresh Todoist tasks precede monthly and priority returns without mutating the queue", () => {

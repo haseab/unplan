@@ -27,6 +27,7 @@ import {
   orderTaskTriageTasks,
   taskTriageFolders,
   taskTriagePhase,
+  taskTriagePreviousFolder,
   type TaskTriageFolder,
   type TaskTriageMode,
 } from "@/lib/task-triage";
@@ -111,6 +112,7 @@ function ExtractedTaskReview({
 }
 
 type NormalTaskReviewProps = {
+  previousFolder: string | null;
   error: string | null;
   folderScrollTop: number;
   folders: TaskTriageFolder[];
@@ -133,6 +135,7 @@ type NormalTaskReviewProps = {
 };
 
 function NormalTaskReview({
+  previousFolder,
   error,
   folderScrollTop,
   folders,
@@ -296,6 +299,19 @@ function NormalTaskReview({
         )}
       </article>
       {error && <p className="task-triage-error">{error}</p>}
+      {previousFolder && (
+        <div className="task-triage-actions">
+          <button
+            disabled={resolving || savingTitle || editingTitle}
+            onClick={() => onAssign(previousFolder)}
+            type="button"
+          >
+            <ArrowRight size={15} />
+            <span>Keep in {todoistGroupDisplayName(previousFolder)}</span>
+            <kbd>→</kbd>
+          </button>
+        </div>
+      )}
       <TaskFolderPicker
         folderScrollTop={folderScrollTop} folders={folders} allFolders={allFolders}
         highlightedFolder={highlightedFolder} onAssign={onAssign} onCreateFolder={onCreateFolder}
@@ -373,6 +389,7 @@ export function TaskTriageDialog({
     ? extractedTasks[0] ?? null
     : phase === "normal" ? orderedTasks[0] ?? null : null;
   const priorityReviewVisible = open && phase === "priority" && !resolving;
+  const previousFolder = taskTriagePreviousFolder(currentTask, groups);
   const folders = React.useMemo(() => taskTriageFolders({
     groups,
     order: folderPreferences.groupOrder,
@@ -532,6 +549,21 @@ export function TaskTriageDialog({
         void scheduleCurrentTask();
         return;
       }
+      if (
+        phase === "normal"
+        && previousFolder
+        && event.key === "ArrowRight"
+        && !event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey
+        && !event.repeat && !event.isComposing
+        && !(event.target instanceof HTMLElement
+          && (event.target.matches("textarea, input:not([aria-label='Search folders'])")
+            || event.target.isContentEditable))
+      ) {
+        event.preventDefault();
+        event.stopPropagation();
+        void assignFolder(previousFolder);
+        return;
+      }
       if (phase !== "extracted" || event.metaKey || event.ctrlKey || event.altKey || event.repeat) return;
       if (event.key === "ArrowLeft") {
         event.preventDefault();
@@ -545,7 +577,7 @@ export function TaskTriageDialog({
     };
     window.addEventListener("keydown", handleKeyDown, true);
     return () => window.removeEventListener("keydown", handleKeyDown, true);
-  }, [close, currentTask, deleteNormalTask, open, openOriginalTask, phase, resolveExtracted, scheduleCurrentTask]);
+  }, [assignFolder, close, currentTask, deleteNormalTask, open, openOriginalTask, phase, previousFolder, resolveExtracted, scheduleCurrentTask]);
 
   if (!open || (!currentTask && !priorityReviewVisible)) return null;
 
@@ -612,6 +644,7 @@ export function TaskTriageDialog({
           />
         ) : (
           <NormalTaskReview
+            previousFolder={previousFolder}
             error={error}
             folderScrollTop={folderScrollTop}
             allFolders={taskTriageFolders({ groups, order: folderPreferences.groupOrder, parents: folderPreferences.groupParents })}
