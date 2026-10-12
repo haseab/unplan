@@ -20,6 +20,7 @@ import { todoistTaskUrl, type TodoistTask } from "@/lib/todoist";
 import {
   calendarEventDetailsFromTodoistContent,
   isPriorityTodoistGroup,
+  priorityTodoistGroupRefreshDays,
   todoistGroupDisplayName,
 } from "@/lib/todoist-calendar";
 import { readTodoistFolderPreferences } from "@/lib/todoist-folder-backup";
@@ -233,7 +234,7 @@ function NormalTaskReview({
                 {refreshedFromPriority ? "Refreshed priority task" : "Refreshed task"}
               </strong>
               <small>
-                Returned from {todoistGroupDisplayName(details.triageSourceGroup)} {refreshedFromPriority ? "after 3 days" : "at month end"}
+                Returned from {todoistGroupDisplayName(details.triageSourceGroup)} {refreshedFromPriority ? `after ${priorityTodoistGroupRefreshDays(details.triageSourceGroup) ?? 3} days` : "at month end"}
               </small>
             </span>
           </div>

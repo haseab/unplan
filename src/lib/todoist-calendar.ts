@@ -29,9 +29,11 @@ export const isPriorityTodoistGroup = (group: string) => {
   return leaf === "priority" || leaf.startsWith("priority ");
 };
 
-export const isThreeDayRefreshPriorityTodoistGroup = (group: string) => {
+export const priorityTodoistGroupRefreshDays = (group: string): number | null => {
   const leaf = normalizedTodoistGroupLeaf(group);
-  return leaf === "priority later" || leaf === "priority tomorrow";
+  if (leaf === "priority tomorrow") return 3;
+  if (leaf === "priority later") return 7;
+  return null;
 };
 
 export const isImmediatePriorityTodoistGroup = (group: string) =>

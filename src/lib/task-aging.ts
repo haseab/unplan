@@ -7,14 +7,14 @@ import type { TodoistTask } from "./todoist";
 import {
   type TodoistGroupParents,
   calendarEventDetailsFromTodoistContent,
-  isThreeDayRefreshPriorityTodoistGroup,
+  priorityTodoistGroupRefreshDays,
   isPriorityTodoistGroup,
   isTodoistTriageGroup,
   todoistContentReturnedToTriage,
   todoistContentWithGroupChangedAt,
 } from "./todoist-calendar";
 
-export const PRIORITY_REFRESH_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1_000;
+const DAY_MS = 24 * 60 * 60 * 1_000;
 export const TASK_AGING_MAX_WRITES_PER_RUN = 30;
 export const TASK_AGING_RECONCILIATION_COOLDOWN_MS = 15 * 60 * 1_000;
 export const TASK_AGING_RECONCILIATION_STORAGE_KEY =
@@ -45,7 +45,8 @@ export const taskAgingUpdate = (
 
   const priority = isPriorityTodoistGroup(group);
   const activity = taskFolderActivityState(group, folders.activity, folders.parents);
-  if (priority ? !isThreeDayRefreshPriorityTodoistGroup(group) : !activity.active) return null;
+  const priorityRefreshDays = priorityTodoistGroupRefreshDays(group);
+  if (priority ? priorityRefreshDays === null : !activity.active) return null;
 
   const changedAtMs = Date.parse(details.groupChangedAt ?? "");
   const nowMs = now.getTime();
@@ -59,7 +60,7 @@ export const taskAgingUpdate = (
 
   if (priority) {
     if (
-      nowMs - changedAtMs >= PRIORITY_REFRESH_MAX_AGE_MS
+      nowMs - changedAtMs >= priorityRefreshDays! * DAY_MS
     ) {
       return {
         content: todoistContentReturnedToTriage(task.content, group, now),

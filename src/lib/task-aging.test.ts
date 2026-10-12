@@ -4,7 +4,6 @@ import assert from "node:assert/strict";
 import type { TodoistTask } from "./todoist";
 import {
   isTaskAgingReconciliationCoolingDown,
-  PRIORITY_REFRESH_MAX_AGE_MS,
   TASK_AGING_MAX_WRITES_PER_RUN,
   TASK_AGING_RECONCILIATION_COOLDOWN_MS,
   taskAgingBatch,
@@ -25,6 +24,8 @@ const task = (content: string, optimistic = false, id = "task-1"): TodoistTask =
   projectId: "inbox",
 });
 
+const DAY_MS = 24 * 60 * 60 * 1_000;
+
 const now = new Date("2026-09-05T18:30:00.000Z");
 
 test("stamps legacy filed tasks from the time they are first observed", () => {
@@ -42,17 +43,17 @@ test("stamps legacy filed tasks from the time they are first observed", () => {
   }
 });
 
-for (const group of ["Priority Later", "Priority Tomorrow", "Priority / PRIORITY TOMORROW"]) {
-  test(`leaves ${group} tasks alone before the three-day boundary`, () => {
-    const changedAt = new Date(now.getTime() - PRIORITY_REFRESH_MAX_AGE_MS + 1);
+for (const [group, days] of [["Priority Later", 7], ["Priority Tomorrow", 3], ["Priority / PRIORITY TOMORROW", 3], ["Priority / PRIORITY LATER", 7]] as const) {
+  test(`leaves ${group} tasks alone before the ${days}-day boundary`, () => {
+    const changedAt = new Date(now.getTime() - days * DAY_MS + 1);
     assert.equal(taskAgingUpdate(
       task(todoistContentWithGroupChange("Plan", group, changedAt)),
       now,
     ), null);
   });
 
-  test(`returns ${group} tasks to triage at the three-day boundary`, () => {
-    const changedAt = new Date(now.getTime() - PRIORITY_REFRESH_MAX_AGE_MS);
+  test(`returns ${group} tasks to triage at the ${days}-day boundary`, () => {
+    const changedAt = new Date(now.getTime() - days * DAY_MS);
     const update = taskAgingUpdate(
       task(todoistContentWithGroupChange("Plan", group, changedAt)),
       now,
@@ -130,7 +131,7 @@ test("ignores invalid stored activity settings", () => {
 });
 
 test("clears refreshed-task context when the task is filed again", () => {
-  const old = new Date(now.getTime() - PRIORITY_REFRESH_MAX_AGE_MS);
+  const old = new Date(now.getTime() - 7 * DAY_MS);
   const returned = taskAgingUpdate(
     task(todoistContentWithGroupChange("Plan", "Priority Later", old)),
     now,
@@ -190,7 +191,7 @@ test("caps each run and prioritizes real retriage work over legacy stamps", () =
     todoistContentWithGroupChange(
       "Expired",
       "Priority Later",
-      new Date(now.getTime() - PRIORITY_REFRESH_MAX_AGE_MS),
+      new Date(now.getTime() - 7 * DAY_MS),
     ),
     false,
     "expired",
