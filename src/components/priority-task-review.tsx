@@ -4,7 +4,6 @@ import * as React from "react";
 import { ArrowLeft, ArrowRight, ArrowUp, RefreshCw, CalendarPlus, Check, Folder, X } from "lucide-react";
 import { handlePriorityReviewKeyDown } from "@/lib/priority-review-keyboard";
 import { triggerToastUndo, triggerToastSubmit } from "@/lib/action-toast";
-import { CalendarTaskFolderDialog } from "@/components/calendar-task-folder-dialog";
 import { CalendarEventContent } from "@/components/calendar-event-content";
 import { usePriorityTaskReview } from "@/hooks/use-priority-task-review";
 import type { CalendarSource } from "@/lib/calendar-types";
@@ -15,8 +14,6 @@ import { calendarEventDetailsFromTodoistContent, todoistGroupDisplayName, type T
 
 type Props = {
   tasks: TodoistTask[];
-  groups: string[];
-  onCreateFolder: (name: string, parent: string | null) => string;
   onAssignGroup: (task: TodoistTask, group: string, onRestore?: () => void) => Promise<void>;
   calendars: CalendarSource[];
   groupParents: TodoistGroupParents;
@@ -27,9 +24,11 @@ type Props = {
   onClose: () => void;
 };
 
-export function PriorityTaskReview({ tasks, calendars, groupParents, groups, onCreateFolder, onAssignGroup, onSchedule, onDelete, onClose, onRestore, initialReturning }: Props) {
+export function PriorityTaskReview({ tasks, calendars, groupParents, onAssignGroup, onSchedule, onDelete, onClose, onRestore, initialReturning }: Props) {
   const { remaining, departure, returning, restoredAtFront, error, resolve, finished } = usePriorityTaskReview(tasks, onSchedule, onDelete, onRestore, initialReturning, onAssignGroup);
-  const [retriaging, setRetriaging] = React.useState(false);
+  const [selectedId, setSelectedId] = React.useState<string | null>(null);
+  const current = remaining.find((task) => task.id === selectedId) ?? remaining[0];
+  const resolveCurrent = React.useCallback((action: "left" | "right" | "up" | "delete") => resolve(action, current), [resolve, current]);
   const reviewRef = React.useRef<HTMLElement>(null);
   const pointer = React.useRef<{ id: number; x: number; y: number } | null>(null);
   const [dragX, setDragX] = React.useState(0);
@@ -54,17 +53,13 @@ export function PriorityTaskReview({ tasks, calendars, groupParents, groups, onC
   }, []);
 
   React.useEffect(() => {
-    if (retriaging) return;
     const onKeyDown = (event: KeyboardEvent) => handlePriorityReviewKeyDown(event, {
-      resolve: (action) => {
-        if (action === "up") { if (!departure) setRetriaging(true); }
-        else resolve(action);
-      },
+      resolve: resolveCurrent,
       undo: triggerToastUndo,
       submit: triggerToastSubmit,
       close: onClose,
       focusNext: (backward) => {
-        const buttons = [...(reviewRef.current?.querySelectorAll<HTMLButtonElement>("button:not(:disabled)") ?? [])];
+        const buttons = [...(reviewRef.current?.querySelectorAll<HTMLElement>("button:not(:disabled), [role=button][tabindex=\"0\"]") ?? [])];
         const index = buttons.findIndex((button) => button === document.activeElement);
         const next = index < 0 ? (backward ? buttons.length - 1 : 0)
           : (index + (backward ? -1 : 1) + buttons.length) % buttons.length;
@@ -73,16 +68,7 @@ export function PriorityTaskReview({ tasks, calendars, groupParents, groups, onC
     });
     window.addEventListener("keydown", onKeyDown, true);
     return () => window.removeEventListener("keydown", onKeyDown, true);
-  }, [onClose, resolve, retriaging, departure]);
-
-  if (retriaging && remaining[0]) return (
-    <CalendarTaskFolderDialog
-      count={1} groups={groups} taskTitle={calendarEventDetailsFromTodoistContent(remaining[0].content).title || remaining[0].content}
-      onCreateFolder={onCreateFolder}
-      onClose={() => { setRetriaging(false); window.requestAnimationFrame(() => reviewRef.current?.focus()); }}
-      onAssign={(group) => { setRetriaging(false); resolve("up", group); window.requestAnimationFrame(() => reviewRef.current?.focus()); }}
-    />
-  );
+  }, [onClose, resolveCurrent]);
 
   if (finished) return (
     <section ref={reviewRef} tabIndex={-1} className="task-triage-modal task-triage-complete" aria-live="polite">
@@ -104,15 +90,16 @@ export function PriorityTaskReview({ tasks, calendars, groupParents, groups, onC
       </header>
       <div className="priority-review-sections" aria-label="Remaining tasks by priority">
         {PRIORITY_REVIEW_SECTIONS.map((section) => (
-          <div key={section} data-current={cards[0] && priorityReviewSection(cards[0], groupParents) === section ? "true" : undefined}>
+          <div key={section} data-current={current && priorityReviewSection(current, groupParents) === section ? "true" : undefined}>
             <span>{section}</span>
             <strong>{remaining.filter((task) => priorityReviewSection(task, groupParents) === section).length}</strong>
           </div>
         ))}
       </div>
       <div className="priority-review-window" aria-label="Priority task queue">
-        <div className="priority-review-track" data-returning={restoredAtFront ? "true" : undefined} key={cards[0]?.id}>
-          {cards.slice(0, 4).map((task, index) => {
+        <div className="priority-review-track" data-returning={restoredAtFront ? "true" : undefined}>
+          {cards.map((task, index) => {
+            const active = task.id === (departure?.task.id ?? current?.id);
             const details = calendarEventDetailsFromTodoistContent(task.content);
             const calendar = calendars.find(({ id }) => id === details.calendarId) ?? calendars[0];
             const palette = getEventPalette(calendar?.backgroundColor ?? "#a4bdfc");
@@ -125,19 +112,24 @@ export function PriorityTaskReview({ tasks, calendars, groupParents, groups, onC
                 key={task.id}
                 className="calendar-event priority-review-block"
                 data-density="details"
-                data-active={index === 0 ? "true" : undefined}
-                data-departure={index === 0 ? departure?.direction : undefined}
-                data-returning={index === 0 ? returning?.direction : undefined}
-                aria-hidden={index > 0 ? true : undefined}
+                data-active={active ? "true" : undefined}
+                data-departure={active ? departure?.direction : undefined}
+                data-returning={task.id === returning?.task.id ? returning.direction : undefined}
+                tabIndex={0}
+                role="button"
+                aria-pressed={active}
+                onFocus={() => { if (!departure) setSelectedId(task.id); }}
+                onClick={() => { if (!departure) setSelectedId(task.id); }}
+                onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setSelectedId(task.id); } }}
                 style={{
                   "--event-accent": palette.accent,
                   "--event-surface-dark": palette.darkSurface,
                   "--event-surface-light": palette.lightSurface,
                   "--event-text": "var(--ink)",
-                  transform: index === 0 && !departure ? `translateX(${dragX}px)` : undefined,
+                  transform: active && !departure ? `translateX(${dragX}px)` : undefined,
                 } as React.CSSProperties}
                 onPointerDown={(event) => {
-                  if (index || departure || event.button !== 0) return;
+                  if (!active || departure || event.button !== 0) return;
                   pointer.current = { id: event.pointerId, x: event.clientX, y: event.clientY };
                   event.currentTarget.setPointerCapture(event.pointerId);
                 }}
@@ -151,7 +143,7 @@ export function PriorityTaskReview({ tasks, calendars, groupParents, groups, onC
                   setDragX(0);
                   if (!start || start.id !== event.pointerId) return;
                   const direction = prioritySwipeDirection(event.clientX - start.x, event.clientY - start.y);
-                  if (direction) resolve(direction);
+                  if (direction) resolveCurrent(direction);
                 }}
                 onPointerCancel={() => { pointer.current = null; setDragX(0); }}
               >
@@ -169,13 +161,13 @@ export function PriorityTaskReview({ tasks, calendars, groupParents, groups, onC
       </div>
       {error && <p className="task-triage-error" role="alert">{error}</p>}
       <div className="task-triage-actions priority-review-actions">
-        <button className="task-triage-keep" disabled={!!departure} onClick={() => resolve("left")} type="button">
+        <button className="task-triage-keep" disabled={!!departure} onClick={() => resolveCurrent("left")} type="button">
           <CalendarPlus size={15} /><span>Schedule now</span><ArrowLeft size={15} />
         </button>
-        <button disabled={!!departure} onClick={() => setRetriaging(true)} type="button">
+        <button disabled={!!departure} onClick={() => resolveCurrent("up")} type="button">
           <RefreshCw size={15} /><span>Retriage</span><ArrowUp size={15} />
         </button>
-        <button disabled={!!departure} onClick={() => resolve("right")} type="button">
+        <button disabled={!!departure} onClick={() => resolveCurrent("right")} type="button">
           <Folder size={15} /><span>Keep in folder</span><ArrowRight size={15} />
         </button>
       </div>

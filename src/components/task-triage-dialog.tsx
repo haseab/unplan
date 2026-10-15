@@ -590,8 +590,6 @@ export function TaskTriageDialog({
           tasks={priorityReviewTasks(tasks, folderPreferences.groupParents)}
           groupParents={folderPreferences.groupParents}
           calendars={calendars}
-          groups={groups}
-          onCreateFolder={onCreateFolder}
           onAssignGroup={onAssignGroup}
           onSchedule={onScheduleTask}
           onDelete={onDeleteTask}

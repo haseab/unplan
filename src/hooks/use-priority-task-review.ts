@@ -29,11 +29,12 @@ export function usePriorityTaskReview(
   const remaining = remainingPriorityReviewTasks(tasks, state);
   const current = remaining[0];
 
-  const resolve = React.useCallback((action: PriorityReviewDirection | "up" | "delete", group?: string) => {
-    if (!current || locked.current || (action === "up" && !group)) return;
+  const resolve = React.useCallback((action: PriorityReviewDirection | "up" | "delete", task?: TodoistTask) => {
+    const target = task ?? current;
+    if (!target || locked.current) return;
     locked.current = true;
     setError(null);
-    const card: PriorityReviewCard = { task: current, direction: action === "delete" ? "up" : action };
+    const card: PriorityReviewCard = { task: target, direction: action === "delete" ? "up" : action };
     dispatch({ type: "resolve", card });
     const restore = () => {
       dispatch({ type: "restore", card });
@@ -43,14 +44,14 @@ export function usePriorityTaskReview(
     // Queue the mutation immediately so Undo also works during the exit animation.
     if (action !== "right") {
       const mutate = action === "up"
-        ? (task: TodoistTask, onRestore: () => void) => onAssignGroup(task, group!, onRestore)
+        ? (task: TodoistTask, onRestore: () => void) => onAssignGroup(task, "Ungrouped", onRestore)
         : action === "delete" ? onDelete : onSchedule;
-      void mutate(current, restore).catch((caught) => {
+      void mutate(target, restore).catch((caught) => {
         restore();
         setError(caught instanceof Error ? caught.message : `That task could not be ${action === "up" ? "retriaged" : action === "delete" ? "deleted" : "scheduled"}`);
       });
     } else {
-      queueActionToast(`Kept ${todoistTaskDisplayTitle(current.content)} in folder`, {
+      queueActionToast(`Kept ${todoistTaskDisplayTitle(target.content)} in folder`, {
         duration,
         onUndo: restore,
         onSubmit: () => {},

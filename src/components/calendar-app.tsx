@@ -304,6 +304,7 @@ import {
   todoistContentWithDuration,
   todoistContentWithGroup,
   todoistContentWithGroupChange,
+  todoistContentReturnedToTriage,
   todoistContentWithTitle,
   todoistEventRenderedHeight,
   todoistKeyboardTaskMoveChanges,
@@ -6596,7 +6597,9 @@ export function CalendarApp() {
           ) ?? defaultTaskCalendar;
           const groupedTask = {
             ...task,
-            content: todoistContentWithGroupChange(
+            content: group === "Ungrouped" && onRestore
+              ? todoistContentReturnedToTriage(task.content, taskDetails.group ?? "Priority")
+              : todoistContentWithGroupChange(
               taskCalendar
                 ? todoistContentWithCalendar(task.content, taskCalendar.id)
                 : task.content,
@@ -6606,7 +6609,7 @@ export function CalendarApp() {
           };
           setReturningTriageTask(null);
           replaceLocalTodoistTask(groupedTask);
-          queueActionToast(`Moved ${title} to ${group}`, {
+          queueActionToast(`Moved ${title} to ${group === "Ungrouped" ? "Retriage" : group}`, {
             duration: toastDuration,
             onUndo: () => {
               onRestore?.();
