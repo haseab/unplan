@@ -214,7 +214,7 @@ export function MultiEventSidebar({
             return (
               <div className="multi-event-selection-row" key={`${event.calendarId}-${event.id}`}>
                 <span style={{ backgroundColor: event.color || calendar?.backgroundColor }} />
-                <div><strong>{event.title}</strong><small>{event.allDay ? format(new Date(event.start), "EEE, MMM d · All day") : format(new Date(event.start), "EEE, MMM d · h:mm a")}</small></div>
+                <div><strong>{event.title}</strong><small>{event.allDay ? format(new Date(event.start), "EEE, MMM d · 'All day'") : format(new Date(event.start), "EEE, MMM d · h:mm a")}</small></div>
                 <button aria-label={`Remove ${event.title} from selection`} onClick={() => onRemoveSelection(event.id)}><X size={12} /></button>
               </div>
             );
