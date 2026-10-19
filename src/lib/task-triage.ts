@@ -1,6 +1,7 @@
 import {
   calendarEventDetailsFromTodoistContent,
   flattenTodoistGroupTree,
+  priorityTodoistGroupRefreshDays,
   todoistGroupAncestors,
   type TodoistGroupParents,
 } from "./todoist-calendar";
@@ -12,15 +13,33 @@ export const taskTriagePreviousFolder = (task: TodoistTask | null, groups: reado
   return triageSourceGroup && groups.includes(triageSourceGroup) ? triageSourceGroup : null;
 };
 
-/** Fresh tasks come before aging returns, preserving order within each queue. */
+/** Fresh tasks first, then refreshed categories: Tomorrow, Later, and the rest. */
 export const orderTaskTriageTasks = (tasks: readonly TodoistTask[]): TodoistTask[] => {
   const fresh: TodoistTask[] = [];
-  const returned: TodoistTask[] = [];
+  const returned = new Map<string, { tasks: TodoistTask[]; priority: number }>();
   for (const task of tasks) {
     const { triageSourceGroup } = calendarEventDetailsFromTodoistContent(task.content);
-    (triageSourceGroup ? returned : fresh).push(task);
+    if (!triageSourceGroup) {
+      fresh.push(task);
+      continue;
+    }
+    const category = triageSourceGroup.trim().toLocaleLowerCase();
+    let bucket = returned.get(category);
+    if (!bucket) {
+      bucket = {
+        tasks: [],
+        priority: priorityTodoistGroupRefreshDays(triageSourceGroup) ?? Number.MAX_SAFE_INTEGER,
+      };
+      returned.set(category, bucket);
+    }
+    bucket.tasks.push(task);
   }
-  return [...fresh, ...returned];
+  return [
+    ...fresh,
+    ...[...returned.values()]
+      .sort((left, right) => left.priority - right.priority)
+      .flatMap(({ tasks }) => tasks),
+  ];
 };
 
 export type TaskTriageFolder = {

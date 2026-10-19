@@ -30,10 +30,42 @@ test("fresh Todoist tasks precede monthly and priority returns without mutating 
   const direct = task("direct");
   const ungrouped = task("ungrouped", "Fresh [[unplan:v1;group=Ungrouped]]");
   const input = Object.freeze([monthly, direct, priority, ungrouped]);
-  assert.deepEqual(orderTaskTriageTasks(input), [direct, ungrouped, monthly, priority]);
+  assert.deepEqual(orderTaskTriageTasks(input), [direct, ungrouped, priority, monthly]);
   assert.deepEqual(input, [monthly, direct, priority, ungrouped]);
-  assert.deepEqual(orderTaskTriageTasks([monthly, priority]), [monthly, priority]);
+  assert.deepEqual(orderTaskTriageTasks([monthly, priority]), [priority, monthly]);
   assert.deepEqual(orderTaskTriageTasks([]), []);
+});
+
+test("refreshed tasks stay grouped by category with Tomorrow before Later", () => {
+  const returned = (id: string, group: string) =>
+    task(id, todoistContentReturnedToTriage(id, group));
+  const work = returned("work-1", "Work");
+  const later = returned("later-1", "Priority Later");
+  const personal = returned("personal", "Personal");
+  const tomorrow = returned("tomorrow-1", "Priority Tomorrow");
+  const work2 = returned("work-2", "Work");
+  const tomorrow2 = returned("tomorrow-2", "Priority Tomorrow");
+  const later2 = returned("later-2", "Priority Later");
+  const fresh = task("fresh");
+  const input = Object.freeze([work, later, personal, tomorrow, work2, tomorrow2, fresh, later2]);
+
+  assert.deepEqual(orderTaskTriageTasks(input), [
+    fresh, tomorrow, tomorrow2, later, later2, work, work2, personal,
+  ]);
+  assert.deepEqual(input, [work, later, personal, tomorrow, work2, tomorrow2, fresh, later2]);
+});
+
+test("refreshed category ordering recognizes nested and case-insensitive priority names", () => {
+  const returned = (id: string, group: string) =>
+    task(id, todoistContentReturnedToTriage(id, group));
+  const work = returned("work", "Work");
+  const later = returned("later", "Priority / PRIORITY LATER");
+  const tomorrow = returned("tomorrow", "Priority / PRIORITY TOMORROW");
+  const tomorrow2 = returned("tomorrow-2", "Priority / Priority Tomorrow");
+
+  assert.deepEqual(orderTaskTriageTasks([work, later, tomorrow, tomorrow2]), [
+    tomorrow, tomorrow2, later, work,
+  ]);
 });
 
 test("new arrivals take precedence even after the fresh queue was exhausted", () => {
