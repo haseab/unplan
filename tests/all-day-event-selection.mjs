@@ -16,14 +16,14 @@ try {
   start.setHours(0, 0, 0, 0);
   const end = new Date(start);
   end.setDate(end.getDate() + 1);
-  const allDay = { id: `${calendar.id}:all-day`, providerEventId: 'all-day', calendarId: calendar.id, title: 'All-day selection test', start: start.toISOString(), end: end.toISOString(), allDay: true, calendarColor: '#4666e5', color: '#4666e5', provider: 'google' };
+  const allDay = { id: `${calendar.id}:all-day`, providerEventId: 'all-day', calendarId: calendar.id, title: "Afif's Birthday", start: start.toISOString(), end: end.toISOString(), allDay: true, calendarColor: '#4666e5', color: '#4666e5', provider: 'google' };
   const timedStart = new Date(start);
-  timedStart.setHours(12);
-  const timed = { ...allDay, id: `${calendar.id}:timed`, providerEventId: 'timed', title: 'Timed selection test', start: timedStart.toISOString(), end: new Date(+timedStart + 3600000).toISOString(), allDay: false };
+  const timed = { ...allDay, id: `${calendar.id}:timed`, providerEventId: 'timed', title: 'Get Hand sanitizer', start: timedStart.toISOString(), end: new Date(+timedStart + 15 * 60000).toISOString(), allDay: false };
+  const candle = { ...timed, id: `${calendar.id}:candle`, providerEventId: 'candle', title: 'Get scented candle', start: timed.end, end: new Date(+timedStart + 30 * 60000).toISOString() };
   await context.route('**/api/**', async route => {
     const path = new URL(route.request().url()).pathname;
     if (path === '/api/google/calendars') return route.fulfill({ json: { calendars: [calendar] } });
-    if (path === '/api/google/events') return route.fulfill({ json: { events: [allDay, timed], errors: [] } });
+    if (path === '/api/google/events') return route.fulfill({ json: { events: [allDay, timed, candle], errors: [] } });
     return route.fulfill({ json: {} });
   });
   const page = await context.newPage();
@@ -40,11 +40,28 @@ try {
   assert.equal(await rows.count(), 2);
   const dayLabel = new Intl.DateTimeFormat('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'America/Los_Angeles' }).format(start);
   assert.equal(await rows.filter({ hasText: allDay.title }).locator('small').textContent(), `${dayLabel} · All day`);
-  assert.equal(await rows.filter({ hasText: timed.title }).locator('small').textContent(), `${dayLabel} · 12:00 PM`);
+  assert.equal(await rows.filter({ hasText: timed.title }).locator('small').textContent(), `${dayLabel} · 12:00 AM`);
   await page.getByRole('button', { name: `Remove ${timed.title} from selection`, exact: true }).click();
   await page.locator('.event-details').waitFor();
+
+  const timedButton = page.locator('.calendar-event').filter({ hasText: timed.title }).first();
+  const candleButton = page.locator('.calendar-event').filter({ hasText: candle.title }).first();
+  await timedButton.click();
+  await page.keyboard.press('Shift+ArrowDown');
+  await rows.filter({ hasText: candle.title }).waitFor();
+  assert.equal(await rows.count(), 2);
+  assert.equal(await rows.filter({ hasText: allDay.title }).count(), 0);
+  assert.equal(await candleButton.evaluate(element => element.classList.contains('event-selected')), true);
+  assert.equal(await allDayButton.evaluate(element => element.classList.contains('event-selected')), false);
+  await page.keyboard.press('Shift+ArrowUp');
+  await page.locator('.event-details').waitFor();
+  assert.equal(await timedButton.evaluate(element => element.classList.contains('event-selected')), true);
+  assert.equal(await candleButton.evaluate(element => element.classList.contains('event-selected')), false);
+  await page.keyboard.press('Shift+ArrowUp');
+  await rows.filter({ hasText: allDay.title }).waitFor();
+  assert.equal(await rows.count(), 2);
   assert.deepEqual(errors, []);
-  console.log('[TEST:ALL-DAY-SELECTION] PASS single selection, mixed selection date labels, deselection, and no runtime errors');
+  console.log('[TEST:ALL-DAY-SELECTION] PASS mixed selection date labels, midnight Shift+Down selects the candle, Shift+Up reverses and reaches the birthday, and no runtime errors');
 } finally {
   await browser.close();
 }

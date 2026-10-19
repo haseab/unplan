@@ -15,6 +15,7 @@ export const eventNavigationRangeKeys = (
 ]);
 
 export type EventNavigationRect = {
+  allDay?: boolean;
   bottom: number;
   dayIndex: number;
   endMinute: number;
@@ -680,6 +681,7 @@ const compareVerticalEventOrder = (
   first: EventNavigationRect,
   second: EventNavigationRect,
 ) => first.dayIndex - second.dayIndex
+  || Number(Boolean(second.allDay)) - Number(Boolean(first.allDay))
   || first.startMinute - second.startMinute
   || first.endMinute - second.endMinute
   || first.left - second.left

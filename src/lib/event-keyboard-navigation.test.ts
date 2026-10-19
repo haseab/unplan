@@ -613,6 +613,27 @@ test("vertical navigation follows chronological order", () => {
   );
 });
 
+test("all-day events precede midnight tasks in vertical navigation", () => {
+  const birthday = { ...rect("afifs-birthday", 1, 100, 20), allDay: true, startMinute: 0, endMinute: 1440 };
+  const sanitizer = { ...rect("get-hand-sanitizer", 1, 100, 80), startMinute: 0, endMinute: 15 };
+  const candle = { ...rect("get-scented-candle", 1, 100, 140), startMinute: 15, endMinute: 30 };
+  const events = [sanitizer, birthday, candle];
+
+  assert.equal(findVerticalEventKey(sanitizer, events, "down"), candle.eventKey);
+  assert.equal(findVerticalEventKey(candle, events, "up"), sanitizer.eventKey);
+  assert.equal(findVerticalEventKey(sanitizer, events, "up"), birthday.eventKey);
+  assert.equal(findVerticalEventKey(birthday, events, "down"), sanitizer.eventKey);
+});
+
+test("vertical navigation reaches the next day's all-day events before its timed tasks", () => {
+  const lateTask = rect("late-task", 0, 100, 23 * 60 + 30, 80, 30);
+  const birthday = { ...rect("birthday", 1, 210, 20), allDay: true, startMinute: 0, endMinute: 1440 };
+  const midnightTask = { ...rect("midnight-task", 1, 210, 80), startMinute: 0, endMinute: 15 };
+
+  assert.equal(findVerticalEventKey(lateTask, [midnightTask, birthday], "down"), birthday.eventKey);
+  assert.equal(findVerticalEventKey(birthday, [lateTask, midnightTask], "up"), lateTask.eventKey);
+});
+
 test("vertical navigation reaches narrow events in overlapping columns", () => {
   const moving = rect("moving", 1, 40, 80, 105, 35);
   const sendContent = rect("send-content", 1, 200, 120, 135, 45);

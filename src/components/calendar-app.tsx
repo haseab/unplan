@@ -350,6 +350,7 @@ const eventNavigationRectForElement = (
 ): EventNavigationRect => {
   const rect = element.getBoundingClientRect();
   return {
+    allDay: element.classList.contains("all-day-event"),
     bottom: rect.bottom,
     dayIndex: Number(element.dataset.eventDayIndex),
     endMinute: Number(element.dataset.eventEndMinute),
