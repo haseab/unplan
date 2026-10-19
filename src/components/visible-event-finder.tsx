@@ -6,7 +6,9 @@ import type { CalendarEvent } from "@/lib/calendar-types";
 import { searchVisibleEvents } from "@/lib/visible-event-search";
 
 type VisibleEventFinderProps = {
+  activeEventKey: string | null;
   getViewportEvents: () => CalendarEvent[];
+  inputRef: React.RefObject<HTMLInputElement | null>;
   onCancel: () => void;
   onCommit: (event: CalendarEvent) => void;
   onMatchesChange: (eventKeys: ReadonlySet<string>) => void;
@@ -17,36 +19,29 @@ const SEARCH_DEBOUNCE_MS = 0;
 const eventKey = (event: CalendarEvent) => `${event.calendarId}:${event.id}`;
 
 export function VisibleEventFinder({
+  activeEventKey,
   getViewportEvents,
+  inputRef,
   onCancel,
   onCommit,
   onMatchesChange,
   onNavigate,
 }: VisibleEventFinderProps) {
-  const [activeIndex, setActiveIndex] = React.useState(-1);
   const [candidateCount, setCandidateCount] = React.useState(
     () => getViewportEvents().length,
   );
   const [query, setQuery] = React.useState("");
   const [results, setResults] = React.useState<CalendarEvent[]>([]);
   const [searching, setSearching] = React.useState(false);
-  const activeEventKeyRef = React.useRef<string | null>(null);
-  const inputRef = React.useRef<HTMLInputElement>(null);
   const resolvedActiveIndex = results.length
-    ? Math.min(Math.max(activeIndex, 0), results.length - 1)
+    ? Math.max(results.findIndex((event) => eventKey(event) === activeEventKey), 0)
     : -1;
 
   const searchViewport = React.useCallback((searchQuery: string) => {
     const viewportEvents = getViewportEvents();
     const nextResults = searchVisibleEvents(viewportEvents, searchQuery);
-    const retainedActiveIndex = nextResults.findIndex(
-      (event) => eventKey(event) === activeEventKeyRef.current,
-    );
     setCandidateCount(viewportEvents.length);
     setResults(nextResults);
-    setActiveIndex(nextResults.length
-      ? Math.max(retainedActiveIndex, 0)
-      : -1);
     setSearching(false);
     onMatchesChange(new Set(nextResults.map(eventKey)));
   }, [getViewportEvents, onMatchesChange]);
@@ -54,7 +49,7 @@ export function VisibleEventFinder({
   React.useLayoutEffect(() => {
     inputRef.current?.focus({ preventScroll: true });
     inputRef.current?.select();
-  }, []);
+  }, [inputRef]);
 
   React.useEffect(() => {
     const searchQuery = query.trim();
@@ -89,18 +84,18 @@ export function VisibleEventFinder({
   React.useEffect(() => {
     if (resolvedActiveIndex < 0) return;
     const activeEvent = results[resolvedActiveIndex];
-    if (activeEvent) {
-      activeEventKeyRef.current = eventKey(activeEvent);
+    if (activeEvent && eventKey(activeEvent) !== activeEventKey) {
       onNavigate(activeEvent);
     }
-  }, [onNavigate, resolvedActiveIndex, results]);
+  }, [activeEventKey, onNavigate, resolvedActiveIndex, results]);
 
   const move = (delta: number) => {
     if (!results.length) return;
-    setActiveIndex(() => (
+    const nextIndex = (
       ((resolvedActiveIndex < 0 ? (delta > 0 ? -1 : 0) : resolvedActiveIndex) + delta + results.length)
       % results.length
-    ));
+    );
+    onNavigate(results[nextIndex]);
   };
 
   const handleKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
@@ -135,16 +130,7 @@ export function VisibleEventFinder({
     }
     if (event.key === "Enter") {
       event.preventDefault();
-      if (
-        results.length === 1
-        && !event.metaKey
-        && !event.ctrlKey
-        && !event.altKey
-        && !event.shiftKey
-      ) {
-        onCommit(results[0]);
-        return;
-      }
+      event.stopPropagation();
       move(event.shiftKey ? -1 : 1);
       return;
     }
@@ -177,8 +163,6 @@ export function VisibleEventFinder({
             return;
           }
           setResults([]);
-          setActiveIndex(-1);
-          activeEventKeyRef.current = null;
           setSearching(false);
           onMatchesChange(new Set());
           setCandidateCount(getViewportEvents().length);

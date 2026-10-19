@@ -595,6 +595,7 @@ export function CalendarApp() {
   const [sidebarOpen, setSidebarOpen] = React.useState(true);
   const [showEventSearch, setShowEventSearch] = React.useState(false);
   const [showVisibleEventFinder, setShowVisibleEventFinder] = React.useState(false);
+  const visibleEventFinderInputRef = React.useRef<HTMLInputElement>(null);
   const [visibleEventFindMatchKeys, setVisibleEventFindMatchKeys] =
     React.useState<ReadonlySet<string>>(() => new Set());
   const [pendingTodoistFocusTaskId, setPendingTodoistFocusTaskId] =
@@ -1208,6 +1209,20 @@ export function CalendarApp() {
     if (!open) clearEventSearchCache();
     setShowEventSearch(open);
   }, [clearEventSearchCache]);
+
+  const navigateToVisibleEvent = React.useCallback((event: CalendarEvent) => {
+    const eventKey = calendarEventKey(event.calendarId, event.id);
+    selectionAnchorRef.current = eventKey;
+    dismissCreationDraft();
+    setActiveSelectionSurface("calendar");
+    setSelected(new Set([event.id]));
+    setRightSidebarTab("events");
+  }, [dismissCreationDraft]);
+
+  const previewVisibleEventFromPointer = React.useCallback((event: CalendarEvent) => {
+    navigateToVisibleEvent(event);
+    visibleEventFinderInputRef.current?.focus({ preventScroll: true });
+  }, [navigateToVisibleEvent]);
 
   const openEventSearch = React.useCallback(() => {
     setShowVisibleEventFinder(false);
@@ -2816,9 +2831,10 @@ export function CalendarApp() {
     ) {
       pointer.preventDefault();
       pointer.stopPropagation();
-      commitVisibleEventFinderSelection(event);
+      previewVisibleEventFromPointer(event);
       return;
     }
+    if (showVisibleEventFinder) setShowVisibleEventFinder(false);
     // Event blocks are buttons for keyboard access, but pointer selection and
     // dragging should not leave a hidden button focus ring behind. Otherwise
     // Escape clears selection and the next modifier key makes that ring appear
@@ -3407,14 +3423,6 @@ export function CalendarApp() {
     });
     return [...candidates.values()];
   }, [renderedEventElements]);
-
-  const navigateToVisibleEvent = React.useCallback((event: CalendarEvent) => {
-    const eventKey = calendarEventKey(event.calendarId, event.id);
-    selectionAnchorRef.current = eventKey;
-    dismissCreationDraft();
-    setActiveSelectionSurface("calendar");
-    setSelected(new Set([event.id]));
-  }, [dismissCreationDraft]);
 
   const cancelVisibleEventFinder = React.useCallback(() => {
     setShowVisibleEventFinder(false);
@@ -6511,7 +6519,11 @@ export function CalendarApp() {
       )}
       {showVisibleEventFinder && (
         <VisibleEventFinder
+          activeEventKey={selectedEvents.length === 1
+            ? calendarEventKey(selectedEvents[0].calendarId, selectedEvents[0].id)
+            : null}
           getViewportEvents={viewportEventCandidates}
+          inputRef={visibleEventFinderInputRef}
           onCancel={cancelVisibleEventFinder}
           onCommit={commitVisibleEventFinderSelection}
           onMatchesChange={setVisibleEventFindMatchKeys}
