@@ -67,6 +67,7 @@ import {
 import { EventSearchDialog } from "@/components/event-search-dialog";
 import { GuestNotificationDialog } from "@/components/guest-notification-dialog";
 import { NewTimeEntryDialog } from "@/components/new-time-entry-dialog";
+import { MiniMonthCalendar } from "@/components/mini-month-calendar";
 import { RecurringDeleteDialog } from "@/components/recurring-delete-dialog";
 import { RightSidebar, type RightSidebarTab } from "@/components/right-sidebar";
 import { SettingsDialog } from "@/components/settings-dialog";
@@ -5460,6 +5461,7 @@ export function CalendarApp() {
               ),
               events: keyboardEventUpdates(session, selection),
               minuteDelta: resizeShortcut.minuteDelta,
+              now: new Date(),
               preferredEdge: session.resizeActiveEdge,
             })
           : session.resizeActiveEdge;
@@ -6017,18 +6019,12 @@ export function CalendarApp() {
           )}
         </div>
 
-        <section className="mini-month">
-          <div className="mini-month-heading"><strong>{format(weekStart, "MMMM yyyy")}</strong><span><ChevronLeft size={13} /><ChevronRight size={13} /></span></div>
-          <div className="mini-weekdays">{"MTWTFSS".split("").map((day, index) => <span key={`${day}-${index}`}>{day}</span>)}</div>
-          <div className="mini-days">
-            {Array.from({ length: 35 }, (_, index) => {
-              const date = addDays(startOfCalendarWeek(new Date(weekStart.getFullYear(), weekStart.getMonth(), 1)), index);
-              const isCurrent = isSameDay(date, now);
-              const isViewed = visibleDays.some((day) => isSameDay(day, date));
-              return <button key={date.toISOString()} className={`${isCurrent ? "mini-today" : ""} ${isViewed ? "mini-viewed" : ""}`} onClick={() => setWeekStart(startOfCalendarWeek(date))}>{format(date, "d")}</button>;
-            })}
-          </div>
-        </section>
+        <MiniMonthCalendar
+          viewStart={weekStart}
+          visibleDays={visibleDays}
+          today={now}
+          onSelectDate={setWeekStart}
+        />
 
         <section className="calendar-list">
           <div className="section-heading"><span>Calendars</span><button type="button" onClick={() => void connectGoogle()} aria-label="Add Google account"><Plus size={14} /></button></div>

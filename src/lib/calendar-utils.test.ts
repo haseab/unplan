@@ -291,6 +291,7 @@ test("keyboard resize uses the end edge when extending the start would hit the p
   };
 
   assert.equal(resolveKeyboardResizeEdge({
+    now: new Date(2026, 9, 20),
     candidates: [previous, event],
     events: [event],
     minuteDelta: -15,
@@ -307,6 +308,7 @@ test("keyboard resize uses the start edge when extending the end would hit the n
   };
 
   assert.equal(resolveKeyboardResizeEdge({
+    now: new Date(2026, 9, 20),
     candidates: [event, next],
     events: [event],
     minuteDelta: 15,
@@ -316,17 +318,61 @@ test("keyboard resize uses the start edge when extending the end would hit the n
 
 test("keyboard resize keeps the first or remembered edge when both sides are free", () => {
   assert.equal(resolveKeyboardResizeEdge({
+    now: new Date(2026, 9, 20),
     candidates: [event],
     events: [event],
     minuteDelta: -15,
     preferredEdge: null,
   }), "start");
   assert.equal(resolveKeyboardResizeEdge({
+    now: new Date(2026, 9, 20),
     candidates: [event],
     events: [event],
     minuteDelta: 15,
     preferredEdge: "start",
   }), "start");
+});
+
+test("future keyboard resizes always change the end in either direction", () => {
+  const now = new Date(originalStart.getTime() - 1);
+  for (const minuteDelta of [-15, 15]) {
+    const activeEdge = resolveKeyboardResizeEdge({
+      candidates: [event], events: [event], minuteDelta, now, preferredEdge: null,
+    });
+    assert.equal(activeEdge, "end");
+    const resized = applyKeyboardResizeTransform(event, advanceKeyboardResizeTransform({
+      activeEdge, startMinuteDelta: 0, endMinuteDelta: 0,
+    }, minuteDelta, [event]));
+    assert.equal(resized.start, event.start);
+    assert.equal(Date.parse(resized.end), originalEnd.getTime() + minuteDelta * 60_000);
+  }
+});
+
+test("the present boundary uses the end; an already-started event keeps contextual resizing", () => {
+  for (const [offset, expectedEdge] of [[-1, "end"], [0, "end"], [1, "start"]] as const) {
+    assert.equal(resolveKeyboardResizeEdge({
+      candidates: [event], events: [event], minuteDelta: -15,
+      now: new Date(originalStart.getTime() + offset), preferredEdge: null,
+    }), expectedEdge);
+  }
+});
+
+test("future resizing overrides a remembered start edge and adjacent blockers", () => {
+  const next = { ...event, id: "next", start: event.end, end: new Date(2026, 7, 22, 12).toISOString() };
+  for (const minuteDelta of [-15, 15]) {
+    assert.equal(resolveKeyboardResizeEdge({
+      candidates: [event, next], events: [event], minuteDelta,
+      now: originalStart, preferredEdge: "start",
+    }), "end");
+  }
+});
+
+test("mixed past and future selections resize the shared end edge", () => {
+  const future = { ...event, id: "future", start: new Date(2026, 7, 22, 12).toISOString(), end: new Date(2026, 7, 22, 13).toISOString() };
+  assert.equal(resolveKeyboardResizeEdge({
+    candidates: [event, future], events: [event, future], minuteDelta: -15,
+    now: originalEnd, preferredEdge: "start",
+  }), "end");
 });
 
 test("keyboard resize always adjusts the end when both sides are locked", () => {
@@ -345,24 +391,28 @@ test("keyboard resize always adjusts the end when both sides are locked", () => 
   const candidates = [previous, event, next];
 
   assert.equal(resolveKeyboardResizeEdge({
+    now: new Date(2026, 9, 20),
     candidates,
     events: [event],
     minuteDelta: -15,
     preferredEdge: null,
   }), "end");
   assert.equal(resolveKeyboardResizeEdge({
+    now: new Date(2026, 9, 20),
     candidates,
     events: [event],
     minuteDelta: 15,
     preferredEdge: null,
   }), "end");
   assert.equal(resolveKeyboardResizeEdge({
+    now: new Date(2026, 9, 20),
     candidates,
     events: [event],
     minuteDelta: -15,
     preferredEdge: "start",
   }), "end");
   assert.equal(resolveKeyboardResizeEdge({
+    now: new Date(2026, 9, 20),
     candidates,
     events: [event],
     minuteDelta: 15,
@@ -371,6 +421,7 @@ test("keyboard resize always adjusts the end when both sides are locked", () => 
 
   for (const minuteDelta of [-15, 15]) {
     const activeEdge = resolveKeyboardResizeEdge({
+      now: new Date(2026, 9, 20),
       candidates, events: [event], minuteDelta, preferredEdge: null,
     });
     const resized = applyKeyboardResizeTransform(event, advanceKeyboardResizeTransform({
@@ -390,6 +441,7 @@ test("keyboard resize stays committed to its remembered edge", () => {
   };
 
   assert.equal(resolveKeyboardResizeEdge({
+    now: new Date(2026, 9, 20),
     candidates: [event, next],
     events: [event],
     minuteDelta: 15,
@@ -583,6 +635,7 @@ test("keyboard resizing ignores a background event enclosing the selected task",
   };
   for (const minuteDelta of [-15, 15]) {
     const edge = resolveKeyboardResizeEdge({
+      now: new Date(2026, 9, 20),
       candidates: [event, background], events: [event], minuteDelta, preferredEdge: null,
     });
     assert.equal(edge, minuteDelta < 0 ? "start" : "end");
@@ -608,6 +661,7 @@ test("enclosing backgrounds do not hide genuine adjacent resize conflicts", () =
   };
   const next = { ...event, id: "next", start: event.end, end: background.end };
   assert.equal(resolveKeyboardResizeEdge({
+    now: new Date(2026, 9, 20),
     candidates: [event, background, next], events: [event], minuteDelta: 15, preferredEdge: null,
   }), "start");
 });
@@ -616,7 +670,7 @@ test("enclosing backgrounds do not hide genuine adjacent resize conflicts", () =
 test("keyboard resize extends downward through an existing partial overlap", () => {
   const selected = { ...event, start: new Date(2026, 9, 7, 18).toISOString(), end: new Date(2026, 9, 7, 21).toISOString() };
   const overlapping = { ...selected, id: "overlapping", start: new Date(2026, 9, 7, 19).toISOString(), end: new Date(2026, 9, 7, 22).toISOString() };
-  const edge = resolveKeyboardResizeEdge({ candidates: [selected, overlapping], events: [selected], minuteDelta: 15, preferredEdge: null });
+  const edge = resolveKeyboardResizeEdge({ now: new Date(2026, 9, 20), candidates: [selected, overlapping], events: [selected], minuteDelta: 15, preferredEdge: null });
   assert.equal(edge, "end");
   const resized = applyKeyboardResizeTransform(selected, advanceKeyboardResizeTransform({ activeEdge: edge, startMinuteDelta: 0, endMinuteDelta: 0 }, 15, [selected]));
   assert.equal(resized.start, selected.start);
@@ -625,5 +679,5 @@ test("keyboard resize extends downward through an existing partial overlap", () 
 
 test("keyboard resize extends upward through an existing partial overlap", () => {
   const overlapping = { ...event, id: "overlapping", start: new Date(Date.parse(event.start) - 30 * 60_000).toISOString(), end: new Date(Date.parse(event.start) + 15 * 60_000).toISOString() };
-  assert.equal(resolveKeyboardResizeEdge({ candidates: [event, overlapping], events: [event], minuteDelta: -15, preferredEdge: null }), "start");
+  assert.equal(resolveKeyboardResizeEdge({ now: new Date(2026, 9, 20), candidates: [event, overlapping], events: [event], minuteDelta: -15, preferredEdge: null }), "start");
 });

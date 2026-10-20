@@ -385,13 +385,19 @@ export const resolveKeyboardResizeEdge = ({
   candidates,
   events,
   minuteDelta,
+  now,
   preferredEdge,
 }: {
   candidates: CalendarEvent[];
   events: CalendarEvent[];
   minuteDelta: number;
+  now: Date;
   preferredEdge: KeyboardResizeEdge | null;
 }): KeyboardResizeEdge => {
+  // A shared resize uses the end edge if any selected event has not started.
+  if (events.some((event) => parseISO(event.start).getTime() >= now.getTime())) {
+    return "end";
+  }
   const fallbackEdge = minuteDelta < 0 ? "start" : "end";
   const lockCheckDelta = Math.abs(minuteDelta);
   const startLocked = keyboardResizeCreatesConflict(
