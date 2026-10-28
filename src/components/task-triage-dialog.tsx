@@ -1,7 +1,7 @@
 "use client";
 
 import {
-  ArrowLeft,
+  ArrowUp,
   ArrowRight,
   CalendarPlus,
   ExternalLink,
@@ -33,7 +33,7 @@ import {
   type TaskTriageMode,
 } from "@/lib/task-triage";
 export type { TaskTriageMode } from "@/lib/task-triage";
-type TriageDirection = "left" | "right";
+type TriageDirection = "up" | "right";
 
 type TaskTriageDialogProps = {
   calendars: CalendarSource[];
@@ -87,8 +87,8 @@ function ExtractedTaskReview({
       </article>
       {error && <p className="task-triage-error">{error}</p>}
       <div className="task-triage-actions">
-        <button disabled={resolving} onClick={() => onResolve("left")} type="button">
-          <ArrowLeft size={15} />
+        <button disabled={resolving} onClick={() => onResolve("up")} type="button">
+          <ArrowUp size={15} />
           <span>Delete</span>
           <Trash2 size={14} />
         </button>
@@ -98,7 +98,7 @@ function ExtractedTaskReview({
           <kbd>→</kbd>
         </button>
       </div>
-      <p className="task-triage-shortcuts"><kbd>←</kbd> delete <span /> keep <kbd>→</kbd></p>
+      <p className="task-triage-shortcuts"><kbd>↑</kbd> delete <span /> keep <kbd>→</kbd></p>
       {!task.optimistic && (
         <div className="task-triage-secondary-actions task-triage-extracted-secondary-actions">
           <button className="task-triage-open-original" onClick={onOpenOriginal} type="button">
@@ -431,7 +431,7 @@ export function TaskTriageDialog({
     setError(null);
     setResolving(true);
     try {
-      await onResolveExtracted(currentTask, direction === "left" ? "delete" : "keep");
+      await onResolveExtracted(currentTask, direction === "up" ? "delete" : "keep");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "That task could not be reviewed");
     } finally {
@@ -566,10 +566,10 @@ export function TaskTriageDialog({
         return;
       }
       if (phase !== "extracted" || event.metaKey || event.ctrlKey || event.altKey || event.repeat) return;
-      if (event.key === "ArrowLeft") {
+      if (event.key === "ArrowUp") {
         event.preventDefault();
         event.stopPropagation();
-        void resolveExtracted("left");
+        void resolveExtracted("up");
       } else if (event.key === "ArrowRight") {
         event.preventDefault();
         event.stopPropagation();
