@@ -291,10 +291,12 @@ function NormalTaskReview({
             dateTime={task.createdAt}
             title={createdAt.toLocaleString()}
           >
-            Created {createdAt.toLocaleDateString(undefined, {
+            Created {createdAt.toLocaleString(undefined, {
               month: "short",
               day: "numeric",
               year: "numeric",
+              hour: "numeric",
+              minute: "2-digit",
             })}
           </time>
         )}
