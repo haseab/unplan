@@ -834,8 +834,10 @@ kbd {
 }
 .task-triage-card-meta { display: flex; align-items: center; justify-content: space-between; color: var(--text-faint); font-size: 9px; font-weight: 620; letter-spacing: 0.04em; text-transform: uppercase; }
 .task-triage-task-card h3 { max-width: 420px; margin: auto; color: var(--ink); font-size: clamp(18px, 3.4vw, 24px); font-weight: 540; line-height: 1.18; letter-spacing: -0.035em; text-align: center; overflow-wrap: anywhere; }
+.task-triage-task-card > p a,
 .task-triage-task-card h3 a,
 .task-triage-markdown-title a { color: var(--blue-ink); text-decoration: underline; text-decoration-color: color-mix(in oklab, currentColor 55%, transparent); text-underline-offset: 0.14em; }
+.task-triage-task-card > p a:hover,
 .task-triage-task-card h3 a:hover,
 .task-triage-markdown-title a:hover { text-decoration-color: currentColor; }
 .task-triage-task-card > p { display: -webkit-box; max-width: 390px; margin: 0 auto 2px; overflow: hidden; color: var(--muted); font-size: 10.5px; line-height: 1.45; text-align: center; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }

@@ -29,3 +29,14 @@ export const resolveTaskExtractionDestination = (
 
 export const isExtractedTodoistTask = (task: TodoistTask, extractionProjectId: string | undefined) =>
   !!extractionProjectId && task.projectId === extractionProjectId;
+
+// Present extraction metadata as a compact browser link without changing stored data.
+export const extractedTaskDescriptionMarkdown = (description: string) => {
+  const match = /^Recording [A-Za-z0-9_-]+ at (\d{4}-\d{2}-\d{2}T[^\s\[]+)/.exec(description);
+  if (!match) return description;
+  const start = Date.parse(match[1]);
+  if (!Number.isFinite(start)) return description;
+  const query = `${new Date(start).toISOString()} to ${new Date(start + 60_000).toISOString()}`;
+  const href = `https://deeplog.app/pendant?${new URLSearchParams({ q: query })}`;
+  return `[View transcript](${href})`;
+};

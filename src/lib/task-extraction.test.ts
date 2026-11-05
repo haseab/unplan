@@ -3,6 +3,7 @@ import test from "node:test";
 import type { CalendarSource } from "./calendar-types";
 import type { TodoistProject, TodoistTask } from "./todoist";
 import {
+  extractedTaskDescriptionMarkdown,
   findTaskExtractionProject,
   isExtractedTodoistTask,
   findTechnicalitiesCalendar,
@@ -54,4 +55,25 @@ test("calendar scheduling distinguishes extraction tasks from stored tasks for r
   assert.equal(isExtractedTodoistTask(task, "extract"), true);
   assert.equal(isExtractedTodoistTask({ ...task, projectId: "inbox" }, "extract"), false);
   assert.equal(isExtractedTodoistTask(task, undefined), false);
+});
+
+
+test("legacy recording references become safe links at render time without changing stored text", () => {
+  const description = "Recording source-id at 2026-10-28T17:46:21Z\n[DeepLog:tracking-id]";
+  const formatted = extractedTaskDescriptionMarkdown(description);
+  const href = /\]\(([^)]+)\)/.exec(formatted)![1];
+  const target = new URL(href);
+  assert.equal(target.origin, "https://deeplog.app");
+  assert.equal(target.pathname, "/pendant");
+  assert.equal(target.searchParams.get("q"), "2026-10-28T17:46:21.000Z to 2026-10-28T17:47:21.000Z");
+  assert.equal(formatted, `[View transcript](${href})`);
+  assert.equal(formatted.includes("tracking-id"), false);
+  assert.equal(formatted.includes("source-id"), false);
+  assert.equal(description, "Recording source-id at 2026-10-28T17:46:21Z\n[DeepLog:tracking-id]");
+});
+
+test("existing Markdown and bare links remain intact and invalid recording dates stay plain text", () => {
+  for (const text of ["Read [source](https://example.test/source)", "Read https://example.test/source", "Recording source at 2026-13-99T99:99:99Z", "Plain task notes"]) {
+    assert.equal(extractedTaskDescriptionMarkdown(text), text);
+  }
 });
