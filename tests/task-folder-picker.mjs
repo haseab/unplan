@@ -48,7 +48,7 @@ try {
   await page.getByRole('heading', { name: '23 selected tasks' }).waitFor();
   await page.getByRole('button', { name: 'Close folder picker' }).click();
   await page.locator('.calendar-workspace').focus();
-  await page.keyboard.press('Meta+Shift+p');
+  await page.keyboard.press('Meta+Alt+Shift+p');
   await page.getByRole('heading', { name: '23 selected tasks' }).waitFor();
   await page.getByRole('textbox', { name: 'Search folders' }).fill('Research');
   await page.getByRole('button', { name: 'Create folder inside Work / Research', exact: true }).click();
@@ -63,7 +63,7 @@ try {
   await poll(async () => await page.locator('.calendar-event').count() === 23);
   assert.equal(created.length, 0, 'Undo must prevent provider writes');
   await page.locator('.calendar-workspace').focus();
-  await page.keyboard.press('Meta+Shift+p');
+  await page.keyboard.press('Meta+Alt+Shift+p');
   await page.getByRole('heading', { name: '23 selected tasks' }).waitFor();
   await page.getByRole('textbox', { name: 'Search folders' }).fill('Planning');
   await page.getByRole('textbox', { name: 'Search folders' }).press('Enter');
@@ -89,5 +89,5 @@ try {
   await page.getByRole('button', { name: 'Move to Personal', exact: true }).click();
   assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('unplan:todoist-group-parents:v1')).Personal), null);
   assert.deepEqual(errors, []);
-  console.log('PASS: 23-event selection, sidebar, Cmd+Shift+P, nested creation, search, keyboard assignment, undo, mocked provider move, hierarchy reload, and triage folder creation');
+  console.log('PASS: 23-event selection, sidebar, Cmd+Option+Shift+P, nested creation, search, keyboard assignment, undo, mocked provider move, hierarchy reload, and triage folder creation');
 } finally { await browser.close(); }

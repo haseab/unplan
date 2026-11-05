@@ -70,12 +70,22 @@ access and refresh tokens from the browser.
 | Change the selected event's calendar | `C` |
 | Review extracted tasks | `Command/Ctrl + E` |
 | Duplicate selected events | `Command/Ctrl + D` |
+| Open Limitless history for one selected past event | `Command/Ctrl + P` |
+| Open Retrace at the selected past event's start | `Command/Ctrl + Shift + P` |
+| Open Deeplog time entries for the selected past event's exact range | `Option/Alt + P` |
+| Add selected events to a task folder | `Command/Ctrl + Option/Alt + Shift + P` |
 | Copy / paste selected events | `Command/Ctrl + C` / `Command/Ctrl + V` |
 | Undo the latest pending action | `Command/Ctrl + Z` |
 | Submit the latest pending action immediately | `Command/Ctrl + Enter` |
 | Open settings | `Command/Ctrl + Shift + ,` |
 | Clear selection | `Escape` |
 | Show shortcuts | `?` |
+
+History shortcuts apply after the selected event has ended and stay inactive while
+editing text or using a dialog. Limitless history and Deeplog open at deeplog.app
+in a new browser tab (Chrome when using Unplan in Chrome). Retrace opens the local
+app using the same `retracedev://timeline` link as Deeplog. No Limitless credentials
+are needed in Unplan; Deeplog uses its own saved credentials.
 
 ## Stack
 
