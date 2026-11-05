@@ -191,8 +191,9 @@ import {
   updateSelfParticipantResponse,
 } from "@/lib/event-participants";
 import { useTodoistGroupPreferences } from "@/hooks/use-todoist-group-preferences";
+import { useTaskTriagePhase } from "@/hooks/use-task-triage-phase";
 import { priorityTaskContentRefreshedNow, priorityTaskContentWithReviewAt } from "@/lib/priority-task-review";
-import { isNormalTaskTriageTask, taskTriageKeepContent, taskTriagePhase, taskTriageShortcutMode } from "@/lib/task-triage";
+import { isNormalTaskTriageTask, taskTriageKeepContent, taskTriageShortcutMode } from "@/lib/task-triage";
 import {
   crossSurfaceMoveShortcut,
   eventIdsForKeyboardAction,
@@ -1067,14 +1068,23 @@ export function CalendarApp() {
     () => visibleTodoistTasks.filter((task) => isNormalTaskTriageTask(task, taskGroupParents, now)),
     [visibleTodoistTasks, taskGroupParents, now],
   );
+  const { phase: triagePhase, completeFollowUp: completeTaskFollowUpPhase } = useTaskTriagePhase({
+    open: showTaskTriage,
+    initialMode: taskTriageMode,
+    extractedTaskCount: extractedTasks.length,
+    normalTaskCount: ungroupedTodoistTasks.length,
+  });
+  const completeTaskFollowUpTriage = React.useCallback(() => {
+    completeTaskFollowUpPhase();
+    setTaskTriageMode("normal");
+    setShowTaskTriage(ungroupedTodoistTasks.length > 0);
+  }, [completeTaskFollowUpPhase, ungroupedTodoistTasks.length]);
   useCalendarActivityTitle({
     connected: google.connected,
     settingsOpen: showSettings,
     followUpReviewOpen: showFollowUpReview,
     eventViewSelected: rightSidebarTab === "events",
-    triagePhase: showTaskTriage
-      ? taskTriagePhase(taskTriageMode, extractedTasks.length, ungroupedTodoistTasks.length)
-      : null,
+    triagePhase: showTaskTriage ? triagePhase : null,
   });
   const todoistGroups = React.useMemo(() => {
     const groups = new Map<string, string>();
@@ -6626,7 +6636,8 @@ export function CalendarApp() {
         tasks={visibleTodoistTasks}
         extractedTasks={extractedTasks}
         groups={todoistGroups}
-        initialMode={taskTriageMode}
+        phase={triagePhase}
+        onCompleteFollowUp={completeTaskFollowUpTriage}
         onFollowUpTask={async (task, date, onRestore, period) => {
           if (!Number.isFinite(date.getTime())) throw new Error("Choose a follow-up time");
           const reference = new Date();
@@ -6640,7 +6651,6 @@ export function CalendarApp() {
           replaceLocalTodoistTask({ ...task, content, optimistic: true });
           if (refreshImmediately) {
             setNow(reference);
-            setTaskTriageMode("normal");
           }
           queueActionToast(refreshImmediately ? `Refreshed ${todoistTaskDisplayTitle(task.content)} for task triage`
             : `Follow up ${todoistTaskDisplayTitle(task.content)} on ${date.toLocaleString()}`, {

@@ -26,9 +26,10 @@ type Props = {
   onRestore: (card: PriorityReviewCard) => void;
   initialReturning: PriorityReviewCard | null;
   onClose: () => void;
+  onComplete: () => void;
 };
 
-export function PriorityTaskReview({ tasks, calendars, groupParents, onRename, onSchedule, onDelete, onFollowUp, onClose, onRestore, initialReturning }: Props) {
+export function PriorityTaskReview({ tasks, calendars, groupParents, onRename, onSchedule, onDelete, onFollowUp, onClose, onComplete, onRestore, initialReturning }: Props) {
   const { remaining, departure, returning, restoredAtFront, error, resolve, removeTask, scheduleTask, finished } = usePriorityTaskReview(tasks, onRestore, initialReturning, onSchedule, onDelete, onFollowUp);
   const [selectedId, setSelectedId] = React.useState<string | null>(null);
   const current = remaining.find((task) => task.id === selectedId) ?? remaining[0];
@@ -64,9 +65,9 @@ export function PriorityTaskReview({ tasks, calendars, groupParents, onRename, o
 
   React.useEffect(() => {
     if (!finished) return;
-    const timer = window.setTimeout(onClose, 1_250);
+    const timer = window.setTimeout(onComplete, 1_250);
     return () => window.clearTimeout(timer);
-  }, [finished, onClose]);
+  }, [finished, onComplete]);
 
   React.useEffect(() => {
     const previousFocus = document.activeElement;
@@ -153,7 +154,7 @@ export function PriorityTaskReview({ tasks, calendars, groupParents, onRename, o
           <button type="submit" aria-label="Set follow-up" disabled={!!departure || titleBusy || !reviewDate}>{refreshImmediately ? "Refresh now" : "Set follow-up"} <CornerDownLeft size={14} aria-hidden="true" /></button>
         </div>
         <p id="priority-review-preview" aria-live="polite" data-valid={!!reviewDate}>
-          {reviewDate ? <><ArrowRight size={12} aria-hidden="true" />Back in task triage <strong>{refreshImmediately ? "immediately" : `${reviewDate.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })} · ${reviewDate.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}`}</strong></> : "Try now, 7d, 61 min, or Sep 1."}
+          {reviewDate ? <><ArrowRight size={12} aria-hidden="true" />Back in task triage <strong>{refreshImmediately ? "after follow-up triage" : `${reviewDate.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })} · ${reviewDate.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}`}</strong></> : "Try now, 7d, 61 min, or Sep 1."}
         </p>
       </form>
       {error && <p className="task-triage-error" role="alert">{error}</p>}

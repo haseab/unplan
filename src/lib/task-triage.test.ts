@@ -161,6 +161,16 @@ test("the Follow-up triage banner opens priority review directly while Cmd E kee
   assert.equal(taskTriagePhase("normal", 0, 3), "normal");
 });
 
+test("an active follow-up triage finishes before newly refreshed tasks are shown", () => {
+  for (const mode of ["extracted", "normal", "priority", "follow-up"] as const) {
+    assert.equal(taskTriagePhase(mode, 0, 0), "priority");
+    assert.equal(taskTriagePhase(mode, 0, 1, "priority"), "priority");
+    assert.equal(taskTriagePhase(mode, 1, 2, "priority"), "priority");
+  }
+  assert.equal(taskTriagePhase("normal", 0, 2, null), "normal", "completion releases the queued tasks");
+  assert.equal(taskTriagePhase("extracted", 1, 2, null), "extracted", "a new session follows the usual order");
+});
+
 test("Cmd/Ctrl Shift Left schedules extraction and task triage; Cmd/Ctrl Left stays native", () => {
   const key = { key: "ArrowLeft", metaKey: false, ctrlKey: false, altKey: false, shiftKey: true, repeat: false, isComposing: false };
   for (const phase of ["extracted", "normal"] as const) {
