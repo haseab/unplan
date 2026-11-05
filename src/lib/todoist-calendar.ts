@@ -1,3 +1,4 @@
+import { readTaskReviewPeriod, type TaskReviewPeriod } from "./task-review-period";
 import type { CalendarEvent, CalendarSource } from "./calendar-types";
 import { matchesSearchKeywords } from "./keyword-search";
 import {
@@ -191,6 +192,7 @@ export const todoistTaskInputFromCalendarEvent = (
 export const calendarEventDetailsFromTodoistContent = (content: string) => {
   const metadataMatch = content.match(UNPLAN_METADATA_TOKEN);
   const fields = metadataFields(metadataMatch?.[1]);
+  const reviewPeriod = readTaskReviewPeriod(fields.get("reviewPeriod"));
   const durationMinutes = fields.has("duration")
     ? Number(fields.get("duration"))
     : undefined;
@@ -208,6 +210,9 @@ export const calendarEventDetailsFromTodoistContent = (content: string) => {
     ...(fields.get("groupChangedAt")
       ? { groupChangedAt: fields.get("groupChangedAt") }
       : {}),
+    ...(fields.get("reviewAt") ? { reviewAt: fields.get("reviewAt") } : {}),
+    ...(reviewPeriod ? { reviewPeriod } : {}),
+    ...(fields.get("reviewIntervalMs") ? { reviewIntervalMs: Number(fields.get("reviewIntervalMs")) } : {}),
     ...(fields.get("triageSourceGroup")
       ? { triageSourceGroup: fields.get("triageSourceGroup") }
       : {}),
@@ -293,10 +298,25 @@ export const todoistContentWithGroupChange = (
   fields.set("group", normalizedGroup);
   fields.set("groupChangedAt", changedAt.toISOString());
   fields.delete("triageSourceGroup");
+  fields.delete("reviewAt");
+  fields.delete("reviewIntervalMs");
+  fields.delete("reviewPeriod");
   const token = metadataTokenFromFields(fields);
   return metadataMatch
     ? content.replace(metadataMatch[0], token)
     : `${content.trim()} ${token}`;
+};
+
+/** A one-shot review time; kept in task metadata so it follows Todoist sync. */
+export const todoistContentWithReviewAt = (content: string, date: Date, now = new Date(), period?: TaskReviewPeriod) => {
+  const metadataMatch = content.match(UNPLAN_METADATA_TOKEN);
+  const fields = metadataFields(metadataMatch?.[1]);
+  fields.set("reviewAt", date.toISOString());
+  fields.set("reviewIntervalMs", String(date.getTime() - now.getTime()));
+  if (period) fields.set("reviewPeriod", JSON.stringify(period));
+  else fields.delete("reviewPeriod");
+  const token = metadataTokenFromFields(fields);
+  return metadataMatch ? content.replace(metadataMatch[0], token) : `${content.trim()} ${token}`;
 };
 
 export const todoistContentReturnedToTriage = (

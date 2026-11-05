@@ -1,5 +1,5 @@
 import type { CalendarSource } from "./calendar-types";
-import type { TodoistProject } from "./todoist";
+import type { TodoistProject, TodoistTask } from "./todoist";
 
 export const TASK_EXTRACTION_PROJECT_NAME = "task-extraction";
 export const TECHNICALITIES_CALENDAR_NAME = "Technicalities";
@@ -26,3 +26,6 @@ export const resolveTaskExtractionDestination = (
 ) ?? projects.find(({ inbox, id }) => inbox && id !== extractionProjectId)
   ?? projects.find(({ id }) => id !== extractionProjectId)
   ?? null;
+
+export const isExtractedTodoistTask = (task: TodoistTask, extractionProjectId: string | undefined) =>
+  !!extractionProjectId && task.projectId === extractionProjectId;

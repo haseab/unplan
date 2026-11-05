@@ -22,6 +22,7 @@ import { TodoistEventCard } from "@/components/todoist-event-card";
 import { TodoistGroupDeleteBlockedDialog } from "@/components/todoist-group-delete-blocked-dialog";
 import { TaskFolderIcon } from "@/components/task-folder-icon";
 import { taskFolderActivityState } from "@/lib/task-folder-activity";
+import { priorityReviewTasks } from "@/lib/priority-task-review";
 import { TaskTriageCard } from "@/components/task-triage-card";
 import { TaskCalendarPickerDialog } from "@/components/task-calendar-picker-dialog";
 import { useListMarqueeSelection } from "@/hooks/use-list-marquee-selection";
@@ -154,6 +155,7 @@ type TodoistSidebarProps = {
   onSelectionChange: (taskIds: ReadonlySet<string>) => void;
   onOpenExtractedTriage: () => void;
   onOpenNormalTriage: () => void;
+  onOpenPriorityReview: () => void;
   followUpCount: number;
   scheduledFollowUpCount: number;
   onManageFollowUps: () => void;
@@ -221,6 +223,7 @@ export function TodoistSidebar({
   onSelectionChange,
   onOpenExtractedTriage,
   onOpenNormalTriage,
+  onOpenPriorityReview,
   followUpCount,
   scheduledFollowUpCount,
   onManageFollowUps,
@@ -471,12 +474,14 @@ export function TodoistSidebar({
     () => orderedVisibleTasks.map(({ id }) => id),
     [orderedVisibleTasks],
   );
+  const priorityReviewCount = priorityReviewTasks(tasks, groupParents).length;
   const sidebarNavigation = React.useMemo(
     () => [
       ...sidebarTriageNavigationItems({
         extractedCount: extractedTriageCount,
         normalCount: normalTriageCount,
         followUpCount,
+        priorityReviewCount,
       }),
       ...sidebarNavigationItems(
         taskGroups
@@ -494,7 +499,7 @@ export function TodoistSidebar({
           kind: "task" as const,
         })),
     ],
-    [collapsedGroups, extractedTriageCount, groupParents, normalTriageCount, followUpCount, taskGroups],
+    [collapsedGroups, extractedTriageCount, groupParents, normalTriageCount, followUpCount, priorityReviewCount, taskGroups],
   );
   const { beginMarquee, marqueeStyle } = useListMarqueeSelection({
     containerRef: groupsRef,
@@ -1524,6 +1529,8 @@ export function TodoistSidebar({
             normalCount={normalTriageCount}
             onOpenExtracted={onOpenExtractedTriage}
             onOpenNormal={onOpenNormalTriage}
+            priorityReviewCount={priorityReviewCount}
+            onOpenPriorityReview={onOpenPriorityReview}
             followUpCount={followUpCount}
             onOpenFollowUps={onOpenFollowUps}
             onNavigate={(navigationId, direction) => {

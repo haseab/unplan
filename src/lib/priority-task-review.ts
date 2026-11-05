@@ -1,43 +1,80 @@
+import type { TaskReviewPeriod } from "./task-review-period";
 import type { TodoistTask } from "./todoist";
 import {
   calendarEventDetailsFromTodoistContent,
-  isImmediatePriorityTodoistGroup,
+  isTodoistTriageGroup,
+  todoistContentWithGroupChange,
+  todoistContentWithReviewAt,
+  todoistContentReturnedToTriage,
   todoistGroupAncestors,
   type TodoistGroupParents,
 } from "./todoist-calendar";
 
 export type PriorityReviewDirection = "left" | "right";
 
-export const PRIORITY_REVIEW_SECTIONS = ["Priority Right Now", "Priority Today"] as const;
-export type PriorityReviewSection = typeof PRIORITY_REVIEW_SECTIONS[number];
+export const PRIORITY_REVIEW_SECTIONS = ["Priority Today", "Priority Tomorrow", "Priority Later"] as const;
+export type PriorityReviewSection = string;
 
 export function priorityReviewSection(task: TodoistTask, parents: TodoistGroupParents): PriorityReviewSection | null {
-  const { group } = calendarEventDetailsFromTodoistContent(task.content);
+  const details = calendarEventDetailsFromTodoistContent(task.content);
+  const group = isTodoistTriageGroup(details.group) ? details.triageSourceGroup : details.group;
   if (!group) return null;
-  const priorityGroup = [group, ...todoistGroupAncestors(group, parents)].find(isImmediatePriorityTodoistGroup);
-  if (!priorityGroup) return null;
-  return priorityGroup.split("/").at(-1)?.trim().toLocaleLowerCase() === "priority today"
-    ? "Priority Today" : "Priority Right Now";
+  // Choose the nearest priority ancestor; Now must not inherit another priority category.
+  const priorityGroup = [group, ...todoistGroupAncestors(group, parents).reverse()]
+    .find((candidate) => /^priority(?: |$)/i.test(candidate.split("/").at(-1)?.trim() ?? ""));
+  const leaf = priorityGroup?.split("/").at(-1)?.trim().toLocaleLowerCase();
+  return PRIORITY_REVIEW_SECTIONS.find((section) => section.toLocaleLowerCase() === leaf) ?? null;
 }
+
+export function priorityReviewDefaultDays(task: TodoistTask, parents: TodoistGroupParents) {
+  return priorityReviewSection(task, parents) === "Priority Later" ? 7 : 3;
+}
+
+export function isDefaultRefreshedPriorityReviewTask(task: TodoistTask, parents: TodoistGroupParents) {
+  const details = calendarEventDetailsFromTodoistContent(task.content);
+  return isTodoistTriageGroup(details.group) && !!details.triageSourceGroup
+    && !Number.isFinite(Date.parse(details.reviewAt ?? ""))
+    && priorityReviewSection(task, parents) !== null;
+}
+
+export function priorityTaskContentWithReviewAt(task: TodoistTask, date: Date, now = new Date(), period?: TaskReviewPeriod) {
+  const details = calendarEventDetailsFromTodoistContent(task.content);
+  const content = isTodoistTriageGroup(details.group) && details.triageSourceGroup
+    ? todoistContentWithGroupChange(task.content, details.triageSourceGroup)
+    : task.content;
+  return todoistContentWithReviewAt(content, date, now, period);
+}
+
+export function priorityTaskContentRefreshedNow(task: TodoistTask, parents: TodoistGroupParents, now = new Date()) {
+  const details = calendarEventDetailsFromTodoistContent(task.content);
+  const period = details.reviewPeriod ?? {
+    amount: priorityReviewDefaultDays(task, parents), unit: "day" as const,
+    dayOfMonth: now.getDate(), monthOfYear: now.getMonth(),
+  };
+  const content = priorityTaskContentWithReviewAt(task, now, now, period);
+  const group = calendarEventDetailsFromTodoistContent(content).group ?? "Ungrouped";
+  return todoistContentReturnedToTriage(content, group, now);
+}
+
+const prioritySectionOrder = (section: string) => {
+  const index = (PRIORITY_REVIEW_SECTIONS as readonly string[]).indexOf(section);
+  return index < 0 ? PRIORITY_REVIEW_SECTIONS.length : index;
+};
 
 export function priorityReviewTasks(tasks: TodoistTask[], parents: TodoistGroupParents) {
   return tasks.flatMap((task) => {
     const section = priorityReviewSection(task, parents);
     if (!section) return [];
-    const { groupChangedAt } = calendarEventDetailsFromTodoistContent(task.content);
+    const { groupChangedAt, reviewAt } = calendarEventDetailsFromTodoistContent(task.content);
+    // Assigned follow-ups return to task triage when due; only defaults need a date decision here.
+    if (Number.isFinite(Date.parse(reviewAt ?? ""))) return [];
     const filedAt = Date.parse(groupChangedAt ?? "");
     return [{ task, section, filedAt: Number.isFinite(filedAt) ? filedAt : 0 }];
   })
-    .sort((first, second) => PRIORITY_REVIEW_SECTIONS.indexOf(first.section) - PRIORITY_REVIEW_SECTIONS.indexOf(second.section)
+    .sort((first, second) => prioritySectionOrder(first.section) - prioritySectionOrder(second.section)
       || second.filedAt - first.filedAt)
     .map(({ task }) => task);
 }
-
-export function prioritySwipeDirection(deltaX: number, deltaY: number): PriorityReviewDirection | null {
-  if (Math.abs(deltaX) < 60 || Math.abs(deltaX) <= Math.abs(deltaY)) return null;
-  return deltaX < 0 ? "left" : "right";
-}
-
 
 export const PRIORITY_REVIEW_ANIMATION_MS = 130;
 export type PriorityReviewCard = { task: TodoistTask; direction: PriorityReviewDirection | "up" };

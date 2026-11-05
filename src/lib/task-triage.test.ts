@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   orderTaskTriageTasks,
+  isTaskTriageCalendarShortcut,
   taskTriageFolders,
   taskTriagePhase,
   taskTriagePreviousFolder,
@@ -152,4 +153,25 @@ test("priority launch cannot skip pending queues and restores triage on rollback
   assert.equal(taskTriagePhase("priority", 0, 0), "priority");
   assert.equal(taskTriagePhase("priority", 0, 1), "normal");
   assert.equal(taskTriagePhase("priority", 1, 1), "extracted");
+});
+
+test("the Follow-up triage banner opens priority review directly while Cmd E keeps its sequence", () => {
+  assert.equal(taskTriagePhase("follow-up", 2, 3), "priority");
+  assert.equal(taskTriagePhase("extracted", 2, 3), "extracted");
+  assert.equal(taskTriagePhase("normal", 0, 3), "normal");
+});
+
+test("Cmd/Ctrl Shift Left schedules extraction and task triage; Cmd/Ctrl Left stays native", () => {
+  const key = { key: "ArrowLeft", metaKey: false, ctrlKey: false, altKey: false, shiftKey: true, repeat: false, isComposing: false };
+  for (const phase of ["extracted", "normal"] as const) {
+    for (const modifier of [{ metaKey: true }, { ctrlKey: true }]) {
+      const shortcut = { ...key, ...modifier };
+      assert.equal(isTaskTriageCalendarShortcut(shortcut, phase, false), true);
+      for (const change of [{ metaKey: false, ctrlKey: false }, { altKey: true }, { shiftKey: false }, { repeat: true }, { isComposing: true }, { key: "ArrowRight" }]) {
+        assert.equal(isTaskTriageCalendarShortcut({ ...shortcut, ...change }, phase, false), false);
+      }
+      assert.equal(isTaskTriageCalendarShortcut(shortcut, phase, true), false);
+    }
+  }
+  assert.equal(isTaskTriageCalendarShortcut({ ...key, metaKey: true }, "priority", false), false);
 });

@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { CalendarSource } from "./calendar-types";
-import type { TodoistProject } from "./todoist";
+import type { TodoistProject, TodoistTask } from "./todoist";
 import {
   findTaskExtractionProject,
+  isExtractedTodoistTask,
   findTechnicalitiesCalendar,
   resolveTaskExtractionDestination,
 } from "./task-extraction";
@@ -46,4 +47,11 @@ test("falls back to Inbox when extraction is the preferred project", () => {
     resolveTaskExtractionDestination(projects, "extract", "extract")?.id,
     "inbox",
   );
+});
+
+test("calendar scheduling distinguishes extraction tasks from stored tasks for rollback and completion", () => {
+  const task: TodoistTask = { id: "extract-task", projectId: "extract", content: "Task", description: "", priority: 1, due: null };
+  assert.equal(isExtractedTodoistTask(task, "extract"), true);
+  assert.equal(isExtractedTodoistTask({ ...task, projectId: "inbox" }, "extract"), false);
+  assert.equal(isExtractedTodoistTask(task, undefined), false);
 });

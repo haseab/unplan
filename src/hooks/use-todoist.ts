@@ -788,7 +788,7 @@ export function useTodoist({
   ) => {
     if (isLocalTaskId(taskId)) {
       const nextTasks = tasksRef.current.map((candidate) =>
-        candidate.id === taskId ? { ...candidate, ...input } : candidate,
+        candidate.id === taskId ? { ...candidate, ...input, optimistic: false } : candidate,
       );
       tasksRef.current = nextTasks;
       setTasks(nextTasks);

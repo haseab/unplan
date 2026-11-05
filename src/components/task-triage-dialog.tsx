@@ -1,5 +1,7 @@
 "use client";
 
+import type { TaskReviewPeriod } from "@/lib/task-review-period";
+
 import {
   ArrowUp,
   ArrowRight,
@@ -11,6 +13,7 @@ import {
   X,
 } from "lucide-react";
 import * as React from "react";
+import { useTaskTitleEditing } from "@/hooks/use-task-title-editing";
 import { TaskFolderPicker } from "@/components/task-folder-picker";
 import type { CalendarSource } from "@/lib/calendar-types";
 import { PriorityTaskReview } from "@/components/priority-task-review";
@@ -20,14 +23,15 @@ import { todoistTaskUrl, type TodoistTask } from "@/lib/todoist";
 import {
   calendarEventDetailsFromTodoistContent,
   isPriorityTodoistGroup,
-  priorityTodoistGroupRefreshDays,
   todoistGroupDisplayName,
 } from "@/lib/todoist-calendar";
 import { readTodoistFolderPreferences } from "@/lib/todoist-folder-backup";
 import {
   orderTaskTriageTasks,
   taskTriageFolders,
+  isTaskTriageCalendarShortcut,
   taskTriagePhase,
+  describeTaskFollowUpInterval,
   taskTriagePreviousFolder,
   type TaskTriageFolder,
   type TaskTriageMode,
@@ -42,7 +46,8 @@ type TaskTriageDialogProps = {
   groups: string[];
   onCreateFolder: (name: string, parent: string | null) => string;
   initialMode: TaskTriageMode;
-  onAssignGroup: (task: TodoistTask, group: string, onRestore?: () => void) => Promise<void>;
+  onFollowUpTask: (task: TodoistTask, date: Date, onRestore: () => void, period?: TaskReviewPeriod) => Promise<void>;
+  onAssignGroup: (task: TodoistTask, group: string, intent?: "choose" | "keep") => Promise<void>;
   onDeleteTask: (task: TodoistTask, onRestore?: () => void) => Promise<void>;
   onOpenChange: (open: boolean) => void;
   onScheduleTask: (task: TodoistTask, onRestore?: () => void) => Promise<void>;
@@ -98,7 +103,7 @@ function ExtractedTaskReview({
           <kbd>→</kbd>
         </button>
       </div>
-      <p className="task-triage-shortcuts"><kbd>↑</kbd> delete <span /> keep <kbd>→</kbd></p>
+      <p className="task-triage-shortcuts"><kbd>↑</kbd> delete <span /> keep <kbd>→</kbd> <span /> <kbd>⌘⇧←</kbd> move to calendar</p>
       {!task.optimistic && (
         <div className="task-triage-secondary-actions task-triage-extracted-secondary-actions">
           <button className="task-triage-open-original" onClick={onOpenOriginal} type="button">
@@ -121,6 +126,7 @@ type NormalTaskReviewProps = {
   onCreateFolder: (name: string, parent: string | null) => string;
   highlightedFolder: number;
   onAssign: (group: string) => void;
+  onKeep: () => void;
   onDelete: () => void;
   onHighlight: (index: number) => void;
   onOpenOriginal: () => void;
@@ -144,6 +150,7 @@ function NormalTaskReview({
   onCreateFolder,
   highlightedFolder,
   onAssign,
+  onKeep,
   onDelete,
   onHighlight,
   onOpenOriginal,
@@ -163,62 +170,12 @@ function NormalTaskReview({
   const refreshedFromPriority = details.triageSourceGroup
     ? isPriorityTodoistGroup(details.triageSourceGroup)
     : false;
-  const [editingTitle, setEditingTitle] = React.useState(false);
-  const [titleDraft, setTitleDraft] = React.useState(title);
-  const [savingTitle, setSavingTitle] = React.useState(false);
-  const titleFieldRef = React.useRef<HTMLTextAreaElement>(null);
-  const titleFocusAtEndRef = React.useRef(false);
-  const titleCommitRef = React.useRef(false);
-  const titleCancelRef = React.useRef(false);
-
-  React.useLayoutEffect(() => {
-    const field = titleFieldRef.current;
-    if (!field || !editingTitle) return;
-    field.style.height = "0px";
-    field.style.height = `${field.scrollHeight}px`;
-    if (titleFocusAtEndRef.current) {
-      titleFocusAtEndRef.current = false;
-      field.focus({ preventScroll: true });
-      field.setSelectionRange(field.value.length, field.value.length);
-    }
-  }, [editingTitle, titleDraft]);
-
-  const beginTitleEdit = (focusAtEnd = false) => {
-    if (resolving || savingTitle) return;
-    titleFocusAtEndRef.current = focusAtEnd;
-    setEditingTitle(true);
-  };
-
-  const commitTitle = async () => {
-    if (titleCommitRef.current) return;
-    if (titleCancelRef.current) {
-      titleCancelRef.current = false;
-      return;
-    }
-    const normalized = titleDraft.trim().replace(/\s+/g, " ");
-    if (!normalized || normalized === title) {
-      setTitleDraft(title);
-      setEditingTitle(false);
-      return;
-    }
-    titleCommitRef.current = true;
-    setSavingTitle(true);
-    try {
-      await onRename(normalized);
-      setTitleDraft(normalized);
-    } catch {
-      setTitleDraft(title);
-    } finally {
-      titleCommitRef.current = false;
-      setSavingTitle(false);
-      setEditingTitle(false);
-    }
-  };
-
+  const {
+    editing: editingTitle, saving: savingTitle, draft: titleDraft, setDraft: setTitleDraft,
+    fieldRef: titleFieldRef, begin: beginTitleEdit, commit: commitTitle, cancel,
+  } = useTaskTitleEditing(title, onRename, resolving);
   const cancelTitleEdit = () => {
-    titleCancelRef.current = true;
-    setTitleDraft(title);
-    setEditingTitle(false);
+    cancel();
     window.requestAnimationFrame(() => searchInputRef.current?.focus());
   };
 
@@ -234,7 +191,7 @@ function NormalTaskReview({
                 {refreshedFromPriority ? "Refreshed priority task" : "Refreshed task"}
               </strong>
               <small>
-                Returned from {todoistGroupDisplayName(details.triageSourceGroup)} {refreshedFromPriority ? `after ${priorityTodoistGroupRefreshDays(details.triageSourceGroup) ?? 3} days` : "at month end"}
+                Returned from {todoistGroupDisplayName(details.triageSourceGroup)} {details.reviewAt ? `for follow-up on ${new Date(details.reviewAt).toLocaleString()}` : refreshedFromPriority ? "for review" : "at month end"}
               </small>
             </span>
           </div>
@@ -271,7 +228,7 @@ function NormalTaskReview({
           />
         ) : (
           <div
-            aria-label={`Edit task title: ${titleDraft}`}
+            aria-label={`Edit task title: ${title}`}
             className="task-triage-markdown-title"
             onClick={() => beginTitleEdit()}
             onKeyDown={(event) => {
@@ -282,7 +239,7 @@ function NormalTaskReview({
             role="button"
             tabIndex={0}
           >
-            <InlineMarkdownLinks>{titleDraft}</InlineMarkdownLinks>
+            <InlineMarkdownLinks>{title}</InlineMarkdownLinks>
           </div>
         )}
         {createdAt && Number.isFinite(createdAt.getTime()) && (
@@ -306,11 +263,11 @@ function NormalTaskReview({
         <div className="task-triage-actions">
           <button
             disabled={resolving || savingTitle || editingTitle}
-            onClick={() => onAssign(previousFolder)}
+            onClick={onKeep}
             type="button"
           >
             <ArrowRight size={15} />
-            <span>Keep in {todoistGroupDisplayName(previousFolder)}</span>
+            <span>{details.reviewAt ? `Follow up again in ${describeTaskFollowUpInterval(task)}` : `Keep in ${todoistGroupDisplayName(previousFolder)}`}</span>
             <kbd>→</kbd>
           </button>
         </div>
@@ -365,6 +322,7 @@ export function TaskTriageDialog({
   initialMode,
   onCreateFolder,
   onAssignGroup,
+  onFollowUpTask,
   onDeleteTask,
   onOpenChange,
   onRenameTask,
@@ -441,7 +399,7 @@ export function TaskTriageDialog({
     }
   }, [currentTask, onResolveExtracted, phase, resolving]);
 
-  const assignFolder = React.useCallback(async (group: string) => {
+  const assignFolder = React.useCallback(async (group: string, intent: "choose" | "keep" = "choose") => {
     if (!currentTask || resolving || phase !== "normal") return;
     if (!groups.includes(group)) return;
     setError(null);
@@ -449,7 +407,7 @@ export function TaskTriageDialog({
     setFolderQuery("");
     setHighlightedFolder(0);
     try {
-      await onAssignGroup(currentTask, group);
+      await onAssignGroup(currentTask, group, intent);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "That task could not be filed");
     } finally {
@@ -473,7 +431,7 @@ export function TaskTriageDialog({
   }, [currentTask, onDeleteTask, phase, resolving]);
 
   const scheduleCurrentTask = React.useCallback(async () => {
-    if (!currentTask || resolving || phase !== "normal") return;
+    if (!currentTask || resolving || (phase !== "normal" && phase !== "extracted")) return;
     setError(null);
     setResolving(true);
     try {
@@ -536,17 +494,8 @@ export function TaskTriageDialog({
         void deleteNormalTask();
         return;
       }
-      if (
-        phase === "normal"
-        && event.metaKey
-        && event.shiftKey
-        && !event.altKey
-        && !event.ctrlKey
-        && !event.repeat
-        && event.key === "ArrowLeft"
-        && !(event.target instanceof HTMLElement
-          && event.target.matches("[data-task-triage-title]"))
-      ) {
+      if (isTaskTriageCalendarShortcut(event, phase, event.target instanceof HTMLElement
+        && event.target.matches("[data-task-triage-title]"))) {
         event.preventDefault();
         event.stopPropagation();
         void scheduleCurrentTask();
@@ -564,7 +513,7 @@ export function TaskTriageDialog({
       ) {
         event.preventDefault();
         event.stopPropagation();
-        void assignFolder(previousFolder);
+        void assignFolder(previousFolder, "keep");
         return;
       }
       if (phase !== "extracted" || event.metaKey || event.ctrlKey || event.altKey || event.repeat) return;
@@ -587,14 +536,15 @@ export function TaskTriageDialog({
   if (priorityReviewVisible) {
     const restoredTask = tasks.find((task) => task.id === returningTask?.id);
     return (
-      <div aria-label="Priority task review" aria-modal="true" className="modal-backdrop task-triage-backdrop" role="dialog">
+      <div aria-label="Follow-up triage" aria-modal="true" className="modal-backdrop task-triage-backdrop" role="dialog">
         <PriorityTaskReview
           tasks={priorityReviewTasks(tasks, folderPreferences.groupParents)}
           groupParents={folderPreferences.groupParents}
           calendars={calendars}
-          onAssignGroup={onAssignGroup}
+          onRename={onRenameTask}
           onSchedule={onScheduleTask}
           onDelete={onDeleteTask}
+          onFollowUp={onFollowUpTask}
           onRestore={onRestorePriorityTask}
           initialReturning={returningTask && restoredTask
             ? { task: restoredTask, direction: returningTask.direction }
@@ -653,6 +603,7 @@ export function TaskTriageDialog({
             folders={folders}
             highlightedFolder={highlightedFolder}
             key={`${currentTask.id}:${currentTask.content}`}
+            onKeep={() => { if (previousFolder) void assignFolder(previousFolder, "keep"); }}
             onAssign={(group) => void assignFolder(group)}
             onDelete={() => void deleteNormalTask()}
             onSchedule={() => void scheduleCurrentTask()}
