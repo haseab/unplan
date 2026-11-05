@@ -94,7 +94,9 @@ export const taskTriagePhase = (
   initialMode: TaskTriageMode,
   extractedTaskCount: number,
   normalTaskCount: number,
+  activePhase: TaskTriageMode | null = null,
 ): TaskTriageMode => {
+  if (activePhase === "priority") return "priority";
   if (initialMode === "follow-up") return "priority";
   if (initialMode !== "normal" && extractedTaskCount > 0) return "extracted";
   if (normalTaskCount > 0) return "normal";

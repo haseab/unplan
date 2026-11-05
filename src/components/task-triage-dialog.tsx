@@ -31,7 +31,6 @@ import {
   orderTaskTriageTasks,
   taskTriageFolders,
   isTaskTriageCalendarShortcut,
-  taskTriagePhase,
   describeTaskFollowUpInterval,
   taskTriagePreviousFolder,
   type TaskTriageFolder,
@@ -46,11 +45,12 @@ type TaskTriageDialogProps = {
   extractedTasks: TodoistTask[];
   groups: string[];
   onCreateFolder: (name: string, parent: string | null) => string;
-  initialMode: TaskTriageMode;
+  phase: TaskTriageMode;
   onFollowUpTask: (task: TodoistTask, date: Date, onRestore: () => void, period?: TaskReviewPeriod) => Promise<void>;
   onAssignGroup: (task: TodoistTask, group: string, intent?: "choose" | "keep") => Promise<void>;
   onDeleteTask: (task: TodoistTask, onRestore?: () => void) => Promise<void>;
   onOpenChange: (open: boolean) => void;
+  onCompleteFollowUp: () => void;
   onScheduleTask: (task: TodoistTask, onRestore?: () => void) => Promise<void>;
   onRestorePriorityTask: (card: PriorityReviewCard) => void;
   onRenameTask: (task: TodoistTask, title: string) => Promise<void>;
@@ -320,12 +320,13 @@ export function TaskTriageDialog({
   tasks,
   extractedTasks,
   groups,
-  initialMode,
+  phase,
   onCreateFolder,
   onAssignGroup,
   onFollowUpTask,
   onDeleteTask,
   onOpenChange,
+  onCompleteFollowUp,
   onRenameTask,
   onScheduleTask,
   onRestorePriorityTask,
@@ -346,7 +347,6 @@ export function TaskTriageDialog({
   });
   const searchInputRef = React.useRef<HTMLInputElement>(null);
   const orderedTasks = React.useMemo(() => orderTaskTriageTasks(ungroupedTasks), [ungroupedTasks]);
-  const phase = taskTriagePhase(initialMode, extractedTasks.length, ungroupedTasks.length);
   const currentTask = phase === "extracted"
     ? extractedTasks[0] ?? null
     : phase === "normal" ? orderedTasks[0] ?? null : null;
@@ -551,6 +551,7 @@ export function TaskTriageDialog({
             ? { task: restoredTask, direction: returningTask.direction }
             : null}
           onClose={close}
+          onComplete={onCompleteFollowUp}
         />
       </div>
     );
