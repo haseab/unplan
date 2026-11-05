@@ -188,7 +188,9 @@ import {
   isEventUnaccepted,
   updateSelfParticipantResponse,
 } from "@/lib/event-participants";
-import { taskTriagePhase, taskTriageShortcutMode } from "@/lib/task-triage";
+import { useTodoistGroupPreferences } from "@/hooks/use-todoist-group-preferences";
+import { priorityTaskContentWithReviewAt } from "@/lib/priority-task-review";
+import { isNormalTaskTriageTask, taskTriageKeepContent, taskTriagePhase, taskTriageShortcutMode } from "@/lib/task-triage";
 import {
   crossSurfaceMoveShortcut,
   eventIdsForKeyboardAction,
@@ -306,7 +308,6 @@ import {
   todoistContentWithDuration,
   todoistContentWithGroup,
   todoistContentWithGroupChange,
-  todoistContentReturnedToTriage,
   todoistContentWithTitle,
   todoistEventRenderedHeight,
   todoistKeyboardTaskMoveChanges,
@@ -1053,12 +1054,10 @@ export function CalendarApp() {
     ),
     [extractionProject?.id, todoistBucketProjectIds, todoistTasks],
   );
+  const { groupParents: taskGroupParents } = useTodoistGroupPreferences();
   const ungroupedTodoistTasks = React.useMemo(
-    () => visibleTodoistTasks.filter((task) => {
-      const group = calendarEventDetailsFromTodoistContent(task.content).group?.trim();
-      return !group || group.toLocaleLowerCase() === "ungrouped";
-    }),
-    [visibleTodoistTasks],
+    () => visibleTodoistTasks.filter((task) => isNormalTaskTriageTask(task, taskGroupParents, now)),
+    [visibleTodoistTasks, taskGroupParents, now],
   );
   useCalendarActivityTitle({
     connected: google.connected,
@@ -1072,8 +1071,8 @@ export function CalendarApp() {
   const todoistGroups = React.useMemo(() => {
     const groups = new Map<string, string>();
     [...todoistCustomGroups, ...visibleTodoistTasks.flatMap((task) => {
-      const group = calendarEventDetailsFromTodoistContent(task.content).group?.trim();
-      return group ? [group] : [];
+      const { group, triageSourceGroup } = calendarEventDetailsFromTodoistContent(task.content);
+      return [group, triageSourceGroup].flatMap((name) => name?.trim() ? [name.trim()] : []);
     })].forEach((group) => {
       if (group.toLocaleLowerCase() !== "ungrouped") {
         groups.set(group.toLocaleLowerCase(), group);
@@ -1089,7 +1088,7 @@ export function CalendarApp() {
   }, [setTodoistCustomGroups, todoistGroups]);
 
   useTaskAgingReconciliation({
-    enabled: todoistConnected,
+    enabled: true,
     tasks: visibleTodoistTasks,
     updateTask: updateTodoistTask,
   });
@@ -6608,7 +6607,28 @@ export function CalendarApp() {
         extractedTasks={extractedTasks}
         groups={todoistGroups}
         initialMode={taskTriageMode}
-        onAssignGroup={async (task, group, onRestore) => {
+        onFollowUpTask={async (task, date, onRestore, period) => {
+          if (date.getTime() <= Date.now()) throw new Error("Choose a future follow-up time");
+          const content = priorityTaskContentWithReviewAt(task, date, new Date(), period);
+          const restore = () => {
+            replaceLocalTodoistTask(task);
+            onRestore();
+          };
+          replaceLocalTodoistTask({ ...task, content, optimistic: true });
+          queueActionToast(`Follow up ${todoistTaskDisplayTitle(task.content)} on ${date.toLocaleString()}`, {
+            duration: toastDuration,
+            resourceIds: [task.id],
+            onUndo: restore,
+            onSubmit: async () => {
+              await updateTodoistTask(task.id, { content, description: task.description });
+            },
+            onError: (error) => {
+              restore();
+              toast.error(error instanceof Error ? error.message : "Follow-up could not be saved");
+            },
+          });
+        }}
+        onAssignGroup={async (task, group, intent) => {
           const title = todoistTaskDisplayTitle(task.content);
           const taskDetails = calendarEventDetailsFromTodoistContent(task.content);
           const taskCalendar = writableCalendars.find(
@@ -6616,9 +6636,7 @@ export function CalendarApp() {
           ) ?? defaultTaskCalendar;
           const groupedTask = {
             ...task,
-            content: group === "Ungrouped" && onRestore
-              ? todoistContentReturnedToTriage(task.content, taskDetails.group ?? "Priority")
-              : todoistContentWithGroupChange(
+            content: intent === "keep" ? taskTriageKeepContent(task, group) : todoistContentWithGroupChange(
               taskCalendar
                 ? todoistContentWithCalendar(task.content, taskCalendar.id)
                 : task.content,
@@ -6631,9 +6649,8 @@ export function CalendarApp() {
           queueActionToast(`Moved ${title} to ${group === "Ungrouped" ? "Retriage" : group}`, {
             duration: toastDuration,
             onUndo: () => {
-              onRestore?.();
-              setTaskTriageMode(onRestore ? "priority" : "normal");
-              setReturningTriageTask({ direction: onRestore ? "up" : "right", id: task.id });
+              setTaskTriageMode("normal");
+              setReturningTriageTask({ direction: "right", id: task.id });
               replaceLocalTodoistTask(task);
               setShowTaskTriage(true);
             },
@@ -6644,9 +6661,8 @@ export function CalendarApp() {
               });
             },
             onError: (error) => {
-              onRestore?.();
-              setTaskTriageMode(onRestore ? "priority" : "normal");
-              setReturningTriageTask({ direction: onRestore ? "up" : "right", id: task.id });
+              setTaskTriageMode("normal");
+              setReturningTriageTask({ direction: "right", id: task.id });
               replaceLocalTodoistTask(task);
               setShowTaskTriage(true);
               toast.error(error instanceof Error ? error.message : "Task group could not be updated");
@@ -6665,7 +6681,7 @@ export function CalendarApp() {
         onOpenChange={setShowTaskTriage}
         onRenameTask={renameSidebarTodoistTask}
         onRestorePriorityTask={({ task, direction }) => {
-          setTaskTriageMode("priority");
+          setTaskTriageMode("follow-up");
           setReturningTriageTask({ id: task.id, direction });
           setShowTaskTriage(true);
         }}
@@ -6936,6 +6952,11 @@ export function CalendarApp() {
             onRefresh={() => refreshTodoist()}
             onOpenExtractedTriage={() => {
               startTaskTriage("extracted");
+            }}
+            onOpenPriorityReview={() => {
+              triageAfterFollowUps.current = false;
+              setTaskTriageMode("follow-up");
+              setShowTaskTriage(true);
             }}
             onOpenNormalTriage={() => {
               startTaskTriage("normal");

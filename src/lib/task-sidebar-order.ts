@@ -34,17 +34,19 @@ export type SidebarNavigationItem = {
 
 export const sidebarFolderNavigationId = (group: string) => `folder:${group}`;
 export const sidebarTaskNavigationId = (taskId: string) => `task:${taskId}`;
-export const sidebarTriageNavigationId = (mode: "extracted" | "normal" | "follow-ups") =>
+export const sidebarTriageNavigationId = (mode: "extracted" | "normal" | "follow-ups" | "priority") =>
   `triage:${mode}`;
 
 export const sidebarTriageNavigationItems = ({
   extractedCount,
   normalCount,
   followUpCount = 0,
+  priorityReviewCount = 0,
 }: {
   extractedCount: number;
   normalCount: number;
   followUpCount?: number;
+  priorityReviewCount?: number;
 }): SidebarNavigationItem[] => [
   ...(followUpCount > 0
     ? [{ id: sidebarTriageNavigationId("follow-ups"), kind: "action" as const }]
@@ -55,7 +57,9 @@ export const sidebarTriageNavigationItems = ({
   ...(normalCount > 0
     ? [{ id: sidebarTriageNavigationId("normal"), kind: "action" as const }]
     : []),
-
+  ...(priorityReviewCount > 0
+    ? [{ id: sidebarTriageNavigationId("priority"), kind: "action" as const }]
+    : []),
 ];
 
 export const sidebarFocusFallbackNavigationId = ({

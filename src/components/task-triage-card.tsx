@@ -8,6 +8,8 @@ type TaskTriageCardProps = {
   extractedCount: number;
   normalCount: number;
   followUpCount: number;
+  priorityReviewCount: number;
+  onOpenPriorityReview: () => void;
   onOpenFollowUps: () => void;
   onOpenExtracted: () => void;
   onOpenNormal: () => void;
@@ -18,12 +20,14 @@ export function TaskTriageCard({
   extractedCount,
   normalCount,
   followUpCount,
+  priorityReviewCount,
+  onOpenPriorityReview,
   onOpenFollowUps,
   onOpenExtracted,
   onOpenNormal,
   onNavigate,
 }: TaskTriageCardProps) {
-  if (extractedCount <= 0 && normalCount <= 0 && followUpCount <= 0) return null;
+  if (extractedCount <= 0 && normalCount <= 0 && followUpCount <= 0 && priorityReviewCount <= 0) return null;
 
   const handleNavigation = (
     event: React.KeyboardEvent<HTMLButtonElement>,
@@ -88,6 +92,21 @@ export function TaskTriageCard({
         </button>
       )}
 
+      {priorityReviewCount > 0 && (
+        <button
+          aria-label={`Follow-up triage, ${priorityReviewCount} remaining`}
+          className="task-triage-card-trigger task-triage-card-trigger-follow-up"
+          data-sidebar-navigation-id={sidebarTriageNavigationId("priority")}
+          data-sidebar-navigation-kind="action"
+          onClick={onOpenPriorityReview}
+          onKeyDown={(event) => handleNavigation(event, sidebarTriageNavigationId("priority"))}
+          type="button"
+        >
+          <span>{priorityReviewCount}</span>
+          <Repeat2 aria-hidden="true" size={14} />
+          <strong>Follow-up triage</strong>
+        </button>
+      )}
     </div>
   );
 }

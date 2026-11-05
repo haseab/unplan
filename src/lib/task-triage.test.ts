@@ -153,3 +153,9 @@ test("priority launch cannot skip pending queues and restores triage on rollback
   assert.equal(taskTriagePhase("priority", 0, 1), "normal");
   assert.equal(taskTriagePhase("priority", 1, 1), "extracted");
 });
+
+test("the Follow-up triage banner opens priority review directly while Cmd E keeps its sequence", () => {
+  assert.equal(taskTriagePhase("follow-up", 2, 3), "priority");
+  assert.equal(taskTriagePhase("extracted", 2, 3), "extracted");
+  assert.equal(taskTriagePhase("normal", 0, 3), "normal");
+});

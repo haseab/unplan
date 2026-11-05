@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { calendarEventDetailsFromTodoistContent, isTodoistTriageGroup } from "@/lib/todoist-calendar";
 import { useTodoistGroupPreferences } from "./use-todoist-group-preferences";
 import type { TodoistTask, UpdateTodoistTaskInput } from "@/lib/todoist";
 import {
@@ -49,7 +50,12 @@ export function useTaskAgingReconciliation({
     ) return;
 
     const now = new Date();
-    if (isTaskAgingReconciliationCoolingDown(
+    const hasDueReview = tasksRef.current.some((task) => {
+      const details = calendarEventDetailsFromTodoistContent(task.content);
+      return !task.optimistic && !isTodoistTriageGroup(details.group)
+        && Date.parse(details.reviewAt ?? "") <= now.getTime();
+    });
+    if (!hasDueReview && isTaskAgingReconciliationCoolingDown(
       window.localStorage.getItem(TASK_AGING_RECONCILIATION_STORAGE_KEY),
       now.getTime(),
     )) return;

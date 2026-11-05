@@ -43,6 +43,17 @@ export const taskAgingUpdate = (
   const group = details.group?.trim() ?? "";
   if (isTodoistTriageGroup(group)) return null;
 
+  // Explicit review times override both folder defaults and monthly aging,
+  // including tasks in descendants of priority folders.
+  const reviewAt = Date.parse(details.reviewAt ?? "");
+  if (Number.isFinite(reviewAt)) {
+    return reviewAt <= now.getTime() ? {
+      content: todoistContentReturnedToTriage(task.content, group, now),
+      reason: "retriage-priority",
+      task,
+    } : null;
+  }
+
   const priority = isPriorityTodoistGroup(group);
   const activity = taskFolderActivityState(group, folders.activity, folders.parents);
   const priorityRefreshDays = priorityTodoistGroupRefreshDays(group);

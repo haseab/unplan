@@ -109,3 +109,12 @@ test("due follow-ups precede extraction and task triage in sidebar navigation", 
     { id: "triage:normal", kind: "action" },
   ]);
 });
+
+test("follow-up triage has a keyboard navigation entry after extraction and task triage", () => {
+  assert.deepEqual(sidebarTriageNavigationItems({
+    extractedCount: 2, normalCount: 3, priorityReviewCount: 4,
+  }).map(({ id }) => id), ["triage:extracted", "triage:normal", "triage:priority"]);
+  assert.deepEqual(sidebarTriageNavigationItems({
+    extractedCount: 0, normalCount: 0, priorityReviewCount: 0,
+  }), []);
+});

@@ -1,11 +1,50 @@
+import { nextTaskReviewDate } from "./task-review-period";
+import { isDefaultRefreshedPriorityReviewTask, priorityTaskContentWithReviewAt } from "./priority-task-review";
 import {
   calendarEventDetailsFromTodoistContent,
   flattenTodoistGroupTree,
+  isTodoistTriageGroup,
   priorityTodoistGroupRefreshDays,
   todoistGroupAncestors,
+  todoistContentWithGroupChange,
   type TodoistGroupParents,
 } from "./todoist-calendar";
 import type { TodoistTask } from "./todoist";
+
+export const isNormalTaskTriageTask = (task: TodoistTask, parents: TodoistGroupParents, now = new Date()) => {
+  const details = calendarEventDetailsFromTodoistContent(task.content);
+  return isTodoistTriageGroup(details.group)
+    && !(Date.parse(details.reviewAt ?? "") > now.getTime())
+    && !isDefaultRefreshedPriorityReviewTask(task, parents);
+};
+
+export function taskFollowUpIntervalMs(task: TodoistTask) {
+  const details = calendarEventDetailsFromTodoistContent(task.content);
+  // Older records did not save their chosen interval. Use the original folder's default.
+  return Number.isFinite(details.reviewIntervalMs) && details.reviewIntervalMs! > 0
+    ? details.reviewIntervalMs!
+    : (priorityTodoistGroupRefreshDays(details.triageSourceGroup ?? details.group ?? "") ?? 7) * 86_400_000;
+}
+
+export function describeTaskFollowUpInterval(task: TodoistTask) {
+  const period = calendarEventDetailsFromTodoistContent(task.content).reviewPeriod;
+  if (period) return `${period.amount} ${period.unit}${period.amount === 1 ? "" : "s"}`;
+  const minutes = Math.max(1, Math.round(taskFollowUpIntervalMs(task) / 60_000));
+  const [amount, unit] = minutes % 1440 === 0 ? [minutes / 1440, "day"]
+    : minutes % 60 === 0 ? [minutes / 60, "hour"] : [minutes, "minute"];
+  return `${amount} ${unit}${amount === 1 ? "" : "s"}`;
+}
+
+/** Explicit folder choices clear the follow-up; Keep alone repeats its interval. */
+export function taskTriageKeepContent(task: TodoistTask, group: string, now = new Date()) {
+  const details = calendarEventDetailsFromTodoistContent(task.content);
+  if (details.triageSourceGroup && Number.isFinite(Date.parse(details.reviewAt ?? ""))) {
+    const period = details.reviewPeriod;
+    const date = period ? nextTaskReviewDate(period, now) : new Date(now.getTime() + taskFollowUpIntervalMs(task));
+    return priorityTaskContentWithReviewAt(task, date, now, period);
+  }
+  return todoistContentWithGroupChange(task.content, group, now);
+}
 
 export const taskTriagePreviousFolder = (task: TodoistTask | null, groups: readonly string[]): string | null => {
   if (!task) return null;
@@ -49,13 +88,14 @@ export type TaskTriageFolder = {
   path: string;
 };
 
-export type TaskTriageMode = "extracted" | "normal" | "priority";
+export type TaskTriageMode = "extracted" | "normal" | "priority" | "follow-up";
 
 export const taskTriagePhase = (
   initialMode: TaskTriageMode,
   extractedTaskCount: number,
   normalTaskCount: number,
 ): TaskTriageMode => {
+  if (initialMode === "follow-up") return "priority";
   if (initialMode !== "normal" && extractedTaskCount > 0) return "extracted";
   if (normalTaskCount > 0) return "normal";
   return "priority";

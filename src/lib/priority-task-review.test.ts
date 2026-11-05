@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createPriorityReviewState, priorityReviewReducer, remainingPriorityReviewTasks, priorityReviewSection, priorityReviewTasks, prioritySwipeDirection } from "./priority-task-review";
-import { todoistContentWithGroup, todoistContentWithGroupChange } from "./todoist-calendar";
+import { createPriorityReviewState, priorityReviewReducer, remainingPriorityReviewTasks, priorityReviewSection, priorityReviewDefaultDays, priorityReviewTasks } from "./priority-task-review";
+import { todoistContentReturnedToTriage, todoistContentWithGroup, todoistContentWithGroupChange } from "./todoist-calendar";
 import type { TodoistTask } from "./todoist";
 
 const task = (id: string, group: string): TodoistTask => ({
@@ -9,7 +9,7 @@ const task = (id: string, group: string): TodoistTask => ({
   projectId: "tasks", due: null,
 });
 
-test("priority review only includes Now and Today folders and their descendants", () => {
+test("follow-up triage includes only Today, Tomorrow, Later and their descendants", () => {
   const tasks = [
     task("now", "Priority right now"),
     task("alias", "Priority Now"),
@@ -26,7 +26,7 @@ test("priority review only includes Now and Today folders and their descendants"
     Backlog: "Priority Later",
     "Priority Today": "Priority",
     "Priority Later": "Priority",
-  }).map(({ id }) => id), ["now", "alias", "today", "child"]);
+  }).map(({ id }) => id), ["today", "child", "tomorrow", "later", "later-child"]);
 });
 
 test("priority review recognizes normalized folder paths", () => {
@@ -34,7 +34,7 @@ test("priority review recognizes normalized folder paths", () => {
     task("now", "Work/ PRIORITY RIGHT NOW "),
     task("today", "Work/Priority Today"),
     task("later", "Work/Priority Later"),
-  ], {}).map(({ id }) => id), ["now", "today"]);
+  ], {}).map(({ id }) => id), ["today", "later"]);
 });
 
 test("newly filed priority tasks are included; ungrouped tasks are excluded", () => {
@@ -43,22 +43,15 @@ test("newly filed priority tasks are included; ungrouped tasks are excluded", ()
   assert.deepEqual(priorityReviewTasks([{ ...original, content: todoistContentWithGroup(original.content, "Priority today") }], {}).map(({ id }) => id), ["new"]);
 });
 
-test("priority swipes require deliberate horizontal movement", () => {
-  assert.equal(prioritySwipeDirection(-60, 10), "left");
-  assert.equal(prioritySwipeDirection(100, -20), "right");
-  assert.equal(prioritySwipeDirection(59, 0), null);
-  assert.equal(prioritySwipeDirection(-80, 90), null);
-  assert.equal(prioritySwipeDirection(0, 0), null);
-});
 
-test("priority review reviews Now before Today even when Today was filed more recently", () => {
+test("priority review reviews Today before Later even when Later was filed more recently", () => {
   const older = { ...task("older", "Ungrouped"), createdAt: "2026-09-16T12:00:00Z" };
   const justFlagged = { ...task("just-flagged", "Ungrouped"), createdAt: "2026-01-01T12:00:00Z" };
   const tasks = [
-    { ...older, content: todoistContentWithGroupChange(older.content, "Priority Now", new Date("2026-09-15T12:00:00Z")) },
+    { ...older, content: todoistContentWithGroupChange(older.content, "Priority Today", new Date("2026-09-15T12:00:00Z")) },
     { ...justFlagged, content: todoistContentWithGroupChange(justFlagged.content, "Launch", new Date("2026-09-16T12:00:00Z")) },
   ];
-  assert.deepEqual(priorityReviewTasks(tasks, { Launch: "Priority Today" }).map(({ id }) => id), ["older", "just-flagged"]);
+  assert.deepEqual(priorityReviewTasks(tasks, { Launch: "Priority Later" }).map(({ id }) => id), ["older", "just-flagged"]);
   assert.deepEqual(tasks.map(({ id }) => id), ["older", "just-flagged"], "source order is unchanged");
 });
 
@@ -111,8 +104,38 @@ test("a reopened review starts with the undone task even if its source order cha
 });
 
 test("section labels recognize aliases, paths, and descendant folders", () => {
-  assert.equal(priorityReviewSection(task("now", "Work/ PRIORITY NOW "), {}), "Priority Right Now");
-  assert.equal(priorityReviewSection(task("child", "Launch"), { Launch: "Priority right now" }), "Priority Right Now");
+  assert.equal(priorityReviewSection(task("now", "Work/ PRIORITY TODAY "), {}), "Priority Today");
+  assert.equal(priorityReviewSection(task("child", "Launch"), { Launch: "Priority today" }), "Priority Today");
   assert.equal(priorityReviewSection(task("child", "Launch"), { Launch: "Work/PRIORITY TODAY" }), "Priority Today");
-  assert.equal(priorityReviewSection(task("later", "Priority Later"), {}), null);
+  assert.equal(priorityReviewSection(task("later", "Priority Later"), {}), "Priority Later");
+});
+
+test("default refresh timers never exclude tasks without an explicit follow-up date", () => {
+  const now = new Date("2026-11-05T18:00:00Z");
+  const tasks = ["Priority Tomorrow", "Priority Later", "Priority Today"].map((group, index) => ({
+    ...task(String(index), group),
+    content: todoistContentWithGroupChange(String(index), group, now),
+  }));
+  assert.deepEqual(priorityReviewTasks(tasks, {}).map(({ id }) => id), ["2", "0", "1"]);
+});
+
+test("Now and Right Now never inherit follow-up eligibility from a parent", () => {
+  for (const group of ["Priority Now", "Priority Right Now"]) {
+    assert.equal(priorityReviewSection(task("now", group), { [group]: "Priority Today" }), null);
+    assert.equal(priorityReviewSection(task("child", "Now child"), { "Now child": group }), null);
+  }
+});
+
+test("legacy refreshed priority tasks enter follow-up triage without an explicit review time", () => {
+  const refreshed = { ...task("returned", "Priority Tomorrow"), content: todoistContentReturnedToTriage("Returned", "Priority Tomorrow") };
+  assert.deepEqual(priorityReviewTasks([refreshed], {}).map(({ id }) => id), ["returned"]);
+});
+
+test("follow-up defaults match the task's priority category and saved source", () => {
+  assert.equal(priorityReviewDefaultDays(task("today", "Priority Today"), {}), 3);
+  assert.equal(priorityReviewDefaultDays(task("tomorrow", "Priority Tomorrow"), {}), 3);
+  assert.equal(priorityReviewDefaultDays(task("later", "Priority Later"), {}), 7);
+  assert.equal(priorityReviewDefaultDays(task("nested", "Launch"), { Launch: "Priority Later" }), 7);
+  const refreshed = { ...task("returned", "Ungrouped"), content: todoistContentReturnedToTriage("Returned", "Priority Later") };
+  assert.equal(priorityReviewDefaultDays(refreshed, {}), 7);
 });
