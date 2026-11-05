@@ -74,8 +74,10 @@ test("worker sends the same authenticated POST each invocation without task stat
   assert.equal(requests.length, 2);
   for (const request of requests) {
     assert.equal(request.method, "POST");
+    assert.equal(request.redirect, "manual");
     assert.equal(request.headers.get("authorization"), "Bearer test-only");
     assert.equal(await request.text(), "");
   }
+  await assert.rejects(triggerTaskRefresh(env, async () => new Response(null, { status: 302, headers: { Location: "https://other.example/" } })), /HTTP 302/);
   await assert.rejects(triggerTaskRefresh(env, async () => new Response(null, { status: 502 })), /HTTP 502/);
 });

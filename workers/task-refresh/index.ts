@@ -5,7 +5,7 @@ export async function triggerTaskRefresh(env: RefreshWorkerEnv, fetcher: typeof 
     method: "POST",
     headers: { Authorization: `Bearer ${env.TASK_REFRESH_SECRET}` },
     signal: AbortSignal.timeout(55_000),
-    redirect: "error",
+    redirect: "manual",
   });
   if (!response.ok) throw new Error(`Task refresh returned HTTP ${response.status}`);
   const result = await response.json();
