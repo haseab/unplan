@@ -101,6 +101,7 @@ import {
 import { useRecurringDeleteConfirmation } from "@/hooks/use-recurring-delete-confirmation";
 import { useCalendarTimeScale } from "@/hooks/use-calendar-time-scale";
 import { useCalendarSidebarFocus } from "@/hooks/use-calendar-sidebar-focus";
+import { useCalendarActivityTitle } from "@/hooks/use-calendar-activity-title";
 import { useToastSettings } from "@/hooks/use-toast-settings";
 import { useTodoist } from "@/hooks/use-todoist";
 import { useTodoistCustomGroups } from "@/hooks/use-todoist-group-preferences";
@@ -187,7 +188,7 @@ import {
   isEventUnaccepted,
   updateSelfParticipantResponse,
 } from "@/lib/event-participants";
-import { taskTriageShortcutMode } from "@/lib/task-triage";
+import { taskTriagePhase, taskTriageShortcutMode } from "@/lib/task-triage";
 import {
   crossSurfaceMoveShortcut,
   eventIdsForKeyboardAction,
@@ -1059,6 +1060,14 @@ export function CalendarApp() {
     }),
     [visibleTodoistTasks],
   );
+  useCalendarActivityTitle({
+    connected: google.connected,
+    settingsOpen: showSettings,
+    followUpReviewOpen: showFollowUpReview,
+    triagePhase: showTaskTriage
+      ? taskTriagePhase(taskTriageMode, extractedTasks.length, ungroupedTodoistTasks.length)
+      : null,
+  });
   const todoistGroups = React.useMemo(() => {
     const groups = new Map<string, string>();
     [...todoistCustomGroups, ...visibleTodoistTasks.flatMap((task) => {

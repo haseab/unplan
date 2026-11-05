@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { Toaster } from "sonner";
 import { BrowserConsoleLogger } from "@/components/browser-console-logger";
+import { CALENDAR_ACTIVITY_TITLES } from "@/lib/calendar-activity";
 import { DEFAULT_THEME } from "@/lib/theme";
 import "./globals.css";
 
@@ -16,7 +17,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "unplan — Calendar, refined",
+  title: CALENDAR_ACTIVITY_TITLES.calendar,
   description: "An open-source, keyboard-first calendar for the web.",
 };
 
