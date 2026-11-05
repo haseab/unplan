@@ -5,7 +5,7 @@ import { parseTaskReviewDate } from "./task-review-date";
 import { calendarEventDetailsFromTodoistContent, todoistContentWithGroupChange, todoistContentWithReviewAt } from "./todoist-calendar";
 import { taskAgingUpdate } from "./task-aging";
 import { isNormalTaskTriageTask, taskTriageKeepContent } from "./task-triage";
-import { priorityTaskContentWithReviewAt, priorityReviewTasks } from "./priority-task-review";
+import { priorityTaskContentRefreshedNow, priorityTaskContentWithReviewAt, priorityReviewTasks } from "./priority-task-review";
 import type { TodoistTask } from "./todoist";
 
 const now = new Date(2026, 7, 20, 14, 30);
@@ -167,4 +167,35 @@ test("stored calendar rules reject malformed values and tolerate legacy records"
     assert.equal(readTaskReviewPeriod(value), undefined);
   }
   assert.equal(parseTaskReviewPeriod("1constructor"), null);
+});
+
+
+test("now is an explicit immediate date, while past dates and zero durations stay invalid", () => {
+  for (const input of ["now", " NOW "]) assert.equal(parseTaskReviewDate(input, now)?.getTime(), now.getTime());
+  for (const input of ["0d", "0 min", "yesterday"]) assert.equal(parseTaskReviewDate(input, now), null);
+});
+
+for (const group of ["Priority Today", "Priority Tomorrow", "Priority Later"]) {
+  test(`now immediately returns ${group} to task triage without reconciliation`, () => {
+    const task = makeTask(todoistContentWithGroupChange("Refresh now", group, now));
+    const refreshed = makeTask(priorityTaskContentRefreshedNow(task, {}, now));
+    const details = calendarEventDetailsFromTodoistContent(refreshed.content);
+    assert.equal(details.group, "Ungrouped");
+    assert.equal(details.triageSourceGroup, group);
+    assert.equal(details.reviewAt, now.toISOString());
+    assert.equal(isNormalTaskTriageTask(refreshed, {}, now), true);
+    assert.deepEqual(priorityReviewTasks([refreshed], {}), []);
+    assert.equal(taskAgingUpdate(refreshed, now), null);
+    const repeated = makeTask(taskTriageKeepContent(refreshed, group, now));
+    assert.equal(calendarEventDetailsFromTodoistContent(repeated.content).group, group);
+    assert.equal(calendarEventDetailsFromTodoistContent(repeated.content).reviewPeriod?.amount, group === "Priority Later" ? 7 : 3);
+  });
+}
+
+test("now also refreshes default-returned tasks, preserving their source folder", () => {
+  const task = makeTask("Returned [[unplan:v1;group=Ungrouped;triageSourceGroup=Priority%20Later]]");
+  const refreshed = makeTask(priorityTaskContentRefreshedNow(task, {}, now));
+  assert.equal(calendarEventDetailsFromTodoistContent(refreshed.content).triageSourceGroup, "Priority Later");
+  assert.equal(isNormalTaskTriageTask(refreshed, {}, now), true);
+  assert.deepEqual(priorityReviewTasks([refreshed], {}), []);
 });

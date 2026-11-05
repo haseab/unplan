@@ -5,6 +5,7 @@ import {
   isTodoistTriageGroup,
   todoistContentWithGroupChange,
   todoistContentWithReviewAt,
+  todoistContentReturnedToTriage,
   todoistGroupAncestors,
   type TodoistGroupParents,
 } from "./todoist-calendar";
@@ -42,6 +43,17 @@ export function priorityTaskContentWithReviewAt(task: TodoistTask, date: Date, n
     ? todoistContentWithGroupChange(task.content, details.triageSourceGroup)
     : task.content;
   return todoistContentWithReviewAt(content, date, now, period);
+}
+
+export function priorityTaskContentRefreshedNow(task: TodoistTask, parents: TodoistGroupParents, now = new Date()) {
+  const details = calendarEventDetailsFromTodoistContent(task.content);
+  const period = details.reviewPeriod ?? {
+    amount: priorityReviewDefaultDays(task, parents), unit: "day" as const,
+    dayOfMonth: now.getDate(), monthOfYear: now.getMonth(),
+  };
+  const content = priorityTaskContentWithReviewAt(task, now, now, period);
+  const group = calendarEventDetailsFromTodoistContent(content).group ?? "Ungrouped";
+  return todoistContentReturnedToTriage(content, group, now);
 }
 
 const prioritySectionOrder = (section: string) => {

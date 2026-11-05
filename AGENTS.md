@@ -12,11 +12,26 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 - Never create a Git commit unless the user explicitly asks you to commit the
   current changes. Completing a feature, preparing changes, deploying, or
-  pushing does not implicitly authorize a commit.
+  pushing does not implicitly authorize a commit. An explicit **"ship it"**
+  authorizes the task-related commits required by the shipping workflow below.
 - Leave completed changes uncommitted by default so the user can inspect them.
 - When the user does explicitly request a commit, include only the files and
   hunks that belong to the requested work and preserve unrelated worktree
   changes.
+
+# Shipping
+
+- **"Ship it" means review and verify the task changes, commit them on a
+  descriptive feature branch, push that branch, create a pull request, merge
+  it into `main`, and deploy the merged changes to production.**
+- A branch push alone does not complete shipping. Use the existing production
+  deployment pipeline; unplan currently deploys to Railway at
+  **https://unplan.io**.
+- Wait for the production deployment of the merged `main` commit to succeed,
+  verify the live application responds, and report the pull request, merged
+  commit, and production URL. Report any blocker instead of claiming shipping
+  is complete before the merge and deployment have both succeeded.
+- Preserve unrelated work and do not include it in shipping commits.
 
 # Code organization and refactoring
 

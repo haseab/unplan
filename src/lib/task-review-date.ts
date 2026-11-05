@@ -6,6 +6,7 @@ import { nextTaskReviewDate, parseTaskReviewPeriod } from "./task-review-period"
 /** Relative durations preserve time; named dates return at local midnight. */
 export function parseTaskReviewDate(input: string, now = new Date()): Date | null {
   const query = input.trim();
+  if (query.toLowerCase() === "now") return new Date(now);
   const period = parseTaskReviewPeriod(query, now);
   let date: Date;
   if (period) {

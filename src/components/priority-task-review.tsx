@@ -47,6 +47,7 @@ export function PriorityTaskReview({ tasks, calendars, groupParents, onRename, o
   const defaultDays = current ? priorityReviewDefaultDays(current, groupParents) : 3;
   const reviewQuery = reviewInput.trim() || `${defaultDays}d`;
   const reviewDate = parseTaskReviewDate(reviewQuery);
+  const refreshImmediately = reviewQuery.toLowerCase() === "now";
   const resolveCurrent = React.useCallback(() => {
     if (titleBusy) return;
     const query = (inputDraft?.taskId === current?.id ? inputDraft?.value.trim() : "") || `${defaultDays}d`;
@@ -149,10 +150,10 @@ export function PriorityTaskReview({ tasks, calendars, groupParents, onRename, o
         <div className="priority-review-date-command">
           <Clock3 aria-hidden="true" size={17} />
           <input readOnly={titleBusy} key={current?.id} autoFocus id="priority-review-date" value={reviewInput} onChange={(event) => { if (current) setInputDraft({ taskId: current.id, value: event.target.value }); }} autoComplete="off" aria-describedby="priority-review-preview" placeholder={`${defaultDays} days`} />
-          <button type="submit" aria-label="Set follow-up" disabled={!!departure || titleBusy || !reviewDate}>Set follow-up <CornerDownLeft size={14} aria-hidden="true" /></button>
+          <button type="submit" aria-label="Set follow-up" disabled={!!departure || titleBusy || !reviewDate}>{refreshImmediately ? "Refresh now" : "Set follow-up"} <CornerDownLeft size={14} aria-hidden="true" /></button>
         </div>
         <p id="priority-review-preview" aria-live="polite" data-valid={!!reviewDate}>
-          {reviewDate ? <><ArrowRight size={12} aria-hidden="true" />Back in task triage <strong>{reviewDate.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })} · {reviewDate.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}</strong></> : "Try 7d, 7 days, 61 min, or Sep 1."}
+          {reviewDate ? <><ArrowRight size={12} aria-hidden="true" />Back in task triage <strong>{refreshImmediately ? "immediately" : `${reviewDate.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })} · ${reviewDate.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}`}</strong></> : "Try now, 7d, 61 min, or Sep 1."}
         </p>
       </form>
       {error && <p className="task-triage-error" role="alert">{error}</p>}

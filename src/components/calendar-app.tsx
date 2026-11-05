@@ -189,7 +189,7 @@ import {
   updateSelfParticipantResponse,
 } from "@/lib/event-participants";
 import { useTodoistGroupPreferences } from "@/hooks/use-todoist-group-preferences";
-import { priorityTaskContentWithReviewAt } from "@/lib/priority-task-review";
+import { priorityTaskContentRefreshedNow, priorityTaskContentWithReviewAt } from "@/lib/priority-task-review";
 import { isNormalTaskTriageTask, taskTriageKeepContent, taskTriagePhase, taskTriageShortcutMode } from "@/lib/task-triage";
 import {
   crossSurfaceMoveShortcut,
@@ -6616,14 +6616,22 @@ export function CalendarApp() {
         groups={todoistGroups}
         initialMode={taskTriageMode}
         onFollowUpTask={async (task, date, onRestore, period) => {
-          if (date.getTime() <= Date.now()) throw new Error("Choose a future follow-up time");
-          const content = priorityTaskContentWithReviewAt(task, date, new Date(), period);
+          if (!Number.isFinite(date.getTime())) throw new Error("Choose a follow-up time");
+          const reference = new Date();
+          const refreshImmediately = date.getTime() <= reference.getTime();
+          const content = refreshImmediately ? priorityTaskContentRefreshedNow(task, taskGroupParents, reference)
+            : priorityTaskContentWithReviewAt(task, date, reference, period);
           const restore = () => {
             replaceLocalTodoistTask(task);
             onRestore();
           };
           replaceLocalTodoistTask({ ...task, content, optimistic: true });
-          queueActionToast(`Follow up ${todoistTaskDisplayTitle(task.content)} on ${date.toLocaleString()}`, {
+          if (refreshImmediately) {
+            setNow(reference);
+            setTaskTriageMode("normal");
+          }
+          queueActionToast(refreshImmediately ? `Refreshed ${todoistTaskDisplayTitle(task.content)} for task triage`
+            : `Follow up ${todoistTaskDisplayTitle(task.content)} on ${date.toLocaleString()}`, {
             duration: toastDuration,
             resourceIds: [task.id],
             onUndo: restore,
