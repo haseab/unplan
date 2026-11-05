@@ -188,7 +188,7 @@ export const changedTodoistProjectOrders = (
   });
 };
 
-type TodoistTaskPayload = {
+export type TodoistTaskPayload = {
   added_at?: string | null;
   child_order?: number | null;
   id: string;

@@ -1,3 +1,4 @@
+import { zonedMonthEnd } from "./zoned-month-end";
 import { todoistGroupAncestors, type TodoistGroupParents } from "./todoist-calendar";
 
 export const TASK_FOLDER_ACTIVITY_STORAGE_KEY = "unplan:task-folder-activity:v1";
@@ -42,7 +43,8 @@ export function taskFolderActivityState(
 }
 
 /** Most recent month-end day, at midnight in the user's local timezone. */
-export function latestMonthEnd(now: Date) {
+export function latestMonthEnd(now: Date, timeZone?: string) {
+  if (timeZone) return zonedMonthEnd(now, timeZone);
   const end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
   return now.getTime() >= end.getTime()
     ? end

@@ -29,6 +29,7 @@ export type TaskAgingUpdate = {
 export type TaskAgingFolders = {
   activity: TaskFolderActivity;
   parents: TodoistGroupParents;
+  timeZone?: string;
 };
 
 const inactiveFolders: TaskAgingFolders = { activity: {}, parents: {} };
@@ -82,7 +83,7 @@ export const taskAgingUpdate = (
     return null;
   }
 
-  const monthEndMs = latestMonthEnd(now).getTime();
+  const monthEndMs = latestMonthEnd(now, folders.timeZone).getTime();
   if (changedAtMs < monthEndMs && Date.parse(activity.changedAt) <= monthEndMs) {
     return {
       content: todoistContentReturnedToTriage(task.content, group, now),
