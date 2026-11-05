@@ -143,3 +143,31 @@ interaction hook, or mutation workflow into a reusable and testable module.
 On Haseab's BB machine, the shared registry is `~/.bb/dev-ports.json` and
 `~/.bb/bin/project-dev unplan` uses the same assignment. These personal
 files are optional; collaborators can use the repository commands above.
+
+## Cloud CLI account selection
+
+On Haseab's machine, always select an account explicitly with these CLI wrappers:
+
+| Command | Account |
+| --- | --- |
+| `wrangler personal <arguments...>` | Personal Cloudflare account, `hullah3000@gmail.com` |
+| `wrangler work <arguments...>` | Founders, Inc. Cloudflare account, `haseab@f.inc` |
+| `rw personal <arguments...>` | Personal Railway account, `hullah3000@gmail.com` |
+| `rw work <arguments...>` | Work Railway account, `haseab@f.inc` |
+
+Use `wrangler personal` for Unplan's Cloudflare cron and `rw personal` for
+Unplan's Railway production service. For example:
+
+```sh
+wrangler personal whoami
+wrangler personal deploy --config workers/task-refresh/wrangler.jsonc
+wrangler work whoami
+rw personal whoami
+rw work whoami
+```
+
+The Wrangler wrapper is `~/.local/bin/wrangler`, linked on PATH through
+`~/.bun/bin/wrangler`. It uses the named `personal` profile and preserves the
+existing default profile for `work`; it does not change the global active
+account. Authenticate with `wrangler personal login` or `wrangler work login`
+when needed. Never print authentication tokens or place them in command arguments.
