@@ -76,7 +76,16 @@ try {
 
   // Pointer activity and keyboard focus both distinguish the calendar and sidebars.
   await page.getByRole('tab', { name: /Event Tasks/ }).click();
-  await expectTitle('Sidebar');
+  await expectTitle('Task sidebar');
+  // Focusing a tab does not switch views until it is activated.
+  await page.getByRole('tab', { name: 'Event', exact: true }).focus();
+  await expectTitle('Task sidebar');
+  await page.keyboard.press('Enter');
+  await expectTitle('Event view');
+  await page.getByRole('tab', { name: /Event Tasks/ }).focus();
+  await expectTitle('Event view');
+  await page.keyboard.press('Enter');
+  await expectTitle('Task sidebar');
   await page.getByRole('button', { name: 'Today', exact: true }).focus();
   await expectTitle('Calendar');
   await page.getByRole('textbox', { name: 'Go to a date', exact: true }).focus();
@@ -84,7 +93,7 @@ try {
   await page.locator('.topbar h1').click();
   await expectTitle('Calendar');
   await page.getByRole('tab', { name: 'Event', exact: true }).click();
-  await expectTitle('Sidebar');
+  await expectTitle('Event view');
 
   await page.getByRole('button', { name: 'Settings', exact: true }).click();
   await expectTitle('Settings');
@@ -103,7 +112,7 @@ try {
   await page.locator('.priority-review-modal').waitFor();
   await expectTitle('Follow-up triage');
   await page.keyboard.press('Escape');
-  await expectTitle('Sidebar');
+  await expectTitle('Task sidebar');
   await page.getByRole('button', { name: 'Today', exact: true }).click();
   await expectTitle('Calendar');
 
@@ -116,7 +125,7 @@ try {
   await page.getByRole('button', { name: 'Close settings', exact: true }).click();
   await expectTitle('Logged out');
   assert.deepEqual(errors, []);
-  console.log('PASS: calendar, both sidebars, keyboard focus, settings, automatic extraction/task/follow-up triage transitions, and logout titles');
+  console.log('PASS: calendar, navigation sidebar, task sidebar, event view, keyboard tab activation, settings, automatic extraction/task/follow-up triage transitions, and logout titles');
 } finally {
   await browser.close();
 }

@@ -1064,6 +1064,7 @@ export function CalendarApp() {
     connected: google.connected,
     settingsOpen: showSettings,
     followUpReviewOpen: showFollowUpReview,
+    eventViewSelected: rightSidebarTab === "events",
     triagePhase: showTaskTriage
       ? taskTriagePhase(taskTriageMode, extractedTasks.length, ungroupedTodoistTasks.length)
       : null,

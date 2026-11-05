@@ -13,9 +13,11 @@ export function useCalendarActivityTitle(state: CalendarActivityState) {
   useEffect(() => {
     const trackSurface = (event: Event) => {
       if (!(event.target instanceof Element)) return;
-      // Both sidebars, including event details, are sidebar activity. Keep this
-      // separate from the selection surface used by calendar editing shortcuts.
-      if (event.target.closest(".sidebar, .right-sidebar")) {
+      // Track the right sidebar independently so its selected tab determines the
+      // title without changing the selection surface used by editing shortcuts.
+      if (event.target.closest(".right-sidebar")) {
+        setSurface("right-sidebar");
+      } else if (event.target.closest(".sidebar")) {
         setSurface("sidebar");
       } else if (event.target.closest(".calendar-workspace")) {
         setSurface("calendar");
