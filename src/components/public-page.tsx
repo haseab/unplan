@@ -11,8 +11,8 @@ export function PublicPage({ title, introduction, children }: {
   return (
     <div className={styles.page}>
       <header className={styles.header}>
-        <Link className={styles.wordmark} href="/about">unplan</Link>
-        <Link className={styles.openApp} href="/">Open calendar <span aria-hidden="true">↗</span></Link>
+        <Link className={styles.wordmark} href="/">unplan</Link>
+        <Link className={styles.openApp} href="/">Open Unplan <span aria-hidden="true">↗</span></Link>
       </header>
       <main className={styles.content}>
         <p className={styles.eyebrow}>Calendar, refined</p>

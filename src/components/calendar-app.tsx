@@ -1,6 +1,8 @@
 "use client";
 
 import { AppInformationLinks } from "@/components/app-information-links";
+import { GoogleConnectButton } from "@/components/google-connect-button";
+import { useRouter } from "next/navigation";
 import { useKeyboardSelection } from "@/hooks/use-keyboard-selection";
 
 
@@ -268,6 +270,7 @@ import { updateGoogleCalendarSelection } from "@/lib/google-calendar-list-client
 import {
   connectGoogleAccount,
   loadGoogleAccounts,
+  readGoogleAccounts,
   removeGoogleAccount,
   type GoogleConnectedAccount,
 } from "@/lib/google-browser-auth";
@@ -539,7 +542,8 @@ function ProductMark() {
   return <span className="product-mark" aria-hidden="true" />;
 }
 
-export function CalendarApp() {
+export function CalendarApp({ demo = false }: { demo?: boolean } = {}) {
+  const router = useRouter();
   const [activeSelectionSurface, setActiveSelectionSurface] = React.useState<
     "calendar" | "sidebar"
   >("calendar");
@@ -584,7 +588,7 @@ export function CalendarApp() {
     React.useState<Set<string>>(new Set());
   const [google, setGoogle] = React.useState<GoogleStatus>({
     accounts: [],
-    configured: false,
+    configured: Boolean(process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID?.trim()),
     connected: false,
   });
   const [syncing, setSyncing] = React.useState(false);
@@ -1521,6 +1525,11 @@ export function CalendarApp() {
     setSyncing(true);
     try {
       await connectGoogleAccount();
+      if (demo) {
+        router.replace("/");
+        router.refresh();
+        return;
+      }
       await importGoogleCalendars();
       toast.success("Google Calendar connected");
     } catch (error) {
@@ -1528,16 +1537,17 @@ export function CalendarApp() {
     } finally {
       setSyncing(false);
     }
-  }, [importGoogleCalendars]);
+  }, [demo, importGoogleCalendars, router]);
 
   React.useEffect(() => {
+    if (demo) return;
     const timer = window.setTimeout(() => {
       void importGoogleCalendars().catch((error) => {
         toast.error(error instanceof Error ? error.message : "Google import failed");
       });
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [importGoogleCalendars]);
+  }, [demo, importGoogleCalendars]);
 
   const loadGoogleEvents = React.useCallback(async (
     request: GoogleEventLoadRequest,
@@ -4319,7 +4329,10 @@ export function CalendarApp() {
     queueActionToast("Google account disconnected", {
       duration: toastDuration,
       onUndo: restoreConnection,
-      onSubmit: () => removeGoogleAccount(accountId),
+      onSubmit: async () => {
+        await removeGoogleAccount(accountId);
+        if (!readGoogleAccounts().length) router.refresh();
+      },
       onError: (error) => {
         restoreConnection();
         toast.error(
@@ -6053,7 +6066,7 @@ export function CalendarApp() {
               onDisconnect={disconnectGoogle}
             />
           ) : (
-            <button className="connect-button" type="button" onClick={() => void connectGoogle()}><span className="google-g">G</span><span>Connect Google Calendar</span></button>
+            <GoogleConnectButton onClick={() => void connectGoogle()} disabled={syncing} />
           )}
           <button className="settings-button" onClick={() => setShowSettings(true)}><Settings size={15} /> Settings</button>
           <AppInformationLinks />
