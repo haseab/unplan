@@ -30,7 +30,6 @@ type SettingsResponse = { settings: TaskRefreshSettings | null; serverManaged: b
 
 /** Sync the browser's existing folder rules to the same Todoist account as its tasks. */
 export function useTaskRefreshSettings(token: string) {
-  const [snapshot, setSnapshot] = React.useState({ token: "", serverManaged: null as boolean | null });
   React.useEffect(() => {
     if (!token) return;
     let disposed = false;
@@ -43,7 +42,7 @@ export function useTaskRefreshSettings(token: string) {
         const headers = { [TODOIST_TOKEN_HEADER]: token };
         const response = await readJsonResponse<SettingsResponse>(await fetch("/api/task-refresh/settings", { headers, cache: "no-store" }), "Could not read refresh settings");
         if (disposed) return;
-        if (!response.serverManaged && !response.serverConfigured) { setSnapshot({ token, serverManaged: false }); return; }
+        if (!response.serverManaged && !response.serverConfigured) return;
         const local = readLocal();
         const remote = parseTaskRefreshSettings(response.settings);
         const localWins = !remote || Date.parse(local.updatedAt) > Date.parse(remote.updatedAt);
@@ -61,7 +60,6 @@ export function useTaskRefreshSettings(token: string) {
           // Do not overwrite an edit made while the request was running.
           if (Date.parse(readLocal().updatedAt) <= Date.parse(chosen.updatedAt)) applyLocal(chosen);
         }
-        setSnapshot({ token, serverManaged: response.serverManaged });
       } catch (error) {
         if (!disposed) console.warn("[TASK-REFRESH:SETTINGS]", error instanceof Error ? error.message : "Settings sync failed");
       }
@@ -89,5 +87,4 @@ export function useTaskRefreshSettings(token: string) {
       document.removeEventListener("visibilitychange", visible);
     };
   }, [token]);
-  return !token ? false : snapshot.token === token ? snapshot.serverManaged : null;
 }

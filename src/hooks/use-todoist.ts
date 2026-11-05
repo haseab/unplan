@@ -1,12 +1,15 @@
 "use client";
 
 import * as React from "react";
+import { useLocalTaskMigration } from "./use-local-task-migration";
+import { withoutLocalMigrationDuplicates } from "@/lib/local-task-migration";
 import {
   applyTodoistTaskOrder,
   changedTodoistProjectOrders,
   closeTodoistTask,
   createTodoistProject,
   createTodoistTask,
+  migrateLocalTodoistTask,
   deleteTodoistTask,
   loadTodoistDestinations,
   invalidateTodoistDestinations,
@@ -39,7 +42,6 @@ import { LatestMutationQueue } from "@/lib/mutation-queue";
 import {
   isLocalTask,
   isLocalTaskId,
-  LOCAL_TASK_PROJECT_ID,
   LOCAL_TASKS_STORAGE_KEY,
   parseLocalTasks,
   serializeLocalTasks,
@@ -48,6 +50,7 @@ import { TodoistStagedTaskCoordinator } from "@/lib/todoist-staged-task-coordina
 import { TODOIST_DESTINATIONS_CACHE_MS } from "@/lib/todoist-destinations-cache";
 import {
   getActionToastSyncSnapshot,
+  getActionToastSyncProtectedResourceIds,
   reconcileActionToastSyncProtection,
   subscribeActionToastSync,
 } from "@/lib/action-toast";
@@ -102,6 +105,8 @@ export function useTodoist({
   const syncProtectedTaskIdsRef = React.useRef(syncProtectedTaskIds);
   const protectedPendingTaskIdsRef = React.useRef<ReadonlySet<string>>(new Set());
   const tasksRef = React.useRef(tasks);
+  const migrationTokenRef = React.useRef(token);
+  React.useEffect(() => { migrationTokenRef.current = token; }, [token]);
   const projectsRef = React.useRef(projects);
   const bucketProjectIdsRef = React.useRef(bucketProjectIds);
   const preferredProjectIdRef = React.useRef(preferredProjectId);
@@ -282,11 +287,11 @@ export function useTodoist({
       const optimisticTasks = tasksRef.current.filter(
         (task) => task.optimistic && nextBucketProjectIds.includes(task.projectId),
       );
-      const mergedTasks = [
+      const mergedTasks = withoutLocalMigrationDuplicates([
         ...localTasks,
         ...optimisticTasks,
         ...nextTasks.filter((task) => !optimisticTasks.some(({ id }) => id === task.id)),
-      ];
+      ]);
       tasksRef.current = mergedTasks;
       projectsRef.current = destinations.projects;
       preferredProjectIdRef.current = nextProjectId;
@@ -569,7 +574,7 @@ export function useTodoist({
     else pendingCreatesByProjectRef.current.delete(projectId);
   }, []);
 
-  const createTaskInBucket = React.useCallback(async (input: CreateTodoistTaskInput) => {
+  const createTaskInBucket = React.useCallback(async (input: CreateTodoistTaskInput, localTask?: TodoistTask) => {
     if (!token) throw new Error("Connect Todoist in Settings first");
     while (true) {
       const projectId = await allocateBucketProject();
@@ -577,11 +582,10 @@ export function useTodoist({
         ? preferredSectionIdRef.current
         : "";
       try {
-        return await createTodoistTask(token, {
-          ...input,
-          projectId,
-          ...(sectionId ? { sectionId } : {}),
-        });
+        const destination = { ...input, projectId, ...(sectionId ? { sectionId } : {}) };
+        return localTask
+          ? await migrateLocalTodoistTask(token, localTask, destination)
+          : await createTodoistTask(token, destination);
       } catch (caught) {
         if (!isTodoistProjectCapacityError(caught)) throw caught;
         projectsKnownAtCapacityRef.current.add(projectId);
@@ -591,6 +595,48 @@ export function useTodoist({
       }
     }
   }, [allocateBucketProject, releaseBucketReservation, token]);
+
+  const migrateLocalTask = React.useCallback(async (task: TodoistTask) => {
+    const remote = await createTaskInBucket({
+      content: task.content, description: task.description,
+      ...(task.due?.datetime ? { dueDatetime: task.due.datetime } : {}),
+    }, task);
+    if (migrationTokenRef.current !== token) return;
+    const current = tasksRef.current.find(({ id }) => id === task.id);
+    if (!current) {
+      // It was removed while uploading. Keep it out of the active Todoist list too.
+      await closeTodoistTask(token, remote.id);
+      return;
+    }
+    // Retry a changed or still-pending local record with the same provider command ID.
+    // The server's revision marker distinguishes local edits from a legitimate cron refresh.
+    if (current.content !== task.content || current.description !== task.description
+      || getActionToastSyncProtectedResourceIds().includes(task.id)) return;
+    // An older read must not replace this newly confirmed upload with a stale list.
+    if (taskLoadControllerRef.current) {
+      taskLoadVersionRef.current += 1;
+      taskLoadControllerRef.current.abort();
+      taskLoadControllerRef.current = null;
+      setLoading(false);
+    }
+    const next = tasksRef.current.filter(({ id }) => id !== remote.id)
+      .map((candidate) => candidate.id === task.id ? remote : candidate);
+    tasksRef.current = next;
+    setTasks(next);
+    storeLocalTasks(next);
+    setError((current) => current?.startsWith("Some older tasks are not synced") ? null : current);
+    console.info("[TODOIST:LOCAL-MIGRATION] Task uploaded", { localId: task.id, taskId: remote.id });
+  }, [createTaskInBucket, storeLocalTasks, token]);
+  const localMigrationError = React.useCallback((error: unknown) => {
+    console.warn("[TODOIST:LOCAL-MIGRATION]", error instanceof Error ? error.message : "Upload failed");
+    setError("Some older tasks are not synced to Todoist yet. They are kept safely in this browser and will retry.");
+  }, []);
+  useLocalTaskMigration({
+    ready: Boolean(token) && !loading && projects.length > 0,
+    tasks,
+    migrate: migrateLocalTask,
+    onError: localMigrationError,
+  });
 
   const addTask = React.useCallback(async (input: {
     content: string;
@@ -604,26 +650,6 @@ export function useTodoist({
     setTasks(nextTasks);
     return task;
   }, [createTaskInBucket]);
-
-  const addLocalTask = React.useCallback((input: {
-    content: string;
-    description?: string;
-  }, placement?: TodoistTaskDropTarget) => {
-    const task: TodoistTask = {
-      id: `local-${crypto.randomUUID()}`,
-      content: input.content,
-      description: input.description ?? "",
-      priority: 1,
-      projectId: LOCAL_TASK_PROJECT_ID,
-      due: null,
-      source: "local",
-    };
-    const nextTasks = insertTodoistTasksAtTarget(tasksRef.current, [task], placement);
-    tasksRef.current = nextTasks;
-    setTasks(nextTasks);
-    storeLocalTasks(nextTasks);
-    return task;
-  }, [storeLocalTasks]);
 
   const stageTasks = React.useCallback((
     inputs: CreateTodoistTaskInput[],
@@ -911,7 +937,6 @@ export function useTodoist({
   }, [storeLocalTasks, token]);
   return {
     addTask,
-    addLocalTask,
     bucketProjectIds,
     bucketSelectionRequest,
     cancelBucketSelection,

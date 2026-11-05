@@ -117,8 +117,11 @@ rechecks each candidate before updating it; repeated runs are safe.
 Set `TODOIST_API_KEY` and `TASK_REFRESH_SECRET` on Railway, then set the same
 `TASK_REFRESH_SECRET` as a Worker secret. Leave `TASK_REFRESH_ENABLED=false`
 until the schedule is installed, then set it to `true` on Railway to hand
-remote refreshes over from the browser. Deploy with Wrangler using
+remote refreshes over from older browser versions. Deploy with Wrangler using
 `workers/task-refresh/wrangler.jsonc`. Keep the secret out of source control.
 Folder activity, hierarchy, and browser time zone sync to a settings record in
 Todoist when the connected app opens. This record is hidden in Unplan.
-Local-only tasks and accounts without server refresh retain browser checks.
+New tasks require a Todoist connection and use the normal pending-save/Undo flow.
+Older browser-only tasks upload automatically when Todoist is connected; local
+copies remain until the upload succeeds. Expiration runs only on the server.
+The browser reads updated tasks every minute and when the app regains focus.

@@ -3,9 +3,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import type { TodoistTask } from "./todoist";
 import {
-  isTaskAgingReconciliationCoolingDown,
   TASK_AGING_MAX_WRITES_PER_RUN,
-  TASK_AGING_RECONCILIATION_COOLDOWN_MS,
   taskAgingBatch,
   taskAgingUpdate,
 } from "./task-aging";
@@ -163,19 +161,6 @@ test("does not age other priority folders, triage tasks, or optimistic tasks", (
     task("Plan [[unplan:v1;group=This%20week]]", true),
     now,
   ), null);
-});
-
-test("enforces the fifteen-minute reconciliation cooldown", () => {
-  const nowMs = now.getTime();
-  assert.equal(isTaskAgingReconciliationCoolingDown(null, nowMs), false);
-  assert.equal(isTaskAgingReconciliationCoolingDown(
-    String(nowMs - TASK_AGING_RECONCILIATION_COOLDOWN_MS + 1),
-    nowMs,
-  ), true);
-  assert.equal(isTaskAgingReconciliationCoolingDown(
-    String(nowMs - TASK_AGING_RECONCILIATION_COOLDOWN_MS),
-    nowMs,
-  ), false);
 });
 
 test("caps each run and prioritizes real retriage work over legacy stamps", () => {
