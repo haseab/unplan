@@ -19,6 +19,7 @@ import type { CalendarSource } from "@/lib/calendar-types";
 import { PriorityTaskReview } from "@/components/priority-task-review";
 import { PRIORITY_REVIEW_ANIMATION_MS, priorityReviewTasks, type PriorityReviewCard } from "@/lib/priority-task-review";
 import { InlineMarkdownLinks } from "@/components/inline-markdown-links";
+import { extractedTaskDescriptionMarkdown } from "@/lib/task-extraction";
 import { todoistTaskUrl, type TodoistTask } from "@/lib/todoist";
 import {
   calendarEventDetailsFromTodoistContent,
@@ -88,7 +89,7 @@ function ExtractedTaskReview({
           <span>{count} remaining</span>
         </div>
         <h3><InlineMarkdownLinks>{details.title || task.content}</InlineMarkdownLinks></h3>
-        {task.description && <p>{task.description}</p>}
+        {task.description && <p><InlineMarkdownLinks preferBrowserTab>{extractedTaskDescriptionMarkdown(task.description)}</InlineMarkdownLinks></p>}
       </article>
       {error && <p className="task-triage-error">{error}</p>}
       <div className="task-triage-actions">
