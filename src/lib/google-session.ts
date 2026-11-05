@@ -11,7 +11,7 @@ const FLOW_COOKIE = secure ? "__Host-unplan_oauth" : "unplan_oauth";
 const cookieOptions = { httpOnly: true, secure, sameSite: "lax" as const, path: "/" };
 const tokenHash = (token: string) => createHash("sha256").update(token).digest("hex");
 
-export const readGoogleSession = async () => {
+export const readGoogleSession = async ({ renew = true }: { renew?: boolean } = {}) => {
   const jar = await cookies();
   const token = jar.get(GOOGLE_SESSION_COOKIE)?.value;
   if (!token || !/^[A-Za-z0-9_-]{43}$/.test(token)) return null;
@@ -22,7 +22,7 @@ export const readGoogleSession = async () => {
   const session = result.rows[0];
   if (!session) return null;
   // Renew active sessions without writing on every Calendar API call.
-  if (session.expiresAt.getTime() < Date.now() + (SESSION_LIFETIME_SECONDS - 24 * 60 * 60) * 1000) {
+  if (renew && session.expiresAt.getTime() < Date.now() + (SESSION_LIFETIME_SECONDS - 24 * 60 * 60) * 1000) {
     await googleAuthPool().query("UPDATE unplan_sessions SET expires_at = $2 WHERE token_hash = $1", [
       tokenHash(token), new Date(Date.now() + SESSION_LIFETIME_SECONDS * 1000),
     ]);

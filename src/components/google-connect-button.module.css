@@ -1,0 +1,16 @@
+.button {
+  display: inline-flex;
+  flex: 0 0 auto;
+  width: 180px;
+  height: 40px;
+  align-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 20px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.button img { display: block; width: 180px; height: 40px; }
+.button:focus-visible { outline: 3px solid var(--blue); outline-offset: 4px; }
+.button:disabled { cursor: wait; opacity: 0.65; }

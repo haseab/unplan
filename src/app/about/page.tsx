@@ -26,7 +26,7 @@ export default function AboutPage() {
       </section>
       <section>
         <h2>Start with your calendar</h2>
-        <p><Link href="/">Open Unplan</Link> to explore the demo or connect Google Calendar. No payment is required.</p>
+        <p><Link href="/demo">Explore the demo</Link> or <Link href="/">connect Google Calendar</Link>. No payment is required.</p>
         <p>Unplan is <a href="https://github.com/haseab/unplan">open source</a>. For help, contact <a href="mailto:hullah3000@gmail.com">hullah3000@gmail.com</a>.</p>
       </section>
     </PublicPage>
