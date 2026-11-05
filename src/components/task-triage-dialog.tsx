@@ -103,7 +103,7 @@ function ExtractedTaskReview({
           <kbd>→</kbd>
         </button>
       </div>
-      <p className="task-triage-shortcuts"><kbd>↑</kbd> delete <span /> keep <kbd>→</kbd></p>
+      <p className="task-triage-shortcuts"><kbd>↑</kbd> delete <span /> keep <kbd>→</kbd> <span /> <kbd>⌘⇧←</kbd> move to calendar</p>
       {!task.optimistic && (
         <div className="task-triage-secondary-actions task-triage-extracted-secondary-actions">
           <button className="task-triage-open-original" onClick={onOpenOriginal} type="button">

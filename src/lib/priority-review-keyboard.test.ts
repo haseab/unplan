@@ -28,7 +28,8 @@ test("all navigation is isolated from background selection, including modifiers 
   }
   assert.deepEqual(press("ArrowLeft"), { calls: [], prevented: true });
   assert.deepEqual(press("ArrowRight"), { calls: [], prevented: true });
-  assert.deepEqual(press("ArrowLeft", { metaKey: true }), { calls: ["schedule"], prevented: true });
+  assert.deepEqual(press("ArrowLeft", { metaKey: true }), { calls: [], prevented: true });
+  assert.deepEqual(press("ArrowLeft", { metaKey: true, shiftKey: true }), { calls: ["schedule"], prevented: true });
   assert.deepEqual(press("ArrowRight", { repeat: true }), { calls: [], prevented: true });
   assert.deepEqual(press("a").calls, []);
 });
@@ -97,18 +98,21 @@ test("Enter on the hover delete button keeps native button activation", () => {
   assert.deepEqual(press("Enter", {}, "button"), { calls: [], prevented: false });
 });
 
-test("Cmd/Ctrl Left schedules the active task even while editing its follow-up", () => {
+test("Cmd/Ctrl Shift Left schedules the active task even while editing its follow-up", () => {
   for (const modifier of [{ metaKey: true }, { ctrlKey: true }]) {
-    assert.deepEqual(press("ArrowLeft", modifier, true, "61 min"), { calls: ["schedule"], prevented: true });
-    assert.deepEqual(press("ArrowLeft", { ...modifier, repeat: true }, true), { calls: [], prevented: true });
-    assert.deepEqual(press("ArrowLeft", { ...modifier, shiftKey: true }, true), { calls: [], prevented: false });
-    assert.deepEqual(press("ArrowLeft", { ...modifier, altKey: true }, true), { calls: [], prevented: false });
+    const shortcut = { ...modifier, shiftKey: true };
+    assert.deepEqual(press("ArrowLeft", shortcut), { calls: ["schedule"], prevented: true });
+    assert.deepEqual(press("ArrowLeft", shortcut, true, "61 min"), { calls: ["schedule"], prevented: true });
+    assert.deepEqual(press("ArrowLeft", { ...shortcut, repeat: true }, true), { calls: [], prevented: true });
+    assert.deepEqual(press("ArrowLeft", modifier, true), { calls: [], prevented: false });
+    assert.deepEqual(press("ArrowLeft", { ...shortcut, altKey: true }, true), { calls: [], prevented: false });
   }
   assert.deepEqual(press("ArrowLeft", {}, true), { calls: [], prevented: false });
+  assert.deepEqual(press("ArrowLeft", { shiftKey: true }, true), { calls: [], prevented: false });
 });
 
 test("title editing keeps Enter, Escape and shortcuts inside the editor", () => {
-  for (const [key, options] of [["Enter", {}], ["Escape", {}], ["Backspace", { metaKey: true }], ["ArrowLeft", { metaKey: true }], ["z", { metaKey: true }]] as const) {
+  for (const [key, options] of [["Enter", {}], ["Escape", {}], ["Backspace", { metaKey: true }], ["ArrowLeft", { metaKey: true }], ["ArrowLeft", { metaKey: true, shiftKey: true }], ["z", { metaKey: true }]] as const) {
     assert.deepEqual(press(key, options, "textarea"), { calls: ["background"], prevented: false });
   }
 });

@@ -19,7 +19,7 @@ export function handlePriorityReviewKeyDown(event: KeyboardEvent, actions: Revie
     if (!event.repeat) actions.deleteTask();
     return;
   }
-  if (modifier && !event.altKey && !event.shiftKey && event.key === "ArrowLeft") {
+  if (modifier && !event.altKey && event.shiftKey && event.key === "ArrowLeft") {
     event.preventDefault();
     if (!event.repeat) actions.scheduleTask();
     return;

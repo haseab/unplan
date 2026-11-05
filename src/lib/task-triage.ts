@@ -177,7 +177,6 @@ export const taskTriageFolders = ({
 
 export function isTaskTriageCalendarShortcut(event: Pick<KeyboardEvent, "key" | "metaKey" | "ctrlKey" | "altKey" | "shiftKey" | "repeat" | "isComposing">, phase: TaskTriageMode, titleEditing: boolean) {
   if (titleEditing || event.altKey || event.repeat || event.isComposing || event.key !== "ArrowLeft") return false;
-  return phase === "extracted"
-    ? (event.metaKey || event.ctrlKey) && !event.shiftKey
-    : phase === "normal" && event.metaKey && event.shiftKey && !event.ctrlKey;
+  return (phase === "extracted" || phase === "normal")
+    && (event.metaKey || event.ctrlKey) && event.shiftKey;
 }

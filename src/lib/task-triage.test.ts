@@ -161,15 +161,17 @@ test("the Follow-up triage banner opens priority review directly while Cmd E kee
   assert.equal(taskTriagePhase("normal", 0, 3), "normal");
 });
 
-test("Cmd/Ctrl Left schedules extraction tasks and keeps normal triage's existing shortcut", () => {
-  const key = { key: "ArrowLeft", metaKey: true, ctrlKey: false, altKey: false, shiftKey: false, repeat: false, isComposing: false };
-  assert.equal(isTaskTriageCalendarShortcut(key, "extracted", false), true);
-  assert.equal(isTaskTriageCalendarShortcut({ ...key, metaKey: false, ctrlKey: true }, "extracted", false), true);
-  for (const change of [{ metaKey: false }, { altKey: true }, { shiftKey: true }, { repeat: true }, { isComposing: true }, { key: "ArrowRight" }]) {
-    assert.equal(isTaskTriageCalendarShortcut({ ...key, ...change }, "extracted", false), false);
+test("Cmd/Ctrl Shift Left schedules extraction and task triage; Cmd/Ctrl Left stays native", () => {
+  const key = { key: "ArrowLeft", metaKey: false, ctrlKey: false, altKey: false, shiftKey: true, repeat: false, isComposing: false };
+  for (const phase of ["extracted", "normal"] as const) {
+    for (const modifier of [{ metaKey: true }, { ctrlKey: true }]) {
+      const shortcut = { ...key, ...modifier };
+      assert.equal(isTaskTriageCalendarShortcut(shortcut, phase, false), true);
+      for (const change of [{ metaKey: false, ctrlKey: false }, { altKey: true }, { shiftKey: false }, { repeat: true }, { isComposing: true }, { key: "ArrowRight" }]) {
+        assert.equal(isTaskTriageCalendarShortcut({ ...shortcut, ...change }, phase, false), false);
+      }
+      assert.equal(isTaskTriageCalendarShortcut(shortcut, phase, true), false);
+    }
   }
-  assert.equal(isTaskTriageCalendarShortcut(key, "extracted", true), false);
-  assert.equal(isTaskTriageCalendarShortcut(key, "normal", false), false);
-  assert.equal(isTaskTriageCalendarShortcut({ ...key, shiftKey: true }, "normal", false), true);
-  assert.equal(isTaskTriageCalendarShortcut(key, "priority", false), false);
+  assert.equal(isTaskTriageCalendarShortcut({ ...key, metaKey: true }, "priority", false), false);
 });
