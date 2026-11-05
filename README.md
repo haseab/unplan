@@ -93,3 +93,18 @@ MIT
 - Run `npm run dev` in the normal checkout; its development script sets port **3004** explicitly. Do not use localhost:3000 or silently increment ports.
 - Reuse an existing server for this checkout. If the assigned port is occupied by an unrelated process, inspect ownership rather than stopping another project's server.
 - Port changes must update the development script, README, environment examples, and local integration/callback URLs together. Keep real credentials in ignored local environment files; never commit them or change production URLs for local development.
+
+## Background task refresh
+
+The Cloudflare Worker in `workers/task-refresh` posts to
+`https://unplan.io/api/task-refresh` every minute. It stores no task state.
+The Railway backend reads current Todoist tasks and checks assigned follow-up
+dates, priority timers, and month-end refresh rules for active folders. It
+rechecks each candidate before updating it; repeated runs are safe.
+
+Set `TODOIST_API_KEY` and `TASK_REFRESH_SECRET` on Railway, then set the same
+`TASK_REFRESH_SECRET` as a Worker secret. Deploy with Wrangler using
+`workers/task-refresh/wrangler.jsonc`. Keep the secret out of source control.
+Folder activity, hierarchy, and browser time zone sync to a settings record in
+Todoist when the connected app opens. This record is hidden in Unplan.
+Local-only tasks and accounts without server refresh retain browser checks.

@@ -10,16 +10,18 @@ export const todoistProviderFetch = (
 ) => {
   const token = request.headers.get(TODOIST_TOKEN_HEADER)?.trim();
   if (!token) return null;
-  return fetch(`${TODOIST_API_URL}${path}`, {
-    ...init,
-    cache: "no-store",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      ...(init?.body ? { "Content-Type": "application/json" } : {}),
-      ...init?.headers,
-    },
-  });
+  return todoistTokenFetch(token, path, init);
 };
+
+export const todoistTokenFetch = (token: string, path: string, init?: RequestInit) => fetch(`${TODOIST_API_URL}${path}`, {
+  ...init,
+  cache: "no-store",
+  headers: {
+    Authorization: `Bearer ${token}`,
+    ...(init?.body ? { "Content-Type": "application/json" } : {}),
+    ...init?.headers,
+  },
+});
 
 export const readTodoistProviderResponse = async (response: Response) => {
   const text = await response.text();

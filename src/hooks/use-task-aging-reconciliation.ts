@@ -1,6 +1,8 @@
 "use client";
 
 import * as React from "react";
+import { isLocalTask } from "@/lib/local-tasks";
+import { useTaskRefreshSettings } from "./use-task-refresh-settings";
 import { calendarEventDetailsFromTodoistContent, isTodoistTriageGroup } from "@/lib/todoist-calendar";
 import { useTodoistGroupPreferences } from "./use-todoist-group-preferences";
 import type { TodoistTask, UpdateTodoistTaskInput } from "@/lib/todoist";
@@ -12,6 +14,8 @@ import {
 
 type TaskAgingReconciliationOptions = {
   enabled: boolean;
+  token: string;
+  refreshTasks: () => Promise<unknown>;
   tasks: TodoistTask[];
   updateTask: (
     taskId: string,
@@ -21,9 +25,12 @@ type TaskAgingReconciliationOptions = {
 
 export function useTaskAgingReconciliation({
   enabled,
+  token,
+  refreshTasks,
   tasks,
   updateTask,
 }: TaskAgingReconciliationOptions) {
+  const serverManaged = useTaskRefreshSettings(token);
   const { folderActivity, groupParents } = useTodoistGroupPreferences();
   const foldersRef = React.useRef({ activity: folderActivity, parents: groupParents });
   React.useEffect(() => {
@@ -46,40 +53,46 @@ export function useTaskAgingReconciliation({
       !enabled
       || document.visibilityState !== "visible"
       || runningRef.current
-      || tasksRef.current.length === 0
+      || (!serverManaged && tasksRef.current.length === 0)
     ) return;
 
-    const now = new Date();
-    const hasDueReview = tasksRef.current.some((task) => {
-      const details = calendarEventDetailsFromTodoistContent(task.content);
-      return !task.optimistic && !isTodoistTriageGroup(details.group)
-        && Date.parse(details.reviewAt ?? "") <= now.getTime();
-    });
-    if (!hasDueReview && isTaskAgingReconciliationCoolingDown(
-      window.localStorage.getItem(TASK_AGING_RECONCILIATION_STORAGE_KEY),
-      now.getTime(),
-    )) return;
-
     runningRef.current = true;
-    window.localStorage.setItem(
-      TASK_AGING_RECONCILIATION_STORAGE_KEY,
-      String(now.getTime()),
-    );
-
-    const { deferred, pending, updates } = taskAgingBatch(tasksRef.current, now, undefined, foldersRef.current);
-    console.debug("[TASK-AGING:RECONCILE]", "check started", {
-      deferred,
-      pending,
-      reason,
-      scanned: tasksRef.current.length,
-      selected: updates.length,
-    });
-
-    let failed = 0;
-    let monthlyRetriaged = 0;
-    let priorityRetriaged = 0;
-    let stamped = 0;
     try {
+      if (serverManaged) {
+        // The fixed server cron owns synced tasks. The browser only reconciles local-only tasks.
+        try { await refreshTasks(); } catch { /* The existing Todoist sync surfaces its own errors. */ }
+      }
+      const candidates = serverManaged !== false ? tasksRef.current.filter(isLocalTask) : tasksRef.current;
+      if (!candidates.length) return;
+      const now = new Date();
+      const hasDueReview = candidates.some((task) => {
+        const details = calendarEventDetailsFromTodoistContent(task.content);
+        return !task.optimistic && !isTodoistTriageGroup(details.group)
+          && Date.parse(details.reviewAt ?? "") <= now.getTime();
+      });
+      if (!hasDueReview && isTaskAgingReconciliationCoolingDown(
+        window.localStorage.getItem(TASK_AGING_RECONCILIATION_STORAGE_KEY),
+        now.getTime(),
+      )) return;
+
+      window.localStorage.setItem(
+        TASK_AGING_RECONCILIATION_STORAGE_KEY,
+        String(now.getTime()),
+      );
+
+      const { deferred, pending, updates } = taskAgingBatch(candidates, now, undefined, foldersRef.current);
+      console.debug("[TASK-AGING:RECONCILE]", "check started", {
+        deferred,
+        pending,
+        reason,
+        scanned: tasksRef.current.length,
+        selected: updates.length,
+      });
+
+      let failed = 0;
+      let monthlyRetriaged = 0;
+      let priorityRetriaged = 0;
+      let stamped = 0;
       for (let index = 0; index < updates.length; index += 3) {
         const batch = updates.slice(index, index + 3);
         const results = await Promise.allSettled(batch.map(async (update) => {
@@ -104,15 +117,16 @@ export function useTaskAgingReconciliation({
     } finally {
       runningRef.current = false;
     }
-  }, [enabled]);
+  }, [enabled, serverManaged, refreshTasks]);
 
   React.useEffect(() => {
-    if (!enabled || tasks.length === 0) return;
+    if (!enabled || serverManaged !== false || tasks.length === 0) return;
     void requestReconciliation("tasks-ready");
-  }, [enabled, requestReconciliation, tasks, folderActivity, groupParents]);
+  }, [enabled, serverManaged, requestReconciliation, tasks, folderActivity, groupParents]);
 
   React.useEffect(() => {
     if (!enabled) return;
+    if (serverManaged) void requestReconciliation("server-managed");
     const requestVisibleCheck = () => {
       if (document.visibilityState === "visible") {
         void requestReconciliation("tab-visible");
@@ -127,5 +141,5 @@ export function useTaskAgingReconciliation({
       document.removeEventListener("visibilitychange", requestVisibleCheck);
       window.removeEventListener("focus", requestFocusCheck);
     };
-  }, [enabled, requestReconciliation]);
+  }, [enabled, serverManaged, requestReconciliation]);
 }

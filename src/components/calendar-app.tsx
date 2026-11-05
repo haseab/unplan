@@ -9,6 +9,7 @@ import { applyGoogleEventSaveResult } from "@/lib/google-event-transfer";
 
 import { isFollowUpCreationShortcut } from "@/lib/follow-up-keyboard";
 import { scheduleFollowUp } from "@/lib/follow-up-calendar";
+import { isTaskRefreshSettingsTask } from "@/lib/task-refresh-settings";
 import { isFollowUpTask } from "@/lib/todoist-follow-ups";
 import { FollowUpManager } from "@/components/follow-up-manager";
 import { useFollowUps } from "@/hooks/use-follow-ups";
@@ -1046,7 +1047,7 @@ export function CalendarApp() {
     return true;
   }, [defaultCalendar, selectedEvents]);
   const visibleTodoistTasks = React.useMemo(
-    () => todoistTasks.filter((task) => !isFollowUpTask(task) && (
+    () => todoistTasks.filter((task) => !isFollowUpTask(task) && !isTaskRefreshSettingsTask(task) && (
       isLocalTask(task)
       || (
         todoistBucketProjectIds.includes(task.projectId)
@@ -1090,6 +1091,8 @@ export function CalendarApp() {
 
   useTaskAgingReconciliation({
     enabled: true,
+    token: todoistToken,
+    refreshTasks: refreshTodoist,
     tasks: visibleTodoistTasks,
     updateTask: updateTodoistTask,
   });
