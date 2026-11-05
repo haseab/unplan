@@ -27,6 +27,7 @@ import { TaskTriageCard } from "@/components/task-triage-card";
 import { TaskCalendarPickerDialog } from "@/components/task-calendar-picker-dialog";
 import { useListMarqueeSelection } from "@/hooks/use-list-marquee-selection";
 import { useTodoistGroupPreferences } from "@/hooks/use-todoist-group-preferences";
+import { useTodoistTaskFocus } from "@/hooks/use-todoist-task-focus";
 import type { CalendarSource } from "@/lib/calendar-types";
 import { getEventPalette } from "@/lib/event-color";
 import {
@@ -534,20 +535,17 @@ export function TodoistSidebar({
     focusTaskElement(taskId);
   }, [focusTaskElement]);
 
-  React.useEffect(() => {
-    if (!focusTaskId) return;
-    const group = taskGroups.find(([, items]) =>
-      items.some(({ task }) => task.id === focusTaskId)
-    )?.[0];
-    if (!group) return;
-    const frame = window.requestAnimationFrame(() => {
-      [...todoistGroupAncestors(group, groupParents), group].forEach(expandGroup);
-      pendingKeyboardRevealRef.current = { align: "nearest", taskId: focusTaskId };
-      activateTask(focusTaskId);
-      onFocusTaskHandled();
-    });
-    return () => window.cancelAnimationFrame(frame);
-  }, [activateTask, expandGroup, focusTaskId, groupParents, onFocusTaskHandled, taskGroups]);
+  useTodoistTaskFocus({
+    collapsedGroups,
+    containerRef: groupsRef,
+    expandGroup,
+    focusTaskId,
+    groupParents,
+    onFocusTaskHandled,
+    onSelectTask: activateTask,
+    selectedTaskIds,
+    taskGroups,
+  });
   const navigateSidebarItem = React.useCallback((
     navigationId: string,
     direction: "next" | "previous",
