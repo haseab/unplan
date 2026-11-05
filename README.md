@@ -86,3 +86,10 @@ See [PRODUCT_PLAN.md](./PRODUCT_PLAN.md) for the product principles and staged r
 ## License
 
 MIT
+
+## Local development ports
+
+- The development server for **unplan** uses **http://localhost:3004**.
+- Run `npm run dev` in the normal checkout; its development script sets port **3004** explicitly. Do not use localhost:3000 or silently increment ports.
+- Reuse an existing server for this checkout. If the assigned port is occupied by an unrelated process, inspect ownership rather than stopping another project's server.
+- Port changes must update the development script, README, environment examples, and local integration/callback URLs together. Keep real credentials in ignored local environment files; never commit them or change production URLs for local development.
