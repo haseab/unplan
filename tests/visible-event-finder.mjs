@@ -1,3 +1,4 @@
+import { mockGoogleAccounts } from './helpers/google-account-fixture.mjs';
 // Run against `npm run dev`. Provider API traffic is mocked.
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
@@ -7,8 +8,8 @@ try {
   const context = await browser.newContext({ timezoneId: 'America/Los_Angeles', viewport: { width: 1440, height: 1000 } });
   context.setDefaultTimeout(15000);
   await context.addInitScript(() => {
-    localStorage.setItem('unplan:google-accounts:v1', JSON.stringify([
-      { id: 'finder-test', email: 'finder@example.test', accessToken: 'mock', expiresAt: Date.now() + 3600000 },
+    localStorage.setItem('unplan:google-accounts:v2', JSON.stringify([
+      { id: 'finder-test', email: 'finder@example.test', status: 'active',},
     ]));
   });
   const calendar = { id: 'google|finder-test|primary', accountId: 'finder-test', name: 'Finder Test', backgroundColor: '#4666e5', foregroundColor: '#fff', primary: true, selected: true, writable: true, provider: 'google', providerCalendarId: 'primary' };
@@ -34,6 +35,7 @@ try {
     makeEvent('unmatched', 'Lunch break', 2),
   ];
   await context.route('**/api/**', async route => {
+    if (await mockGoogleAccounts(route)) return;
     const path = new URL(route.request().url()).pathname;
     if (path === '/api/google/calendars') return route.fulfill({ json: { calendars: [calendar] } });
     if (path === '/api/google/events') return route.fulfill({ json: { events, errors: [] } });

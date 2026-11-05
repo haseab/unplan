@@ -1,0 +1,110 @@
+.page {
+  height: 100dvh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0 28px;
+  background: var(--canvas);
+  color: var(--ink);
+}
+
+.header,
+.footer {
+  width: min(100%, 1000px);
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 28px 0;
+}
+
+.header {
+  border-bottom: 1px solid var(--line);
+}
+
+.wordmark {
+  font-size: 25px;
+  font-weight: 650;
+  letter-spacing: -1px;
+  text-decoration: none;
+}
+
+.header a,
+.footer a {
+  color: inherit;
+}
+
+.openApp {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 15px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  font-size: 13px;
+  text-decoration: none;
+}
+
+.content {
+  max-width: 700px;
+  margin: 0 auto;
+  padding: 80px 0 72px;
+  font-size: 15px;
+  line-height: 1.85;
+}
+
+.eyebrow {
+  margin: 0 0 18px;
+  color: var(--text-soft);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.content h1 {
+  margin: 0 0 24px;
+  font-size: clamp(36px, 7vw, 56px);
+  font-weight: 500;
+  line-height: 1.12;
+  letter-spacing: -0.055em;
+}
+
+.content .introduction {
+  margin-bottom: 44px;
+  color: var(--muted);
+  font-size: 19px;
+  line-height: 1.65;
+}
+
+.content h2 {
+  margin: 38px 0 12px;
+  font-size: 20px;
+  font-weight: 550;
+  letter-spacing: -0.025em;
+}
+
+.content p,
+.content ul {
+  margin: 12px 0;
+}
+
+.content li {
+  margin: 8px 0;
+}
+
+.content a {
+  color: var(--blue-ink);
+  text-underline-offset: 4px;
+}
+
+.footer {
+  border-top: 1px solid var(--line);
+  color: var(--text-soft);
+  font-size: 12px;
+}
+
+@media (max-width: 500px) {
+  .page { padding: 0 22px; }
+  .content { padding-top: 48px; }
+  .footer { align-items: flex-start; flex-direction: column; gap: 8px; }
+}

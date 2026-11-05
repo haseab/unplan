@@ -1,3 +1,4 @@
+import { mockGoogleAccounts } from './helpers/google-account-fixture.mjs';
 // Run against `npm run dev`. All Google/Todoist API traffic is mocked.
 import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
@@ -7,7 +8,7 @@ context.setDefaultTimeout(15000);
 const baseURL = process.env.UNPLAN_TEST_URL || 'http://localhost:3004';
 await context.addInitScript(() => {
   localStorage.setItem('unplan_undo_toast_duration', '0');
-  if (!localStorage.getItem('unplan:google-accounts:v1')) localStorage.setItem('unplan:google-accounts:v1', JSON.stringify([{ id: 'notes-test', email: 'notes@example.test', accessToken: 'mock', expiresAt: Date.now() + 3600000 }]));
+  if (!localStorage.getItem('unplan:google-accounts:v2')) localStorage.setItem('unplan:google-accounts:v2', JSON.stringify([{ id: 'notes-test', email: 'notes@example.test', status: 'active',}]));
   const put = IDBObjectStore.prototype.put;
   IDBObjectStore.prototype.put = function (...args) {
     if (window.failNotesStorage && this.transaction.db.name === 'unplan-note-drafts') throw new DOMException('Simulated quota exceeded', 'QuotaExceededError');
@@ -23,6 +24,7 @@ let delay = 0, writes = 0;
 const event = { id: `${calendar.id}:test-event`, providerEventId: 'test-event', calendarId: calendar.id, title: 'Notes sync test', start: now.toISOString(), end: new Date(+now + 3600000).toISOString(), calendarColor: '#4666e5', color: '#4666e5', provider: 'google' };
 const genericUpdates = [];
 await context.route('**/api/**', async route => {
+    if (await mockGoogleAccounts(route)) return;
   const path = new URL(route.request().url()).pathname;
   if (path === '/api/debug-log') return route.fulfill({ json: {} });
   if (offline) return route.abort('internetdisconnected');
@@ -31,7 +33,7 @@ await context.route('**/api/**', async route => {
     if (pauseNotes) return route.abort('internetdisconnected');
     const body = route.request().postDataJSON();
     assert.equal(body.accountId, 'notes-test');
-    assert.equal(route.request().headers().authorization, 'Bearer mock');
+    assert.equal(route.request().headers()['x-unplan-google-account'], 'notes-test');
     if (deleted) return route.fulfill({ status: 409, json: { deleted: true } });
     if (body.reviewOnly || body.local === remote) return route.fulfill({ json: { description: remote } });
     if (body.base !== remote) return route.fulfill({ status: 409, json: { description: remote } });
@@ -181,14 +183,14 @@ try {
   console.log('PASS: guest drafts wait for explicit notification choice');
 
   await page.reload(); await select();
-  const accounts = await page.evaluate(() => localStorage.getItem('unplan:google-accounts:v1'));
-  await page.evaluate(() => localStorage.setItem('unplan:google-accounts:v1', '[]'));
+  const accounts = await page.evaluate(() => localStorage.getItem('unplan:google-accounts:v2'));
+  await page.evaluate(() => localStorage.setItem('unplan:google-accounts:v2', '[]'));
   const beforeDisconnected = writes;
   await edit('Disconnected account draft');
   await poll(async () => (await records())[0]?.local === '<p>Disconnected account draft</p>', 'disconnected draft missing');
   await new Promise(resolve => setTimeout(resolve, 1800));
   assert.equal(writes, beforeDisconnected);
-  await page.evaluate(value => { localStorage.setItem('unplan:google-accounts:v1', value); window.dispatchEvent(new Event('online')); }, accounts);
+  await page.evaluate(value => { localStorage.setItem('unplan:google-accounts:v2', value); window.dispatchEvent(new Event('online')); }, accounts);
   await poll(() => remote === '<p>Disconnected account draft</p>', 'reconnected account did not resume');
   console.log('PASS: disconnected accounts retain drafts without writing');
 

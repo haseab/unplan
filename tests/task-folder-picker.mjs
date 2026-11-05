@@ -1,3 +1,4 @@
+import { mockGoogleAccounts } from './helpers/google-account-fixture.mjs';
 // Run against npm run dev. Provider traffic is mocked in an isolated browser context.
 import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
@@ -12,13 +13,14 @@ await context.addInitScript(() => {
   localStorage.setItem('todoist_project_id', 'project');
   localStorage.setItem('unplan:todoist-custom-groups:v1', JSON.stringify(['Work', 'Research']));
   localStorage.setItem('unplan:todoist-group-parents:v1', JSON.stringify({ Research: 'Work' }));
-  localStorage.setItem('unplan:google-accounts:v1', JSON.stringify([{ id: 'folder-test', email: 'folders@example.test', accessToken: 'mock', expiresAt: Date.now() + 3600000 }]));
+  localStorage.setItem('unplan:google-accounts:v2', JSON.stringify([{ id: 'folder-test', email: 'folders@example.test', status: 'active',}]));
 });
 const calendar = { id: 'google|folder-test|primary', accountId: 'folder-test', name: 'Folder Test', backgroundColor: '#4666e5', foregroundColor: '#fff', primary: true, selected: true, writable: true, provider: 'google', providerCalendarId: 'primary' };
 const start = new Date(); start.setHours(9, 0, 0, 0);
 const events = Array.from({ length: 23 }, (_, index) => ({ id: `${calendar.id}:event-${index}`, providerEventId: `event-${index}`, calendarId: calendar.id, title: `Folder event ${index + 1}`, start: new Date(+start + index * 1800000).toISOString(), end: new Date(+start + (index + 1) * 1800000).toISOString(), calendarColor: '#4666e5', color: '#4666e5', provider: 'google' }));
 const created = [], deleted = [], errors = [];
 await context.route('**/api/**', async route => {
+    if (await mockGoogleAccounts(route)) return;
   const path = new URL(route.request().url()).pathname;
   if (path === '/api/google/calendars') return route.fulfill({ json: { calendars: [calendar] } });
   if (path === '/api/google/events') {

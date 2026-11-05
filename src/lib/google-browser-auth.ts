@@ -1,47 +1,17 @@
 "use client";
 
+import { GOOGLE_ACCOUNT_HEADER, GOOGLE_SCOPES, type GoogleAccountSummary } from "./google-auth-shared";
 import { parseGoogleCalendarSourceId } from "./google-source-id";
 
-const GOOGLE_ACCOUNTS_STORAGE_KEY = "unplan:google-accounts:v1";
+const GOOGLE_ACCOUNTS_STORAGE_KEY = "unplan:google-accounts:v2";
+const LEGACY_GOOGLE_ACCOUNTS_STORAGE_KEY = "unplan:google-accounts:v1";
 const GOOGLE_IDENTITY_SCRIPT = "https://accounts.google.com/gsi/client";
-const GOOGLE_SCOPE = [
-  "openid",
-  "email",
-  "https://www.googleapis.com/auth/calendar",
-].join(" ");
 
-export type BrowserGoogleAccount = {
-  accessToken: string;
-  email: string;
-  expiresAt: number;
-  id: string;
-  refreshToken?: string;
-};
+export type BrowserGoogleAccount = GoogleAccountSummary;
+export type GoogleConnectedAccount = GoogleAccountSummary & { provider: "google" };
 
-export type GoogleConnectedAccount = {
-  email: string;
-  id: string;
-  provider: "google";
-  status: "active" | "expired" | "revoked";
-};
-
-type GoogleCodeResponse = {
-  code?: string;
-  error?: string;
-  error_description?: string;
-};
-
-type GoogleTokenResponse = {
-  access_token?: string;
-  error?: string;
-  error_description?: string;
-  expires_in?: number;
-  refresh_token?: string;
-};
-
-type GoogleCodeClient = {
-  requestCode: () => void;
-};
+type GoogleCodeResponse = { code?: string; error?: string; error_description?: string };
+type GoogleCodeClient = { requestCode: () => void };
 
 declare global {
   interface Window {
@@ -52,6 +22,7 @@ declare global {
             callback: (response: GoogleCodeResponse) => void;
             client_id: string;
             error_callback?: (error: { message?: string; type?: string }) => void;
+            include_granted_scopes?: boolean;
             select_account?: boolean;
             scope: string;
             ux_mode?: "popup" | "redirect";
@@ -62,103 +33,50 @@ declare global {
   }
 }
 
-const isAccount = (value: unknown): value is BrowserGoogleAccount => {
-  if (!value || typeof value !== "object") return false;
-  const account = value as Partial<BrowserGoogleAccount>;
-  return typeof account.accessToken === "string"
-    && typeof account.email === "string"
-    && typeof account.expiresAt === "number"
-    && typeof account.id === "string";
+const accountSummary = (value: unknown): BrowserGoogleAccount | null => {
+  if (!value || typeof value !== "object") return null;
+  const candidate = value as Partial<BrowserGoogleAccount>;
+  if (typeof candidate.id !== "string" || typeof candidate.email !== "string") return null;
+  return {
+    id: candidate.id,
+    email: candidate.email,
+    status: candidate.status === "active" || candidate.status === "revoked" ? candidate.status : "expired",
+  };
 };
 
 export const readGoogleAccounts = (): BrowserGoogleAccount[] => {
   if (typeof window === "undefined") return [];
   try {
-    const parsed = JSON.parse(window.localStorage.getItem(GOOGLE_ACCOUNTS_STORAGE_KEY) ?? "[]");
-    return Array.isArray(parsed) ? parsed.filter(isAccount) : [];
+    const serialized = window.localStorage.getItem(GOOGLE_ACCOUNTS_STORAGE_KEY)
+      ?? window.localStorage.getItem(LEGACY_GOOGLE_ACCOUNTS_STORAGE_KEY) ?? "[]";
+    const parsed: unknown = JSON.parse(serialized);
+    return Array.isArray(parsed) ? parsed.flatMap((value) => {
+      const summary = accountSummary(value);
+      return summary ? [summary] : [];
+    }) : [];
   } catch {
     return [];
   }
 };
 
 const writeGoogleAccounts = (accounts: BrowserGoogleAccount[]) => {
-  window.localStorage.setItem(GOOGLE_ACCOUNTS_STORAGE_KEY, JSON.stringify(accounts));
+  // Only metadata crosses this boundary; never store Google credentials.
+  window.localStorage.setItem(GOOGLE_ACCOUNTS_STORAGE_KEY, JSON.stringify(accounts.map(({ id, email, status }) => ({ id, email, status }))));
+  window.localStorage.removeItem(LEGACY_GOOGLE_ACCOUNTS_STORAGE_KEY);
 };
 
-export const activeGoogleAccounts = () =>
-  readGoogleAccounts().filter((account) => account.expiresAt > Date.now() + 30_000);
-
-export const googleAccessToken = (accountId: string) => {
-  const account = readGoogleAccounts().find((candidate) => candidate.id === accountId);
-  return account && account.expiresAt > Date.now() + 30_000
-    ? account.accessToken
-    : null;
-};
-
-const tokenRefreshes = new Map<string, Promise<string>>();
-
-const tokenError = (data: GoogleTokenResponse, fallback: string) =>
-  data.error_description || data.error || fallback;
-
-const exchangeGoogleToken = async (body: {
-  code?: string;
-  grantType: "authorization_code" | "refresh_token";
-  redirectUri?: string;
-  refreshToken?: string;
-}) => {
-  const response = await fetch("/api/google/oauth/token", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Requested-With": "XmlHttpRequest",
-    },
-    body: JSON.stringify(body),
+export const loadGoogleAccounts = async () => {
+  const response = await fetch("/api/google/accounts", { credentials: "same-origin", cache: "no-store" });
+  const data = await response.json().catch(() => null) as { accounts?: unknown[]; error?: string } | null;
+  if (!response.ok || !Array.isArray(data?.accounts)) {
+    throw new Error(data?.error || "Google accounts could not be loaded. Try again shortly.");
+  }
+  const accounts = data.accounts.flatMap((value) => {
+    const summary = accountSummary(value);
+    return summary ? [summary] : [];
   });
-  const data = await response.json().catch(() => ({})) as GoogleTokenResponse;
-  if (!response.ok || !data.access_token) {
-    throw new Error(tokenError(data, "Google authorization could not be refreshed"));
-  }
-  return data;
-};
-
-export const refreshGoogleAccount = async (accountId: string) => {
-  const existingRefresh = tokenRefreshes.get(accountId);
-  if (existingRefresh) return existingRefresh;
-
-  const refresh = (async () => {
-    const account = readGoogleAccounts().find((candidate) => candidate.id === accountId);
-    if (!account?.refreshToken) {
-      throw new Error("Google authorization expired. Reconnect your account once to enable automatic refresh.");
-    }
-    const response = await exchangeGoogleToken({
-      grantType: "refresh_token",
-      refreshToken: account.refreshToken,
-    });
-    const refreshed: BrowserGoogleAccount = {
-      ...account,
-      accessToken: response.access_token!,
-      expiresAt: Date.now() + (response.expires_in ?? 3_600) * 1000,
-      refreshToken: response.refresh_token || account.refreshToken,
-    };
-    writeGoogleAccounts(readGoogleAccounts().map((candidate) =>
-      candidate.id === accountId ? refreshed : candidate,
-    ));
-    return refreshed.accessToken;
-  })();
-
-  tokenRefreshes.set(accountId, refresh);
-  try {
-    return await refresh;
-  } catch (error) {
-    writeGoogleAccounts(readGoogleAccounts().map((account) =>
-      account.id === accountId
-        ? { ...account, expiresAt: 0, refreshToken: undefined }
-        : account,
-    ));
-    throw error;
-  } finally {
-    if (tokenRefreshes.get(accountId) === refresh) tokenRefreshes.delete(accountId);
-  }
+  writeGoogleAccounts(accounts);
+  return accounts;
 };
 
 export const googleAuthorizedFetch = async (
@@ -166,10 +84,18 @@ export const googleAuthorizedFetch = async (
   input: RequestInfo | URL,
   init: RequestInit = {},
 ) => {
-  const token = googleAccessToken(accountId) ?? await refreshGoogleAccount(accountId);
+  const origin = typeof window !== "undefined" ? window.location?.origin ?? "http://localhost" : "http://localhost";
+  const url = new URL(input instanceof Request ? input.url : String(input), origin);
+  if (url.origin !== origin || !url.pathname.startsWith("/api/google/")) {
+    throw new Error("Google requests must use Unplan's own API");
+  }
   const headers = new Headers(init.headers);
-  headers.set("Authorization", `Bearer ${token}`);
-  return fetch(input, { ...init, headers });
+  headers.delete("Authorization");
+  headers.set(GOOGLE_ACCOUNT_HEADER, accountId);
+  headers.set("X-Requested-With", "XmlHttpRequest");
+  const response = await fetch(input, { ...init, cache: "no-store", credentials: "same-origin", headers });
+  if (response.status === 401) expireGoogleAccount(accountId);
+  return response;
 };
 
 export const googleCalendarAuthorizedFetch = (
@@ -182,13 +108,20 @@ export const googleCalendarAuthorizedFetch = (
   return googleAuthorizedFetch(source.accountId, input, init);
 };
 
-export const removeGoogleAccount = (accountId: string) => {
+export const removeGoogleAccount = async (accountId: string) => {
+  const response = await fetch(`/api/google/accounts?accountId=${encodeURIComponent(accountId)}`, {
+    method: "DELETE",
+    credentials: "same-origin",
+    headers: { "X-Requested-With": "XmlHttpRequest" },
+  });
+  const data = await response.json().catch(() => null) as { error?: string } | null;
+  if (!response.ok) throw new Error(data?.error || "Google account could not be disconnected");
   writeGoogleAccounts(readGoogleAccounts().filter((account) => account.id !== accountId));
 };
 
 export const expireGoogleAccount = (accountId: string) => {
   writeGoogleAccounts(readGoogleAccounts().map((account) =>
-    account.id === accountId ? { ...account, expiresAt: 0 } : account,
+    account.id === accountId ? { ...account, status: "expired" } : account,
   ));
 };
 
@@ -230,29 +163,24 @@ export const loadGoogleIdentity = () => {
   return pending;
 };
 
-const loadGoogleProfile = async (accessToken: string) => {
-  const response = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
-    headers: { Authorization: `Bearer ${accessToken}` },
-  });
-  const profile = await response.json().catch(() => ({})) as {
-    email?: string;
-    sub?: string;
-  };
-  if (!response.ok || !profile.email) {
-    throw new Error("Google did not return an account email");
-  }
-  return { email: profile.email, id: profile.sub || profile.email };
-};
 
 export const connectGoogleAccount = async () => {
   const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID?.trim();
-  if (!clientId) throw new Error("NEXT_PUBLIC_GOOGLE_CLIENT_ID is not configured");
+  if (!clientId) throw new Error("Google sign-in is not configured");
   await loadGoogleIdentity();
+  const start = await fetch("/api/google/oauth/start", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "X-Requested-With": "XmlHttpRequest" },
+  });
+  const flow = await start.json().catch(() => null) as { challenge?: string; error?: string } | null;
+  if (!start.ok || !flow?.challenge) throw new Error(flow?.error || "Google sign-in could not start");
 
   return new Promise<BrowserGoogleAccount>((resolve, reject) => {
     const client = window.google!.accounts.oauth2.initCodeClient({
       client_id: clientId,
-      scope: GOOGLE_SCOPE,
+      scope: GOOGLE_SCOPES.join(" "),
+      include_granted_scopes: false,
       error_callback: (error) => reject(new Error(error.message || error.type || "Google connection failed")),
       select_account: true,
       ux_mode: "popup",
@@ -261,30 +189,19 @@ export const connectGoogleAccount = async () => {
           reject(new Error(response.error_description || response.error || "Google connection failed"));
           return;
         }
-        void exchangeGoogleToken({
-          code: response.code,
-          grantType: "authorization_code",
-          redirectUri: window.location.origin,
-        }).then(async (tokens) => {
-          const profile = await loadGoogleProfile(tokens.access_token!);
-          const accounts = readGoogleAccounts();
-          const existing = accounts.find((candidate) => candidate.id === profile.id);
-          const refreshToken = tokens.refresh_token || existing?.refreshToken;
-          if (!refreshToken) {
-            throw new Error("Google did not issue a refresh token. Remove Unplan from your Google account permissions, then reconnect.");
-          }
-          const account: BrowserGoogleAccount = {
-            ...profile,
-            accessToken: tokens.access_token!,
-            expiresAt: Date.now() + (tokens.expires_in ?? 3_600) * 1000,
-            refreshToken,
-          };
-          const existingIndex = accounts.findIndex((candidate) => candidate.id === account.id);
-          if (existingIndex >= 0) accounts[existingIndex] = account;
-          else accounts.push(account);
-          writeGoogleAccounts(accounts);
-          resolve(account);
-        }, reject);
+        void (async () => {
+          const exchange = await fetch("/api/google/oauth/token", {
+            method: "POST",
+            credentials: "same-origin",
+            headers: { "Content-Type": "application/json", "X-Requested-With": "XmlHttpRequest" },
+            body: JSON.stringify({ code: response.code, challenge: flow.challenge }),
+          });
+          const data = await exchange.json().catch(() => null) as { account?: unknown; error?: string } | null;
+          const account = accountSummary(data?.account);
+          if (!exchange.ok || !account) throw new Error(data?.error || "Google connection failed");
+          writeGoogleAccounts([...readGoogleAccounts().filter((candidate) => candidate.id !== account.id), account]);
+          return account;
+        })().then(resolve, reject);
       },
     });
     client.requestCode();

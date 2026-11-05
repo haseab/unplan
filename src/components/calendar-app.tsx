@@ -1,5 +1,6 @@
 "use client";
 
+import { AppInformationLinks } from "@/components/app-information-links";
 import { useKeyboardSelection } from "@/hooks/use-keyboard-selection";
 
 
@@ -265,6 +266,7 @@ import {
 import { updateGoogleCalendarSelection } from "@/lib/google-calendar-list-client";
 import {
   connectGoogleAccount,
+  loadGoogleAccounts,
   removeGoogleAccount,
   type GoogleConnectedAccount,
 } from "@/lib/google-browser-auth";
@@ -1492,6 +1494,7 @@ export function CalendarApp() {
   );
 
   const importGoogleCalendars = React.useCallback(async () => {
+    await loadGoogleAccounts();
     const status = browserGoogleStatus();
     setGoogle(status);
     if (!status.connected) return;
@@ -4322,9 +4325,7 @@ export function CalendarApp() {
     queueActionToast("Google account disconnected", {
       duration: toastDuration,
       onUndo: restoreConnection,
-      onSubmit: () => {
-        removeGoogleAccount(accountId);
-      },
+      onSubmit: () => removeGoogleAccount(accountId),
       onError: (error) => {
         restoreConnection();
         toast.error(
@@ -6097,6 +6098,7 @@ export function CalendarApp() {
             <button className="connect-button" type="button" onClick={() => void connectGoogle()}><span className="google-g">G</span><span>Connect Google Calendar</span></button>
           )}
           <button className="settings-button" onClick={() => setShowSettings(true)}><Settings size={15} /> Settings</button>
+          <AppInformationLinks />
         </div>
       </aside>
 

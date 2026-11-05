@@ -1,3 +1,4 @@
+import { mockGoogleAccounts } from './helpers/google-account-fixture.mjs';
 // Run against `npm run dev`. Provider API traffic is mocked.
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
@@ -7,8 +8,8 @@ try {
   const context = await browser.newContext({ timezoneId: 'America/Los_Angeles' });
   context.setDefaultTimeout(15000);
   await context.addInitScript(() => {
-    localStorage.setItem('unplan:google-accounts:v1', JSON.stringify([
-      { id: 'selection-test', email: 'selection@example.test', accessToken: 'mock', expiresAt: Date.now() + 3600000 },
+    localStorage.setItem('unplan:google-accounts:v2', JSON.stringify([
+      { id: 'selection-test', email: 'selection@example.test', status: 'active',},
     ]));
   });
   const calendar = { id: 'google|selection-test|primary', accountId: 'selection-test', name: 'Selection Test', backgroundColor: '#4666e5', foregroundColor: '#fff', primary: true, selected: true, writable: true, provider: 'google', providerCalendarId: 'primary' };
@@ -21,6 +22,7 @@ try {
   const timed = { ...allDay, id: `${calendar.id}:timed`, providerEventId: 'timed', title: 'Get Hand sanitizer', start: timedStart.toISOString(), end: new Date(+timedStart + 15 * 60000).toISOString(), allDay: false };
   const candle = { ...timed, id: `${calendar.id}:candle`, providerEventId: 'candle', title: 'Get scented candle', start: timed.end, end: new Date(+timedStart + 30 * 60000).toISOString() };
   await context.route('**/api/**', async route => {
+    if (await mockGoogleAccounts(route)) return;
     const path = new URL(route.request().url()).pathname;
     if (path === '/api/google/calendars') return route.fulfill({ json: { calendars: [calendar] } });
     if (path === '/api/google/events') return route.fulfill({ json: { events: [allDay, timed, candle], errors: [] } });

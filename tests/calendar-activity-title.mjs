@@ -1,3 +1,4 @@
+import { mockGoogleAccounts } from './helpers/google-account-fixture.mjs';
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
 
@@ -9,9 +10,9 @@ try {
     localStorage.setItem('unplan_undo_toast_duration', '0');
     localStorage.setItem('todoist_api_key', 'activity-title-test');
     localStorage.setItem('todoist_project_id', 'inbox');
-    localStorage.setItem('unplan:google-accounts:v1', JSON.stringify([{
+    localStorage.setItem('unplan:google-accounts:v2', JSON.stringify([{
       id: 'activity-title-test', email: 'activity@example.test',
-      accessToken: 'mock', expiresAt: Date.now() + 3600000,
+      status: 'active',
     }]));
   });
   const calendar = {
@@ -28,6 +29,7 @@ try {
     },
   ];
   await context.route('**/api/**', async route => {
+    if (await mockGoogleAccounts(route)) return;
     const request = route.request();
     const url = new URL(request.url());
     if (url.pathname === '/api/google/calendars') {

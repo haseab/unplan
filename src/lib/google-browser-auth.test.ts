@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { googleAuthorizedFetch, loadGoogleIdentity } from "./google-browser-auth";
+import { googleAuthorizedFetch, loadGoogleAccounts, loadGoogleIdentity, readGoogleAccounts } from "./google-browser-auth";
 
 class FakeScript extends EventTarget {
   async = false;
@@ -57,60 +57,80 @@ test("Google Identity loading replaces a failed script on retry", async () => {
   }
 });
 
-test("expired Google access tokens refresh once and persist across concurrent requests", async () => {
-  const originalFetch = Object.getOwnPropertyDescriptor(globalThis, "fetch");
+const browserFixture = () => {
   const originalWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
+  const originalFetch = globalThis.fetch;
   const storage = new Map<string, string>();
-  storage.set("unplan:google-accounts:v1", JSON.stringify([{
-    accessToken: "expired-access-token",
-    email: "person@example.com",
-    expiresAt: 0,
-    id: "google-account-id",
-    refreshToken: "stored-refresh-token",
-  }]));
   Object.defineProperty(globalThis, "window", {
     configurable: true,
-    value: {
-      localStorage: {
-        getItem: (key: string) => storage.get(key) ?? null,
-        setItem: (key: string, value: string) => storage.set(key, value),
-      },
-    },
+    value: { location: { origin: "https://unplan.io" }, localStorage: {
+      getItem: (key: string) => storage.get(key) ?? null,
+      setItem: (key: string, value: string) => storage.set(key, value),
+      removeItem: (key: string) => storage.delete(key),
+    } },
   });
-
-  let refreshRequests = 0;
-  const apiAuthorizationHeaders: string[] = [];
-  Object.defineProperty(globalThis, "fetch", {
-    configurable: true,
-    value: async (input: RequestInfo | URL, init?: RequestInit) => {
-      if (String(input) === "/api/google/oauth/token") {
-        refreshRequests += 1;
-        await Promise.resolve();
-        return Response.json({ access_token: "refreshed-access-token", expires_in: 3600 });
-      }
-      apiAuthorizationHeaders.push(new Headers(init?.headers).get("Authorization") ?? "");
-      return Response.json({ ok: true });
-    },
-  });
-
-  try {
-    await Promise.all([
-      googleAuthorizedFetch("google-account-id", "/api/google/calendars"),
-      googleAuthorizedFetch("google-account-id", "/api/google/events"),
-    ]);
-    assert.equal(refreshRequests, 1);
-    assert.deepEqual(apiAuthorizationHeaders, [
-      "Bearer refreshed-access-token",
-      "Bearer refreshed-access-token",
-    ]);
-    const [storedAccount] = JSON.parse(storage.get("unplan:google-accounts:v1") ?? "[]");
-    assert.equal(storedAccount.accessToken, "refreshed-access-token");
-    assert.equal(storedAccount.refreshToken, "stored-refresh-token");
-    assert.ok(storedAccount.expiresAt > Date.now());
-  } finally {
-    if (originalFetch) Object.defineProperty(globalThis, "fetch", originalFetch);
-    else Reflect.deleteProperty(globalThis, "fetch");
+  return { storage, restore: () => {
+    globalThis.fetch = originalFetch;
     if (originalWindow) Object.defineProperty(globalThis, "window", originalWindow);
     else Reflect.deleteProperty(globalThis, "window");
-  }
+  } };
+};
+
+test("Google API calls send a session and account selector, never browser tokens", async () => {
+  const fixture = browserFixture();
+  fixture.storage.set("unplan:google-accounts:v1", JSON.stringify([{
+    id: "account", email: "person@example.test", accessToken: "fake-access", refreshToken: "fake-refresh", expiresAt: 0,
+  }]));
+  globalThis.fetch = async (_input, init) => {
+    assert.equal(init?.credentials, "same-origin");
+    assert.equal(new Headers(init?.headers).get("Authorization"), null);
+    assert.equal(new Headers(init?.headers).get("X-Unplan-Google-Account"), "account");
+    assert.equal(new Headers(init?.headers).get("X-Requested-With"), "XmlHttpRequest");
+    assert.doesNotMatch(JSON.stringify(init), /fake-access|fake-refresh/);
+    return Response.json({ ok: true });
+  };
+  try {
+    await googleAuthorizedFetch("account", "/api/google/events", { headers: { Authorization: "Bearer fake-access" } });
+  } finally { fixture.restore(); }
+});
+
+test("successful account loading removes legacy tokens and caches only metadata", async () => {
+  const fixture = browserFixture();
+  fixture.storage.set("unplan:google-accounts:v1", JSON.stringify([{
+    id: "account", email: "person@example.test", accessToken: "fake-access", refreshToken: "fake-refresh", expiresAt: 0,
+  }]));
+  globalThis.fetch = async () => Response.json({ accounts: [{
+    id: "account", email: "person@example.test", status: "active",
+    accessToken: "never-cache-this", refreshToken: "never-cache-this-either",
+  }] });
+  try {
+    assert.equal(readGoogleAccounts()[0].status, "expired");
+    await loadGoogleAccounts();
+    assert.equal(fixture.storage.has("unplan:google-accounts:v1"), false);
+    assert.doesNotMatch(fixture.storage.get("unplan:google-accounts:v2")!, /Token|fake-|never-cache/);
+    assert.deepEqual(readGoogleAccounts(), [{ id: "account", email: "person@example.test", status: "active" }]);
+  } finally { fixture.restore(); }
+});
+
+test("temporary API failures preserve connection metadata", async () => {
+  const fixture = browserFixture();
+  const accounts = JSON.stringify([{ id: "account", email: "person@example.test", status: "active" }]);
+  fixture.storage.set("unplan:google-accounts:v2", accounts);
+  globalThis.fetch = async () => Response.json({ error: "temporarily unavailable" }, { status: 503 });
+  try {
+    assert.equal((await googleAuthorizedFetch("account", "/api/google/events")).status, 503);
+    await assert.rejects(loadGoogleAccounts());
+    assert.equal(fixture.storage.get("unplan:google-accounts:v2"), accounts);
+  } finally { fixture.restore(); }
+});
+
+test("credentials cannot be forwarded to an external origin or another API", async () => {
+  const fixture = browserFixture();
+  let calls = 0;
+  globalThis.fetch = async () => { calls += 1; return Response.json({}); };
+  try {
+    await assert.rejects(googleAuthorizedFetch("account", "https://evil.example/api/google/events"));
+    await assert.rejects(googleAuthorizedFetch("account", "/api/todoist/tasks"));
+    assert.equal(calls, 0);
+  } finally { fixture.restore(); }
 });

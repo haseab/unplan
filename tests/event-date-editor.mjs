@@ -1,3 +1,4 @@
+import { mockGoogleAccounts } from './helpers/google-account-fixture.mjs';
 import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
 const browser = await chromium.launch({ headless: true, channel: 'chrome' });
@@ -5,13 +6,14 @@ try {
   const context = await browser.newContext({ timezoneId: 'America/Los_Angeles' });
   await context.addInitScript(() => {
     localStorage.setItem('unplan_undo_toast_duration', '0');
-    localStorage.setItem('unplan:google-accounts:v1', JSON.stringify([{ id: 'date-test', email: 'date@example.test', accessToken: 'mock', expiresAt: Date.now() + 3600000 }]));
+    localStorage.setItem('unplan:google-accounts:v2', JSON.stringify([{ id: 'date-test', email: 'date@example.test', status: 'active',}]));
   });
   const calendar = { id: 'google|date-test|primary', accountId: 'date-test', name: 'Date Test', backgroundColor: '#4666e5', foregroundColor: '#fff', selected: true, writable: true, provider: 'google', providerCalendarId: 'primary' };
   const now = new Date(); now.setHours(12, 30, 0, 0);
   const event = { id: `${calendar.id}:test`, providerEventId: 'test', calendarId: calendar.id, title: 'Date editor test', start: now.toISOString(), end: new Date(+now + 75 * 60000).toISOString(), calendarColor: '#4666e5', color: '#4666e5', provider: 'google' };
   let update;
   await context.route('**/api/**', async route => {
+    if (await mockGoogleAccounts(route)) return;
     const url = new URL(route.request().url());
     if (url.pathname === '/api/google/calendars') return route.fulfill({ json: { calendars: [calendar] } });
     if (url.pathname === '/api/google/events') {
