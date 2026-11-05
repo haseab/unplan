@@ -16,9 +16,6 @@ import {
 
 const DAY_MS = 24 * 60 * 60 * 1_000;
 export const TASK_AGING_MAX_WRITES_PER_RUN = 30;
-export const TASK_AGING_RECONCILIATION_COOLDOWN_MS = 15 * 60 * 1_000;
-export const TASK_AGING_RECONCILIATION_STORAGE_KEY =
-  "unplan:task-aging-reconciliation:last-checked-at:v1";
 
 export type TaskAgingUpdate = {
   content: string;
@@ -125,15 +122,4 @@ export const taskAgingBatch = (
     pending: pending.length,
     updates: pending.slice(0, Math.max(limit, 0)),
   };
-};
-
-export const isTaskAgingReconciliationCoolingDown = (
-  storedLastCheckedAt: string | null,
-  nowMs: number,
-) => {
-  const lastCheckedAt = Number(storedLastCheckedAt);
-  return Number.isFinite(lastCheckedAt)
-    && lastCheckedAt > 0
-    && nowMs - lastCheckedAt >= 0
-    && nowMs - lastCheckedAt < TASK_AGING_RECONCILIATION_COOLDOWN_MS;
 };

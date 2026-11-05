@@ -39,7 +39,7 @@ try {
   const before = reads;
   await page.evaluate(() => window.dispatchEvent(new Event('focus')));
   await page.waitForTimeout(500);
-  if (active) assert.ok(reads > before, 'Focus should load background refresh results even with an empty task list');
+  assert.ok(reads > before, 'Focus should load background refresh results even with an empty task list');
   assert.deepEqual(errors, []);
   console.log(`PASS: monthly settings synced once (cron active=${active}); ${reads} bounded task reads; focus reload works`);
 } finally { await browser.close(); }

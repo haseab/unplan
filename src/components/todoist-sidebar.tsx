@@ -1402,7 +1402,8 @@ export function TodoistSidebar({
             }}
             onPointerDown={(event) => event.stopPropagation()}
             aria-label="Add task"
-            title="Add task"
+            disabled={!connected}
+            title={connected ? "Add task" : "Connect Todoist in Settings to add tasks"}
           >
             <Plus size={14} />
           </button>

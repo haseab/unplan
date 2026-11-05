@@ -415,6 +415,14 @@ export const createTodoistTask = async (
   return normalizeTodoistTask(data.task);
 };
 
+export const migrateLocalTodoistTask = async (token: string, task: TodoistTask, destination: CreateTodoistTaskInput) => {
+  const data = await todoistRequest<{ task: TodoistTaskPayload }>("/api/todoist/local-tasks", token, {
+    method: "POST",
+    body: JSON.stringify({ localId: task.id, priority: task.priority, dueDate: task.due?.date, ...destination }),
+  });
+  return normalizeTodoistTask(data.task);
+};
+
 export const closeTodoistTask = async (token: string, taskId: string) => {
   await todoistRequest<{ ok: true }>("/api/todoist/tasks", token, {
     method: "POST",

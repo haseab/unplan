@@ -92,7 +92,8 @@ import { normalizeDayCount, useDayCount } from "@/hooks/use-day-count";
 import { useGuestNotificationConfirmation } from "@/hooks/use-guest-notification-confirmation";
 import { useGoogleCalendarRefresh } from "@/hooks/use-google-calendar-refresh";
 import { useKeyboardRepeat } from "@/hooks/use-keyboard-repeat";
-import { useTaskAgingReconciliation } from "@/hooks/use-task-aging-reconciliation";
+import { useTodoistTaskCreation } from "@/hooks/use-todoist-task-creation";
+import { useTaskRefreshSync } from "@/hooks/use-task-refresh-sync";
 import { useRecentEventHistory } from "@/hooks/use-recent-event-history";
 import { useRecentEventTitles } from "@/hooks/use-recent-event-titles";
 import {
@@ -664,7 +665,6 @@ export function CalendarApp() {
   const {
     bucketProjectIds: todoistBucketProjectIds,
     bucketSelectionRequest: todoistBucketSelectionRequest,
-    addLocalTask,
     cancelBucketSelection: cancelTodoistBucketSelection,
     chooseBucketProject: chooseTodoistBucketProject,
     commitStagedTask: commitStagedTodoistTask,
@@ -1089,13 +1089,7 @@ export function CalendarApp() {
     return group;
   }, [setTodoistCustomGroups, todoistGroups]);
 
-  useTaskAgingReconciliation({
-    enabled: true,
-    token: todoistToken,
-    refreshTasks: refreshTodoist,
-    tasks: visibleTodoistTasks,
-    updateTask: updateTodoistTask,
-  });
+  useTaskRefreshSync({ token: todoistToken, refreshTasks: refreshTodoist });
 
   React.useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -5880,55 +5874,19 @@ export function CalendarApp() {
     return Promise.resolve();
   }, [replaceLocalTodoistTask, toastDuration, updateTodoistTask]);
 
-  const duplicateSidebarTodoistTask = React.useCallback((task: TodoistTask) => {
-    const title = todoistTaskDisplayTitle(task.content);
-    if (isLocalTask(task)) {
-      const duplicatedTask = addLocalTask(
-        { content: task.content, description: task.description },
-        { edge: "after", taskId: task.id },
-      );
-      queueActionToast(`Duplicated ${title}`, {
-        createsResourceIds: [duplicatedTask.id],
-        duration: toastDuration,
-        onUndo: () => removeLocalTodoistTasks([duplicatedTask.id]),
-        onSubmit: async () => undefined,
-        resourceIds: [task.id],
-      });
-      return Promise.resolve();
-    }
-    const input = {
+  const createSidebarTodoistTask = useTodoistTaskCreation({
+    stageTasks: stageTodoistTasks,
+    commitTask: commitStagedTodoistTask,
+    removeTasks: removeLocalTodoistTasks,
+    persistOrder: persistTodoistTaskOrder,
+    duration: toastDuration,
+  });
+  const duplicateSidebarTodoistTask = React.useCallback((task: TodoistTask) =>
+    createSidebarTodoistTask({
       content: task.content,
       description: task.description,
       ...(task.due?.datetime ? { dueDatetime: task.due.datetime } : {}),
-    };
-    const stagedTask = stageTodoistTasks(
-      [input],
-      { edge: "after", taskId: task.id },
-    )[0];
-    if (!stagedTask) return Promise.resolve();
-
-    queueActionToast(`Duplicated ${title}`, {
-      createsResourceIds: [stagedTask.id],
-      duration: toastDuration,
-      onUndo: () => removeLocalTodoistTasks([stagedTask.id]),
-      onSubmit: async () => {
-        const committedTask = await commitStagedTodoistTask(stagedTask.id, input);
-        if (!committedTask) return;
-        try {
-          await persistTodoistTaskOrder();
-        } catch {
-          toast.warning("Event duplicated, but its sidebar position could not be saved");
-        }
-      },
-      onError: (error) => {
-        removeLocalTodoistTasks([stagedTask.id]);
-        toast.error(error instanceof Error ? error.message : "Event could not be duplicated");
-      },
-      resourceIds: [task.id],
-      submittingMessage: "Duplicating event…",
-    });
-    return Promise.resolve();
-  }, [addLocalTask, commitStagedTodoistTask, persistTodoistTaskOrder, removeLocalTodoistTasks, stageTodoistTasks, toastDuration]);
+    }, task.id), [createSidebarTodoistTask]);
 
   const todayInWeek = isWithinInterval(now, {
     start: renderStart,
@@ -6840,11 +6798,9 @@ export function CalendarApp() {
               );
               return next;
             })}
-            onCreateTask={(title) => {
-              addLocalTask({
-                content: todoistContentFromTaskTitle(title, TODOIST_ROOT_GROUP),
-              });
-            }}
+            onCreateTask={(title) => void createSidebarTodoistTask({
+              content: todoistContentFromTaskTitle(title, TODOIST_ROOT_GROUP),
+            })}
             onDeleteTasks={deleteTodoistTasks}
             onDuplicateTask={duplicateSidebarTodoistTask}
             onFocusTaskHandled={handleTodoistTaskFocus}
