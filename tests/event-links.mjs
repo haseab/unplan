@@ -1,3 +1,4 @@
+import { mockGoogleAccounts } from './helpers/google-account-fixture.mjs';
 // Run against npm run dev. Provider and linked-page traffic is mocked.
 import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
@@ -6,7 +7,7 @@ const context = await browser.newContext({ timezoneId: 'America/Los_Angeles', vi
 context.setDefaultTimeout(15000);
 await context.addInitScript(() => {
   localStorage.setItem('unplan_undo_toast_duration', '0');
-  localStorage.setItem('unplan:google-accounts:v1', JSON.stringify([{ id: 'links-test', email: 'links@example.test', accessToken: 'mock', expiresAt: Date.now() + 3600000 }]));
+  localStorage.setItem('unplan:google-accounts:v2', JSON.stringify([{ id: 'links-test', email: 'links@example.test', status: 'active',}]));
 });
 const calendar = { id: 'google|links-test|primary', accountId: 'links-test', name: 'Links Test', backgroundColor: '#4666e5', foregroundColor: '#fff', primary: true, selected: true, writable: true, provider: 'google', providerCalendarId: 'primary' };
 const now = new Date(); now.setHours(12, 0, 0, 0);
@@ -14,6 +15,7 @@ const event = { id: `${calendar.id}:test-event`, providerEventId: 'test-event', 
 const updates = [], errors = [];
 await context.route('https://example.test/**', route => route.fulfill({ contentType: 'text/html', body: '<p>Linked page</p>' }));
 await context.route('**/api/**', async route => {
+    if (await mockGoogleAccounts(route)) return;
   const path = new URL(route.request().url()).pathname;
   if (path === '/api/google/calendars') return route.fulfill({ json: { calendars: [calendar] } });
   if (path === '/api/google/events') {

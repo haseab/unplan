@@ -40,24 +40,26 @@ NEXT_PUBLIC_GOOGLE_CLIENT_ID=your-client-id
 GOOGLE_CLIENT_SECRET=your-client-secret
 ```
 
-Unplan uses Google Identity Services' authorization-code model. Access tokens,
-refresh tokens, and expiry times are stored in this browser's local storage and
-sent only to same-origin API routes. Unplan has no user database. The matching
-Google client secret remains server-side and is used only to exchange and
-refresh tokens. Access tokens refresh automatically before Google API calls.
+Unplan uses Google Identity Services' authorization-code model. Configure
+`DATABASE_URL`, `GOOGLE_TOKEN_ENCRYPTION_KEY` (base64-encoded 32 random bytes),
+and `APP_ORIGIN` as shown in `.env.example`, then run `npm run db:migrate`.
+The server verifies Google identity tokens, encrypts Google credentials in
+PostgreSQL, and maintains an HttpOnly session cookie. Browser storage contains
+account summaries, local work, and preferences; Google tokens stay on the server.
+Refresh retries preserve the connection through temporary failures.
 
-Refresh tokens in local storage are convenient for a local-first app but are
-vulnerable to browser extensions and cross-site scripting. Do not use this
-storage design for a multi-user hosted deployment.
-
-OAuth clients in Google testing mode remain limited to accounts listed as test
-users. A public integration requires publishing the consent screen and may
-require Google verification for Calendar scopes.
+The requested scopes are `openid`, `email`, `calendar.events`, and
+`calendar.calendarlist`. Use separate Google projects for development and
+production. Testing grants expire after seven days; a public integration needs
+production publishing and verification of its Calendar permissions. See
+[Google OAuth production setup](docs/google-oauth-production.md) for deployment,
+branding, scope justifications, and the verification video checklist.
 
 Use the **+** beside Calendars or **Add another account** to connect additional
-Google accounts. Each account has its own browser token, so one expired account
-does not prevent the others from loading. Disconnecting removes that account's
-access and refresh tokens from the browser.
+Google accounts. Each account has its own server-side credentials, so one expired
+account does not prevent the others from loading. Disconnecting revokes Google
+access and deletes the stored connection. Existing browser-only connections
+need to be authorized once after upgrading.
 
 ## Interaction model
 

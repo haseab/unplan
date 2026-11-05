@@ -40,8 +40,8 @@ test("multi-account search returns healthy results when one account fails", asyn
     value: { localStorage: { getItem: (key: string) => storage.get(key) ?? null } },
   });
   globalThis.fetch = async (_input, init) => {
-    const authorization = new Headers(init?.headers).get("Authorization");
-    return authorization === "Bearer healthy-token"
+    const accountId = new Headers(init?.headers).get("X-Unplan-Google-Account");
+    return accountId === "healthy-account"
       ? Response.json({ events: [resultEvent] })
       : Response.json({ error: "Account unavailable" }, { status: 503 });
   };

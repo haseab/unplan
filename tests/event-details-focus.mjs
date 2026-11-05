@@ -1,3 +1,4 @@
+import { mockGoogleAccounts } from './helpers/google-account-fixture.mjs';
 // Run against `npm run dev`. All Google/Todoist API traffic is mocked.
 import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
@@ -7,7 +8,7 @@ context.setDefaultTimeout(15000);
 const baseURL = process.env.UNPLAN_TEST_URL || 'http://localhost:3004';
 await context.addInitScript(() => {
   localStorage.setItem('unplan_undo_toast_duration', '10000');
-  if (!localStorage.getItem('unplan:google-accounts:v1')) localStorage.setItem('unplan:google-accounts:v1', JSON.stringify([{ id: 'notes-test', email: 'notes@example.test', accessToken: 'mock', expiresAt: Date.now() + 3600000 }]));
+  if (!localStorage.getItem('unplan:google-accounts:v2')) localStorage.setItem('unplan:google-accounts:v2', JSON.stringify([{ id: 'notes-test', email: 'notes@example.test', status: 'active',}]));
 });
 const calendar = { id: 'google|notes-test|primary', accountId: 'notes-test', name: 'Notes Test', backgroundColor: '#4666e5', foregroundColor: '#fff', primary: true, selected: true, writable: true, provider: 'google', providerCalendarId: 'primary' };
 const otherCalendar = { ...calendar, id: 'google|notes-test|other', providerCalendarId: 'other', primary: false, name: 'Other Calendar' };
@@ -15,6 +16,7 @@ const now = new Date(); now.setHours(12, 0, 0, 0);
 let remote = '<p>Original notes</p>';
 const event = { id: `${calendar.id}:test-event`, providerEventId: 'test-event', calendarId: calendar.id, title: 'Notes sync test', start: now.toISOString(), end: new Date(+now + 3600000).toISOString(), calendarColor: '#4666e5', color: '#4666e5', provider: 'google' };
 await context.route('**/api/**', async route => {
+    if (await mockGoogleAccounts(route)) return;
   const path = new URL(route.request().url()).pathname;
   if (path === '/api/debug-log') return route.fulfill({ json: {} });
   if (path === '/api/google/calendars') return route.fulfill({ json: { calendars: [calendar, otherCalendar] } });

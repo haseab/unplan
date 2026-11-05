@@ -1,3 +1,4 @@
+import { mockGoogleAccounts } from './helpers/google-account-fixture.mjs';
 // Run against npm run dev. No real account data is read or changed.
 import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
@@ -7,8 +8,8 @@ try {
   context.setDefaultTimeout(15000);
   await context.addInitScript(() => {
     localStorage.setItem('unplan_undo_toast_duration', '0');
-    localStorage.setItem('unplan:google-accounts:v1', JSON.stringify(['work', 'personal'].map(id => ({
-      id, email: `${id}@example.test`, accessToken: `mock-${id}`, expiresAt: Date.now() + 3600000,
+    localStorage.setItem('unplan:google-accounts:v2', JSON.stringify(['work', 'personal'].map(id => ({
+      id, email: `${id}@example.test`, status: 'active',
     }))));
   });
   const calendar = (accountId, name) => ({ id: `google|${accountId}|primary`, accountId, name,
@@ -23,16 +24,17 @@ try {
     description: 'Original notes', location: 'Office', reminders: { useDefault: false, overrides: [{ method: 'popup', minutes: 15 }] } };
   const calls = []; let copied, deleted = false;
   await context.route('**/api/**', async route => {
+    if (await mockGoogleAccounts(route)) return;
     const request = route.request(), url = new URL(request.url()), method = request.method();
     if (url.pathname === '/api/google/calendars') return route.fulfill({ json: { calendars: [url.searchParams.get('accountId') === 'work' ? source : destination] } });
     if (url.pathname === '/api/google/events') {
       if (method === 'GET' && url.searchParams.has('eventId')) {
-        assert.equal(request.headers().authorization, 'Bearer mock-work');
+        assert.equal(request.headers()['x-unplan-google-account'], 'work');
         calls.push('read-source');
         return route.fulfill({ json: { id: 'original', description: 'Latest remote notes', conferenceData: { conferenceId: 'existing-meet' }, extendedProperties: { private: { custom: 'preserved' } } } });
       }
       if (method === 'POST') {
-        assert.equal(request.headers().authorization, 'Bearer mock-personal');
+        assert.equal(request.headers()['x-unplan-google-account'], 'personal');
         copied = request.postDataJSON(); calls.push('create-destination');
         assert.equal(copied.calendarSourceId, destination.id);
         assert.notEqual(copied.eventId, 'original');
@@ -43,14 +45,14 @@ try {
         return route.fulfill({ json: { id: copied.eventId, htmlLink: 'https://calendar.google.com/new', hangoutLink: 'https://meet.google.com/existing-meet' } });
       }
       if (method === 'DELETE') {
-        assert.equal(request.headers().authorization, 'Bearer mock-work');
+        assert.equal(request.headers()['x-unplan-google-account'], 'work');
         const body = request.postDataJSON(); assert.equal(body.eventId, 'original');
         assert.equal(body.calendarSourceId, source.id); assert.ok(copied);
         calls.push('delete-source'); deleted = true;
         return route.fulfill({ status: 204 });
       }
       if (method === 'PATCH') {
-        assert.equal(request.headers().authorization, 'Bearer mock-personal');
+        assert.equal(request.headers()['x-unplan-google-account'], 'personal');
         assert.equal(request.postDataJSON().eventId, copied.eventId);
         calls.push('edit-destination');
         return route.fulfill({ json: { id: copied.eventId } });
