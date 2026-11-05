@@ -316,7 +316,7 @@ import {
   todoistGroupDisplayName,
   TODOIST_ROOT_GROUP,
 } from "@/lib/todoist-calendar";
-import { findTechnicalitiesCalendar } from "@/lib/task-extraction";
+import { isExtractedTodoistTask, findTechnicalitiesCalendar } from "@/lib/task-extraction";
 
 type GoogleStatus = {
   accounts: GoogleConnectedAccount[];
@@ -694,6 +694,7 @@ export function CalendarApp() {
   const followUps = useFollowUps(todoistToken);
   const refreshing = syncing || todoistLoading;
   const {
+    completeTask: completeExtractedTask,
     destinationProject: taskExtractionDestination,
     extractionProject,
     optimisticallyRemoveTask: optimisticallyRemoveExtractedTask,
@@ -4477,7 +4478,10 @@ export function CalendarApp() {
       });
     };
     const restoreTodoistTasks = (tasks: TodoistTask[]) => {
-      tasks.toReversed().forEach((task) => replaceLocalTodoistTask(task));
+      tasks.toReversed().forEach((task) => {
+        if (isExtractedTodoistTask(task, extractionProject?.id)) restoreExtractedTask(task);
+        else replaceLocalTodoistTask(task);
+      });
     };
 
     const pendingGoogleEvents = moves
@@ -4498,6 +4502,9 @@ export function CalendarApp() {
     ]));
     setActiveSelectionSurface("calendar");
     setSelected(eventIds);
+    moves.forEach(({ task }) => {
+      if (isExtractedTodoistTask(task, extractionProject?.id)) optimisticallyRemoveExtractedTask(task.id);
+    });
     removeLocalTodoistTasks(moves.map(({ task }) => task.id));
 
     queueActionToast(
@@ -4568,7 +4575,8 @@ export function CalendarApp() {
               : "Completing Todoist tasks…",
           );
           const completionOutcomes = await Promise.allSettled(
-            createdMoves.map(({ task }) => completeTodoistTask(task.id)),
+            createdMoves.map(({ task }) => isExtractedTodoistTask(task, extractionProject?.id)
+              ? completeExtractedTask(task.id) : completeTodoistTask(task.id)),
           );
           const completionFailures = completionOutcomes.flatMap((outcome, index) =>
             outcome.status === "rejected" ? [createdMoves[index].task] : [],
@@ -4601,7 +4609,7 @@ export function CalendarApp() {
           : "Creating calendar events…",
       });
     return moves;
-  }, [completeTodoistTask, defaultTaskCalendar, removeLocalTodoistTasks, replaceLocalTodoistTask, toastDuration, writableCalendars]);
+  }, [completeTodoistTask, completeExtractedTask, extractionProject?.id, optimisticallyRemoveExtractedTask, restoreExtractedTask, defaultTaskCalendar, removeLocalTodoistTasks, replaceLocalTodoistTask, toastDuration, writableCalendars]);
 
   const scheduleTodoistTaskAtPresent = React.useCallback((task: TodoistTask, onRestore?: () => void) => {
     const present = latestQuarterHour(new Date());
@@ -6686,7 +6694,13 @@ export function CalendarApp() {
           setShowTaskTriage(true);
         }}
         onScheduleTask={async (task, onRestore) => {
-          scheduleTodoistTaskAtPresent(task, onRestore);
+          const restore = isExtractedTodoistTask(task, extractionProject?.id) ? () => {
+            setTaskTriageMode("extracted");
+            setReturningTriageTask({ id: task.id, direction: "left" });
+            setShowTaskTriage(true);
+            onRestore?.();
+          } : onRestore;
+          scheduleTodoistTaskAtPresent(task, restore);
         }}
         onResolveExtracted={async (task, resolution) => {
           if (resolution === "keep" && !defaultTaskCalendar) {

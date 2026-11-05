@@ -1671,3 +1671,19 @@ kbd {
 .priority-review-follow-up p strong { color: var(--text-soft); font-weight: 500; }
 :root[data-theme="light"] .priority-review-date-command button { color: #6b21a8; background: #eee0fc; }
 .priority-review-modal .priority-review-window { height: clamp(110px, calc(100dvh - 360px), 282px); }
+
+.priority-review-select { display: flex; flex: 1; flex-direction: column; align-items: stretch; gap: 10px; width: 100%; min-width: 0; padding: 0 22px 0 0; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.priority-review-select:focus-visible { outline: none; }
+.priority-review-delete { position: absolute; top: 7px; right: 7px; display: grid; width: 24px; height: 24px; place-items: center; border: 0; border-radius: 6px; background: color-mix(in srgb, var(--surface) 65%, transparent); color: var(--ink); opacity: 0; pointer-events: none; cursor: pointer; transition: opacity 120ms, background 120ms; }
+.priority-review-block:hover .priority-review-delete, .priority-review-block:focus-within .priority-review-delete { opacity: 1; pointer-events: auto; }
+.priority-review-delete:hover { background: var(--surface-hover); }
+.priority-review-delete:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+.priority-review-delete:disabled { pointer-events: none; }
+@media (hover: none) { .priority-review-delete { opacity: 1; pointer-events: auto; } }
+
+.calendar-event.priority-review-block { height: auto; max-height: 220px; }
+.priority-review-title-row { display: flex; align-items: flex-start; gap: 12px; min-width: 0; }
+.priority-review-title-row .event-time { flex-shrink: 0; padding-top: 2px; }
+.calendar-event.priority-review-block .priority-review-title { display: -webkit-box; flex: 1; min-width: 0; overflow: hidden; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 4; white-space: normal; font-size: 15px; line-height: 1.35; }
+.priority-review-title-editor { width: 100%; min-height: 40px; max-height: 162px; padding: 6px 26px 6px 8px; overflow-y: auto; resize: none; border: 1px solid var(--line-strong); border-radius: 6px; outline: 1px solid var(--focus-ring, #a4bdfc); background: transparent; color: var(--ink); font: inherit; font-size: 15px; font-weight: 550; line-height: 1.35; overflow-wrap: anywhere; }
+.calendar-event.priority-review-block[data-editing] { user-select: text; }

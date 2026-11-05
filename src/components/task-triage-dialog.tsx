@@ -13,6 +13,7 @@ import {
   X,
 } from "lucide-react";
 import * as React from "react";
+import { useTaskTitleEditing } from "@/hooks/use-task-title-editing";
 import { TaskFolderPicker } from "@/components/task-folder-picker";
 import type { CalendarSource } from "@/lib/calendar-types";
 import { PriorityTaskReview } from "@/components/priority-task-review";
@@ -28,6 +29,7 @@ import { readTodoistFolderPreferences } from "@/lib/todoist-folder-backup";
 import {
   orderTaskTriageTasks,
   taskTriageFolders,
+  isTaskTriageCalendarShortcut,
   taskTriagePhase,
   describeTaskFollowUpInterval,
   taskTriagePreviousFolder,
@@ -168,62 +170,12 @@ function NormalTaskReview({
   const refreshedFromPriority = details.triageSourceGroup
     ? isPriorityTodoistGroup(details.triageSourceGroup)
     : false;
-  const [editingTitle, setEditingTitle] = React.useState(false);
-  const [titleDraft, setTitleDraft] = React.useState(title);
-  const [savingTitle, setSavingTitle] = React.useState(false);
-  const titleFieldRef = React.useRef<HTMLTextAreaElement>(null);
-  const titleFocusAtEndRef = React.useRef(false);
-  const titleCommitRef = React.useRef(false);
-  const titleCancelRef = React.useRef(false);
-
-  React.useLayoutEffect(() => {
-    const field = titleFieldRef.current;
-    if (!field || !editingTitle) return;
-    field.style.height = "0px";
-    field.style.height = `${field.scrollHeight}px`;
-    if (titleFocusAtEndRef.current) {
-      titleFocusAtEndRef.current = false;
-      field.focus({ preventScroll: true });
-      field.setSelectionRange(field.value.length, field.value.length);
-    }
-  }, [editingTitle, titleDraft]);
-
-  const beginTitleEdit = (focusAtEnd = false) => {
-    if (resolving || savingTitle) return;
-    titleFocusAtEndRef.current = focusAtEnd;
-    setEditingTitle(true);
-  };
-
-  const commitTitle = async () => {
-    if (titleCommitRef.current) return;
-    if (titleCancelRef.current) {
-      titleCancelRef.current = false;
-      return;
-    }
-    const normalized = titleDraft.trim().replace(/\s+/g, " ");
-    if (!normalized || normalized === title) {
-      setTitleDraft(title);
-      setEditingTitle(false);
-      return;
-    }
-    titleCommitRef.current = true;
-    setSavingTitle(true);
-    try {
-      await onRename(normalized);
-      setTitleDraft(normalized);
-    } catch {
-      setTitleDraft(title);
-    } finally {
-      titleCommitRef.current = false;
-      setSavingTitle(false);
-      setEditingTitle(false);
-    }
-  };
-
+  const {
+    editing: editingTitle, saving: savingTitle, draft: titleDraft, setDraft: setTitleDraft,
+    fieldRef: titleFieldRef, begin: beginTitleEdit, commit: commitTitle, cancel,
+  } = useTaskTitleEditing(title, onRename, resolving);
   const cancelTitleEdit = () => {
-    titleCancelRef.current = true;
-    setTitleDraft(title);
-    setEditingTitle(false);
+    cancel();
     window.requestAnimationFrame(() => searchInputRef.current?.focus());
   };
 
@@ -276,7 +228,7 @@ function NormalTaskReview({
           />
         ) : (
           <div
-            aria-label={`Edit task title: ${titleDraft}`}
+            aria-label={`Edit task title: ${title}`}
             className="task-triage-markdown-title"
             onClick={() => beginTitleEdit()}
             onKeyDown={(event) => {
@@ -287,7 +239,7 @@ function NormalTaskReview({
             role="button"
             tabIndex={0}
           >
-            <InlineMarkdownLinks>{titleDraft}</InlineMarkdownLinks>
+            <InlineMarkdownLinks>{title}</InlineMarkdownLinks>
           </div>
         )}
         {createdAt && Number.isFinite(createdAt.getTime()) && (
@@ -479,7 +431,7 @@ export function TaskTriageDialog({
   }, [currentTask, onDeleteTask, phase, resolving]);
 
   const scheduleCurrentTask = React.useCallback(async () => {
-    if (!currentTask || resolving || phase !== "normal") return;
+    if (!currentTask || resolving || (phase !== "normal" && phase !== "extracted")) return;
     setError(null);
     setResolving(true);
     try {
@@ -542,17 +494,8 @@ export function TaskTriageDialog({
         void deleteNormalTask();
         return;
       }
-      if (
-        phase === "normal"
-        && event.metaKey
-        && event.shiftKey
-        && !event.altKey
-        && !event.ctrlKey
-        && !event.repeat
-        && event.key === "ArrowLeft"
-        && !(event.target instanceof HTMLElement
-          && event.target.matches("[data-task-triage-title]"))
-      ) {
+      if (isTaskTriageCalendarShortcut(event, phase, event.target instanceof HTMLElement
+        && event.target.matches("[data-task-triage-title]"))) {
         event.preventDefault();
         event.stopPropagation();
         void scheduleCurrentTask();
@@ -598,6 +541,9 @@ export function TaskTriageDialog({
           tasks={priorityReviewTasks(tasks, folderPreferences.groupParents)}
           groupParents={folderPreferences.groupParents}
           calendars={calendars}
+          onRename={onRenameTask}
+          onSchedule={onScheduleTask}
+          onDelete={onDeleteTask}
           onFollowUp={onFollowUpTask}
           onRestore={onRestorePriorityTask}
           initialReturning={returningTask && restoredTask

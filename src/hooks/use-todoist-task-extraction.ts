@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import {
+  closeTodoistTask,
   deleteTodoistTask,
   loadTodoistTasks,
   moveTodoistTask,
@@ -98,6 +99,12 @@ export function useTodoistTaskExtraction({
       : [task, ...current]);
   }, []);
 
+  const completeTask = React.useCallback(async (taskId: string) => {
+    if (!token) throw new Error("Connect Todoist in Settings first");
+    await closeTodoistTask(token, taskId);
+    resolvingTaskIdsRef.current.delete(taskId);
+  }, [token]);
+
   const resolveTask = React.useCallback(async (
     task: TodoistTask,
     resolution: "delete" | "keep",
@@ -126,6 +133,7 @@ export function useTodoistTaskExtraction({
   }, [destinationProject, token]);
 
   return {
+    completeTask,
     destinationProject,
     error,
     extractionProject,
