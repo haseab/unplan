@@ -848,9 +848,17 @@ kbd {
 .task-triage-refresh-context small { overflow: hidden; color: var(--text-soft); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
 .task-triage-error { margin: 10px 5px 0; color: #ef8982; font-size: 10px; text-align: center; }
 .task-triage-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; margin-top: 12px; }
+.task-triage-extracted-actions { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.task-triage-extracted-dates { display: grid; gap: 4px; margin: 12px 0 8px; color: var(--muted); font-size: 11px; line-height: 1.4; text-align: center; }
+.task-triage-extracted-dates > div { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 6px; }
+.task-triage-extracted-dates dt { color: var(--text-faint); }
+.task-triage-extracted-dates dd { margin: 0; }
+.task-triage-skip-hint { margin: 8px 0 0; color: var(--text-faint); font-size: 10px; text-align: center; }
+.task-triage-extracted .task-triage-shortcuts { flex-wrap: wrap; }
 .task-triage-actions button { display: grid; height: 43px; grid-template-columns: 17px auto 25px; align-items: center; justify-content: center; gap: 8px; border: 1px solid var(--line-strong); border-radius: 11px; background: var(--surface-muted); color: var(--muted); font-size: 11px; font-weight: 620; cursor: pointer; }
 .task-triage-actions button:hover:not(:disabled) { background: var(--surface-hover); color: var(--ink); }
 .task-triage-actions button:disabled { opacity: 0.55; cursor: default; }
+.task-triage-extracted-actions button { display: flex; min-width: 0; gap: 6px; }
 .task-triage-actions .task-triage-keep { border-color: var(--blue-border); background: var(--blue-soft); color: var(--blue-ink); }
 .task-triage-actions kbd { height: 21px; min-width: 21px; font-size: 9px; }
 .task-triage-shortcuts { display: flex; align-items: center; justify-content: center; gap: 6px; margin: 11px 0 0; color: var(--text-faint); font-size: 8.5px; }

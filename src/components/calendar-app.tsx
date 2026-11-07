@@ -196,6 +196,7 @@ import {
 } from "@/lib/event-participants";
 import { useTodoistGroupPreferences } from "@/hooks/use-todoist-group-preferences";
 import { useTaskTriagePhase } from "@/hooks/use-task-triage-phase";
+import { useExtractedTaskReview } from "@/hooks/use-extracted-task-review";
 import { priorityTaskContentRefreshedNow, priorityTaskContentWithReviewAt } from "@/lib/priority-task-review";
 import { isNormalTaskTriageTask, taskTriageKeepContent, taskTriageShortcutMode } from "@/lib/task-triage";
 import {
@@ -1074,10 +1075,11 @@ export function CalendarApp({ demo = false }: { demo?: boolean } = {}) {
     () => visibleTodoistTasks.filter((task) => isNormalTaskTriageTask(task, taskGroupParents, now)),
     [visibleTodoistTasks, taskGroupParents, now],
   );
+  const { pendingTasks: extractedReviewTasks, skipTask: skipExtractedTask } = useExtractedTaskReview(extractedTasks, showTaskTriage);
   const { phase: triagePhase, completeFollowUp: completeTaskFollowUpPhase } = useTaskTriagePhase({
     open: showTaskTriage,
     initialMode: taskTriageMode,
-    extractedTaskCount: extractedTasks.length,
+    extractedTaskCount: extractedReviewTasks.length,
     normalTaskCount: ungroupedTodoistTasks.length,
   });
   const completeTaskFollowUpTriage = React.useCallback(() => {
@@ -6607,7 +6609,8 @@ export function CalendarApp({ demo = false }: { demo?: boolean } = {}) {
         onCreateFolder={createFolderFromPicker}
         calendars={writableCalendars}
         tasks={visibleTodoistTasks}
-        extractedTasks={extractedTasks}
+        extractedTasks={extractedReviewTasks}
+        onSkipExtracted={skipExtractedTask}
         groups={todoistGroups}
         phase={triagePhase}
         onCompleteFollowUp={completeTaskFollowUpTriage}

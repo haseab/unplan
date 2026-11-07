@@ -30,12 +30,66 @@ export const resolveTaskExtractionDestination = (
 export const isExtractedTodoistTask = (task: TodoistTask, extractionProjectId: string | undefined) =>
   !!extractionProjectId && task.projectId === extractionProjectId;
 
+export const extractedTaskRecordingDate = (description: string): Date | null => {
+  const match = /^Recording [A-Za-z0-9_-]+ at (\d{4}-\d{2}-\d{2}T[^\s\[]+)/.exec(description);
+  const timestamp = match ? Date.parse(match[1]) : NaN;
+  return Number.isFinite(timestamp) ? new Date(timestamp) : null;
+};
+
+type ExtractedTaskDate = { label: "Recorded" | "Created" | "Due"; dateTime: string; text: string };
+
+/** Recording context and actual due dates are distinct; never infer a deadline from recording time. */
+export const extractedTaskDates = (task: TodoistTask, timeZone?: string): ExtractedTaskDate[] => {
+  const dates: ExtractedTaskDate[] = [];
+  const formatTimestamp = (value: string | undefined) => {
+    if (!value || !Number.isFinite(Date.parse(value))) return null;
+    const date = new Date(value);
+    return {
+      dateTime: date.toISOString(),
+      text: date.toLocaleString(undefined, {
+        year: "numeric", month: "short", day: "numeric",
+        hour: "numeric", minute: "2-digit", timeZoneName: "short", timeZone,
+      }),
+    };
+  };
+  const recording = extractedTaskRecordingDate(task.description);
+  const context = formatTimestamp(recording?.toISOString() ?? task.createdAt);
+  if (context) dates.push({ label: recording ? "Recorded" : "Created", ...context });
+
+  const due = formatTimestamp(task.due?.datetime);
+  if (due) {
+    dates.push({ label: "Due", ...due });
+  } else if (task.due && /^\d{4}-\d{2}-\d{2}$/.test(task.due.date)) {
+    // Format calendar dates in UTC so they cannot shift to the previous day locally.
+    const date = new Date(`${task.due.date}T00:00:00Z`);
+    if (Number.isFinite(date.getTime()) && date.toISOString().startsWith(task.due.date)) {
+      dates.push({
+        label: "Due", dateTime: task.due.date,
+        text: date.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric", timeZone: "UTC" }),
+      });
+    }
+  }
+  return dates;
+};
+
+export type ExtractedTaskReviewAction = "delete" | "keep" | "skip";
+
+export const extractedTaskReviewAction = (
+  event: Pick<KeyboardEvent, "key" | "metaKey" | "ctrlKey" | "altKey" | "shiftKey" | "repeat" | "isComposing">,
+  editing: boolean,
+): ExtractedTaskReviewAction | null => {
+  if (editing || event.metaKey || event.ctrlKey || event.altKey || event.shiftKey || event.repeat || event.isComposing) return null;
+  if (event.key === "ArrowLeft") return "skip";
+  if (event.key === "ArrowUp") return "delete";
+  if (event.key === "ArrowRight") return "keep";
+  return null;
+};
+
 // Present extraction metadata as a compact browser link without changing stored data.
 export const extractedTaskDescriptionMarkdown = (description: string) => {
-  const match = /^Recording [A-Za-z0-9_-]+ at (\d{4}-\d{2}-\d{2}T[^\s\[]+)/.exec(description);
-  if (!match) return description;
-  const start = Date.parse(match[1]);
-  if (!Number.isFinite(start)) return description;
+  const recording = extractedTaskRecordingDate(description);
+  if (!recording) return description;
+  const start = recording.getTime();
   const query = `${new Date(start).toISOString()} to ${new Date(start + 60_000).toISOString()}`;
   const href = `https://deeplog.app/pendant?${new URLSearchParams({ q: query })}`;
   return `[View transcript](${href})`;
