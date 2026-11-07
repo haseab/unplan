@@ -3,11 +3,9 @@
 import type { TaskReviewPeriod } from "@/lib/task-review-period";
 
 import {
-  ArrowUp,
   ArrowRight,
   CalendarPlus,
   ExternalLink,
-  LoaderCircle,
   RefreshCw,
   Trash2,
   X,
@@ -17,9 +15,10 @@ import { useTaskTitleEditing } from "@/hooks/use-task-title-editing";
 import { TaskFolderPicker } from "@/components/task-folder-picker";
 import type { CalendarSource } from "@/lib/calendar-types";
 import { PriorityTaskReview } from "@/components/priority-task-review";
+import { ExtractedTaskReview } from "@/components/extracted-task-review";
 import { PRIORITY_REVIEW_ANIMATION_MS, priorityReviewTasks, type PriorityReviewCard } from "@/lib/priority-task-review";
 import { InlineMarkdownLinks } from "@/components/inline-markdown-links";
-import { extractedTaskDescriptionMarkdown } from "@/lib/task-extraction";
+import { extractedTaskReviewAction, type ExtractedTaskReviewAction } from "@/lib/task-extraction";
 import { todoistTaskUrl, type TodoistTask } from "@/lib/todoist";
 import {
   calendarEventDetailsFromTodoistContent,
@@ -37,7 +36,6 @@ import {
   type TaskTriageMode,
 } from "@/lib/task-triage";
 export type { TaskTriageMode } from "@/lib/task-triage";
-type TriageDirection = "up" | "right";
 
 type TaskTriageDialogProps = {
   calendars: CalendarSource[];
@@ -55,68 +53,12 @@ type TaskTriageDialogProps = {
   onRestorePriorityTask: (card: PriorityReviewCard) => void;
   onRenameTask: (task: TodoistTask, title: string) => Promise<void>;
   onResolveExtracted: (task: TodoistTask, resolution: "delete" | "keep") => Promise<void>;
+  onSkipExtracted: (task: TodoistTask) => void;
   onReturnAnimationEnd: (taskId: string) => void;
   open: boolean;
   returningTask: { direction: PriorityReviewCard["direction"]; id: string } | null;
   ungroupedTasks: TodoistTask[];
 };
-
-type ExtractedTaskReviewProps = {
-  count: number;
-  error: string | null;
-  onResolve: (direction: TriageDirection) => void;
-  onOpenOriginal: () => void;
-  resolving: boolean;
-  returning: boolean;
-  task: TodoistTask;
-};
-
-function ExtractedTaskReview({
-  count,
-  error,
-  onResolve,
-  onOpenOriginal,
-  resolving,
-  returning,
-  task,
-}: ExtractedTaskReviewProps) {
-  const details = calendarEventDetailsFromTodoistContent(task.content);
-  return (
-    <div className="task-triage-extracted">
-      <article className="task-triage-task-card" data-returning={returning ? "true" : undefined}>
-        <div className="task-triage-card-meta">
-          <span>Extracted task</span>
-          <span>{count} remaining</span>
-        </div>
-        <h3><InlineMarkdownLinks>{details.title || task.content}</InlineMarkdownLinks></h3>
-        {task.description && <p><InlineMarkdownLinks preferBrowserTab>{extractedTaskDescriptionMarkdown(task.description)}</InlineMarkdownLinks></p>}
-      </article>
-      {error && <p className="task-triage-error">{error}</p>}
-      <div className="task-triage-actions">
-        <button disabled={resolving} onClick={() => onResolve("up")} type="button">
-          <ArrowUp size={15} />
-          <span>Delete</span>
-          <Trash2 size={14} />
-        </button>
-        <button className="task-triage-keep" disabled={resolving} onClick={() => onResolve("right")} type="button">
-          {resolving ? <LoaderCircle className="spin" size={15} /> : <ArrowRight size={15} />}
-          <span>Keep</span>
-          <kbd>→</kbd>
-        </button>
-      </div>
-      <p className="task-triage-shortcuts"><kbd>↑</kbd> delete <span /> keep <kbd>→</kbd> <span /> <kbd>⌘⇧←</kbd> move to calendar</p>
-      {!task.optimistic && (
-        <div className="task-triage-secondary-actions task-triage-extracted-secondary-actions">
-          <button className="task-triage-open-original" onClick={onOpenOriginal} type="button">
-            <ExternalLink size={14} />
-            <span>Open in Todoist</span>
-            <kbd>⌘O</kbd>
-          </button>
-        </div>
-      )}
-    </div>
-  );
-}
 
 type NormalTaskReviewProps = {
   previousFolder: string | null;
@@ -331,6 +273,7 @@ export function TaskTriageDialog({
   onScheduleTask,
   onRestorePriorityTask,
   onResolveExtracted,
+  onSkipExtracted,
   onReturnAnimationEnd,
   open,
   returningTask,
@@ -387,18 +330,22 @@ export function TaskTriageDialog({
     return () => window.clearTimeout(timer);
   }, [currentTask?.id, onReturnAnimationEnd, phase, returningTask]);
 
-  const resolveExtracted = React.useCallback(async (direction: TriageDirection) => {
+  const resolveExtracted = React.useCallback(async (action: ExtractedTaskReviewAction) => {
     if (!currentTask || resolving || phase !== "extracted") return;
     setError(null);
+    if (action === "skip") {
+      onSkipExtracted(currentTask);
+      return;
+    }
     setResolving(true);
     try {
-      await onResolveExtracted(currentTask, direction === "up" ? "delete" : "keep");
+      await onResolveExtracted(currentTask, action);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "That task could not be reviewed");
     } finally {
       setResolving(false);
     }
-  }, [currentTask, onResolveExtracted, phase, resolving]);
+  }, [currentTask, onResolveExtracted, onSkipExtracted, phase, resolving]);
 
   const assignFolder = React.useCallback(async (group: string, intent: "choose" | "keep" = "choose") => {
     if (!currentTask || resolving || phase !== "normal") return;
@@ -517,15 +464,13 @@ export function TaskTriageDialog({
         void assignFolder(previousFolder, "keep");
         return;
       }
-      if (phase !== "extracted" || event.metaKey || event.ctrlKey || event.altKey || event.repeat) return;
-      if (event.key === "ArrowUp") {
+      if (phase !== "extracted") return;
+      const action = extractedTaskReviewAction(event, event.target instanceof HTMLElement
+        && (event.target.matches("input, textarea, select") || event.target.isContentEditable));
+      if (action) {
         event.preventDefault();
         event.stopPropagation();
-        void resolveExtracted("up");
-      } else if (event.key === "ArrowRight") {
-        event.preventDefault();
-        event.stopPropagation();
-        void resolveExtracted("right");
+        void resolveExtracted(action);
       }
     };
     window.addEventListener("keydown", handleKeyDown, true);
@@ -575,7 +520,7 @@ export function TaskTriageDialog({
             <span className="task-triage-eyebrow">
               {phase === "extracted" ? "Extracted tasks" : "Tasks you added"}
             </span>
-            <h2>{phase === "extracted" ? "Keep or delete?" : "Choose a folder"}</h2>
+            <h2>{phase === "extracted" ? "Keep, skip, or delete?" : "Choose a folder"}</h2>
             <p>
               {phase === "extracted"
                 ? `${extractedTasks.length} left · use the arrow keys`
@@ -589,7 +534,7 @@ export function TaskTriageDialog({
           <ExtractedTaskReview
             count={extractedTasks.length}
             error={error}
-            onResolve={(direction) => void resolveExtracted(direction)}
+            onResolve={(action) => void resolveExtracted(action)}
             onOpenOriginal={openOriginalTask}
             resolving={resolving}
             returning={returningTask?.id === currentTask.id}
