@@ -39,6 +39,7 @@ try {
     }
     return route.fulfill({ json: {} });
   });
+  await context.route('https://app.todoist.com/**', route => route.fulfill({ body: 'Todoist shortcut target' }));
   const page = await context.newPage();
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
@@ -54,6 +55,15 @@ try {
     ?.getAnimations({ subtree: true }).every(animation => animation.playState === 'finished'));
   await openReview();
   await dialog.waitFor();
+  assert.equal(await dialog.getByRole('heading', { name: 'Extracted tasks', exact: true }).count(), 1);
+  assert.equal(await dialog.getByText('3 left', { exact: true }).count(), 1);
+  assert.equal(await dialog.locator('.task-triage-card-meta, .task-triage-shortcuts, .task-triage-skip-hint').count(), 0);
+  assert.equal(await dialog.getByRole('button', { name: /Open in Todoist/ }).count(), 0);
+  const originalPopup = page.waitForEvent('popup');
+  await page.keyboard.press('Meta+o');
+  const original = await originalPopup;
+  await original.waitForURL('https://app.todoist.com/app/task/recorded');
+  await original.close();
   assert.equal(await currentTitle(), title);
   assert.match(await dialog.locator('dl').innerText(), /Recorded\s+Oct 28, 2026, 10:46 AM PDT/);
   assert.match(await dialog.locator('dl').innerText(), /Due\s+Oct 28, 2026, 2:09 PM PDT/);
@@ -86,13 +96,19 @@ try {
   await normal.getByRole('button', { name: 'Close triage', exact: true }).click();
   await openReview();
   assert.equal(await currentTitle(), title, 'skipped tasks return in a new review session');
-  await dialog.getByText('3 remaining', { exact: true }).waitFor();
+  await dialog.getByText('3 left', { exact: true }).waitFor();
   assert.deepEqual(mutations, [], 'skipping must never update, move, or delete provider tasks');
 
   await page.keyboard.press('ArrowRight');
   await dialog.getByRole('heading', { name: 'A task with only a creation date', exact: true }).waitFor();
   await page.keyboard.press('Meta+z');
   await dialog.getByRole('heading', { name: title, exact: true }).waitFor();
+  for (const key of ['Meta+Backspace', 'Meta+Delete']) {
+    await page.keyboard.press(key);
+    await dialog.getByRole('heading', { name: 'A task with only a creation date', exact: true }).waitFor();
+    await page.keyboard.press('Meta+z');
+    await dialog.getByRole('heading', { name: title, exact: true }).waitFor();
+  }
   await page.keyboard.press('ArrowUp');
   await dialog.getByRole('heading', { name: 'A task with only a creation date', exact: true }).waitFor();
   await page.keyboard.press('Meta+z');

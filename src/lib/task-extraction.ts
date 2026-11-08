@@ -78,7 +78,10 @@ export const extractedTaskReviewAction = (
   event: Pick<KeyboardEvent, "key" | "metaKey" | "ctrlKey" | "altKey" | "shiftKey" | "repeat" | "isComposing">,
   editing: boolean,
 ): ExtractedTaskReviewAction | null => {
-  if (editing || event.metaKey || event.ctrlKey || event.altKey || event.shiftKey || event.repeat || event.isComposing) return null;
+  if (editing || event.altKey || event.shiftKey || event.repeat || event.isComposing) return null;
+  if (event.metaKey || event.ctrlKey) {
+    return event.key === "Backspace" || event.key === "Delete" ? "delete" : null;
+  }
   if (event.key === "ArrowLeft") return "skip";
   if (event.key === "ArrowUp") return "delete";
   if (event.key === "ArrowRight") return "keep";

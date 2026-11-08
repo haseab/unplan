@@ -136,3 +136,18 @@ test("extraction arrows skip, delete, or keep without interfering with editing o
     }
   }
 });
+
+test("Cmd/Ctrl Delete removes an extracted task while editing and modified variants stay native", () => {
+  const event = { key: "Backspace", metaKey: false, ctrlKey: false, altKey: false, shiftKey: false, repeat: false, isComposing: false };
+  for (const key of ["Backspace", "Delete"]) {
+    assert.equal(extractedTaskReviewAction({ ...event, key }, false), null);
+    for (const modifier of [{ metaKey: true }, { ctrlKey: true }]) {
+      const shortcut = { ...event, key, ...modifier };
+      assert.equal(extractedTaskReviewAction(shortcut, false), "delete");
+      assert.equal(extractedTaskReviewAction(shortcut, true), null);
+      for (const change of [{ altKey: true }, { shiftKey: true }, { repeat: true }, { isComposing: true }]) {
+        assert.equal(extractedTaskReviewAction({ ...shortcut, ...change }, false), null);
+      }
+    }
+  }
+});
