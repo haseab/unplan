@@ -22,6 +22,8 @@ try {
       due: { date: '2026-11-02', is_recurring: false } },
     { id: 'undated', content: 'A task with no dates', project_id: 'extraction' },
   ];
+  // Todoist's manual project order conflicts with recording chronology.
+  extracted.reverse().forEach((task, index) => { task.child_order = index + 1; });
   const mutations = [];
   await context.route('**/api/**', async route => {
     const request = route.request();

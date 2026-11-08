@@ -31,10 +31,27 @@ export const isExtractedTodoistTask = (task: TodoistTask, extractionProjectId: s
   !!extractionProjectId && task.projectId === extractionProjectId;
 
 export const extractedTaskRecordingDate = (description: string): Date | null => {
-  const match = /^Recording [A-Za-z0-9_-]+ at (\d{4}-\d{2}-\d{2}T[^\s\[]+)/.exec(description);
+  const match = /^(?:Recording|Transcript) [A-Za-z0-9_-]+ at (\d{4}-\d{2}-\d{2}T[^\s\[]+)/m.exec(description)
+    ?? /^Recorded at (\d{4}-\d{2}-\d{2}T[^\s\[]+)/m.exec(description);
   const timestamp = match ? Date.parse(match[1]) : NaN;
   return Number.isFinite(timestamp) ? new Date(timestamp) : null;
 };
+
+const taskCreationTime = (task: TodoistTask) => {
+  const timestamp = task.createdAt ? Date.parse(task.createdAt) : NaN;
+  return Number.isFinite(timestamp) ? timestamp : Number.MAX_SAFE_INTEGER;
+};
+
+/** Review source recordings oldest first, independently of import or project order. */
+export const orderExtractedTodoistTasks = (tasks: TodoistTask[]) => [...tasks].sort((first, second) => {
+  const firstCreated = taskCreationTime(first);
+  const secondCreated = taskCreationTime(second);
+  const firstRecorded = extractedTaskRecordingDate(first.description)?.getTime() ?? firstCreated;
+  const secondRecorded = extractedTaskRecordingDate(second.description)?.getTime() ?? secondCreated;
+  return firstRecorded - secondRecorded
+    || firstCreated - secondCreated
+    || first.id.localeCompare(second.id);
+});
 
 type ExtractedTaskDate = { label: "Recorded" | "Created" | "Due"; dateTime: string; text: string };
 
