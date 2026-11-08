@@ -28,11 +28,22 @@ export function taskFollowUpIntervalMs(task: TodoistTask) {
 
 export function describeTaskFollowUpInterval(task: TodoistTask) {
   const period = calendarEventDetailsFromTodoistContent(task.content).reviewPeriod;
-  if (period) return `${period.amount} ${period.unit}${period.amount === 1 ? "" : "s"}`;
-  const minutes = Math.max(1, Math.round(taskFollowUpIntervalMs(task) / 60_000));
-  const [amount, unit] = minutes % 1440 === 0 ? [minutes / 1440, "day"]
-    : minutes % 60 === 0 ? [minutes / 60, "hour"] : [minutes, "minute"];
-  return `${amount} ${unit}${amount === 1 ? "" : "s"}`;
+  if (period && period.unit !== "minute" && period.unit !== "hour") {
+    const suffix = { day: "d", week: "w", month: "mo", year: "y" }[period.unit];
+    return `${period.amount}${suffix}`;
+  }
+  const intervalMs = period
+    ? period.amount * (period.unit === "hour" ? 3_600_000 : 60_000)
+    : taskFollowUpIntervalMs(task);
+  const minutes = Math.max(1, Math.round(intervalMs / 60_000));
+  const days = Math.floor(minutes / 1440);
+  const hours = Math.floor((minutes % 1440) / 60);
+  const remainingMinutes = minutes % 60;
+  return [
+    days ? `${days}d` : null,
+    hours ? `${hours}h` : null,
+    !days && remainingMinutes ? `${remainingMinutes} min` : null,
+  ].filter(Boolean).join(" ");
 }
 
 /** Explicit folder choices clear the follow-up; Keep alone repeats its interval. */
