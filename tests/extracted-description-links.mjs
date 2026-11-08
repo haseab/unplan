@@ -49,7 +49,7 @@ try {
    const href=await link.getAttribute('href');
    if(mode==='legacy'){
     assert.equal(new URL(href).searchParams.get('q'),'2026-10-28T17:46:21.000Z to 2026-10-28T17:47:21.000Z');
-    assert.equal(await dialog.locator('.task-triage-task-card > p').innerText(),'View transcript');
+    assert.equal(await dialog.locator('.task-triage-extracted-footer > p').innerText(),'View transcript');
    }
    const popupPromise=page.waitForEvent('popup');await link.click();const popup=await popupPromise;await popup.waitForURL(href);assert.equal(await popup.evaluate(() => window.opener),null);await popup.close();
    await dialog.waitFor();

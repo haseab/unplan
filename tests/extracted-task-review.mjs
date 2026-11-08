@@ -55,6 +55,17 @@ try {
   const currentTitle = () => dialog.getByRole('heading', { level: 3 }).innerText();
   const settleReview = () => page.waitForFunction(() => document.querySelector('.task-triage-modal')
     ?.getAnimations({ subtree: true }).every(animation => animation.playState === 'finished'));
+  const checkFooterLayout = async () => {
+    const footer = dialog.locator('.task-triage-extracted-footer');
+    const bounds = await footer.boundingBox();
+    const dates = await footer.locator('.task-triage-extracted-dates').boundingBox();
+    const transcript = await footer.locator('p').boundingBox();
+    assert.ok(Math.abs(dates.x - bounds.x) < 1, 'dates sit in the bottom-left corner');
+    assert.ok(Math.abs(transcript.x + transcript.width - bounds.x - bounds.width) < 1, 'transcript sits in the bottom-right corner');
+    assert.ok(dates.x + dates.width <= transcript.x, 'dates and transcript do not overlap');
+    assert.ok(Math.abs(dates.y + dates.height - transcript.y - transcript.height) < 1, 'dates and transcript align along the bottom');
+    assert.doesNotMatch(await footer.innerText(), /Recorded|Created/);
+  };
   await openReview();
   await dialog.waitFor();
   assert.equal(await dialog.getByRole('heading', { name: 'Extracted tasks', exact: true }).count(), 1);
@@ -67,10 +78,11 @@ try {
   await original.waitForURL('https://app.todoist.com/app/task/recorded');
   await original.close();
   assert.equal(await currentTitle(), title);
-  assert.match(await dialog.locator('dl').innerText(), /Recorded\s+Oct 28, 2026, 10:46 AM PDT/);
-  assert.match(await dialog.locator('dl').innerText(), /Due\s+Oct 28, 2026, 2:09 PM PDT/);
+  assert.equal(await dialog.locator('time[aria-label^="Recorded:"]').innerText(), 'Oct 28, 2026, 10:46 AM PDT');
+  assert.equal(await dialog.locator('time[aria-label^="Due:"]').innerText(), 'Due Oct 28, 2026, 2:09 PM PDT');
   assert.equal(await dialog.getByRole('link', { name: 'View transcript', exact: true }).count(), 1);
   await settleReview();
+  await checkFooterLayout();
   await page.screenshot({ path: '/private/tmp/unplan-extracted-task-review.png' });
 
   for (const key of ['Shift+ArrowLeft', 'Alt+ArrowLeft']) {
@@ -82,8 +94,8 @@ try {
   await page.keyboard.down('ArrowLeft');
   assert.equal(await currentTitle(), 'A task with only a creation date', 'held arrows must not skip more tasks');
   await page.keyboard.up('ArrowLeft');
-  assert.match(await dialog.locator('dl').innerText(), /Created\s+Nov 1, 2026, 4:00 AM PST/);
-  assert.match(await dialog.locator('dl').innerText(), /Due\s+Nov 2, 2026/);
+  assert.equal(await dialog.locator('time[aria-label^="Created:"]').innerText(), 'Nov 1, 2026, 4:00 AM PST');
+  assert.equal(await dialog.locator('time[aria-label^="Due:"]').innerText(), 'Due Nov 2, 2026');
   await Promise.all([
     page.waitForResponse(response => response.url().includes('/api/todoist/tasks') && response.request().method() === 'GET'),
     page.evaluate(() => window.dispatchEvent(new Event('focus'))),
@@ -91,7 +103,7 @@ try {
   assert.equal(await currentTitle(), 'A task with only a creation date', 'refresh must preserve session skips');
   await dialog.getByRole('button', { name: 'Skip', exact: false }).click();
   await dialog.getByRole('heading', { name: 'A task with no dates', exact: true }).waitFor();
-  assert.equal(await dialog.locator('dl').count(), 0, 'undated tasks should not show stale date context');
+  assert.equal(await dialog.locator('article time').count(), 0, 'undated tasks should not show stale date context');
   await page.keyboard.press('ArrowLeft');
   const normal = page.getByRole('dialog', { name: 'Task triage', exact: true });
   await normal.waitFor();
@@ -119,6 +131,7 @@ try {
 
   await page.setViewportSize({ width: 375, height: 812 });
   await settleReview();
+  await checkFooterLayout();
   await page.screenshot({ path: '/private/tmp/unplan-extracted-task-review-mobile.png' });
   const bounds = await dialog.locator('section').boundingBox();
   for (const button of await dialog.locator('.task-triage-extracted-actions button').all()) {
