@@ -8,7 +8,7 @@ const safeMeetingUrl = (value: string | undefined) => {
   } catch { return null; }
 };
 
-export const calendarEventMeetingUrl = (event: CalendarEvent): string | null => {
+export const calendarEventMeetingUrl = (event: Pick<CalendarEvent, "conferenceLink" | "location" | "description">): string | null => {
   const conference = safeMeetingUrl(event.conferenceLink);
   if (conference) return conference;
   const candidates = `${event.location ?? ""} ${event.description ?? ""}`.match(/https?:\/\/[^\s<>"']+/gi) ?? [];
