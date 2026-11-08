@@ -48,12 +48,7 @@ import {
 } from "@/lib/local-tasks";
 import { TodoistStagedTaskCoordinator } from "@/lib/todoist-staged-task-coordinator";
 import { TODOIST_DESTINATIONS_CACHE_MS } from "@/lib/todoist-destinations-cache";
-import {
-  getActionToastSyncSnapshot,
-  getActionToastSyncProtectedResourceIds,
-  reconcileActionToastSyncProtection,
-  subscribeActionToastSync,
-} from "@/lib/action-toast";
+import { pendingOperations, reconcilePendingActionSyncProtection } from "@/lib/pending-actions";
 
 export type TodoistBucketSelectionRequest = {
   error: string | null;
@@ -148,15 +143,15 @@ export function useTodoist({
   }, [syncProtectedTaskIds]);
 
   const hasProtectedPendingMutation = React.useCallback(() => {
-    protectedPendingTaskIdsRef.current = reconcileActionToastSyncProtection(
-      getActionToastSyncSnapshot(),
+    protectedPendingTaskIdsRef.current = reconcilePendingActionSyncProtection(
+      pendingOperations.getSyncSnapshot(),
       syncProtectedTaskIdsRef.current,
       protectedPendingTaskIdsRef.current,
     );
     return protectedPendingTaskIdsRef.current.size > 0;
   }, []);
 
-  React.useEffect(() => subscribeActionToastSync(() => {
+  React.useEffect(() => pendingOperations.subscribeSync(() => {
     if (!hasProtectedPendingMutation()) return;
     const controller = taskLoadControllerRef.current;
     if (!controller) return;
@@ -611,7 +606,7 @@ export function useTodoist({
     // Retry a changed or still-pending local record with the same provider command ID.
     // The server's revision marker distinguishes local edits from a legitimate cron refresh.
     if (current.content !== task.content || current.description !== task.description
-      || getActionToastSyncProtectedResourceIds().includes(task.id)) return;
+      || pendingOperations.protectedResourceIds().includes(task.id)) return;
     // An older read must not replace this newly confirmed upload with a stale list.
     if (taskLoadControllerRef.current) {
       taskLoadVersionRef.current += 1;
