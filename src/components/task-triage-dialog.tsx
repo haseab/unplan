@@ -517,13 +517,11 @@ export function TaskTriageDialog({
       <section className="task-triage-modal" data-phase={phase}>
         <header className="task-triage-heading">
           <div>
-            <span className="task-triage-eyebrow">
-              {phase === "extracted" ? "Extracted tasks" : "Tasks you added"}
-            </span>
-            <h2>{phase === "extracted" ? "Keep, skip, or delete?" : "Choose a folder"}</h2>
+            {phase !== "extracted" && <span className="task-triage-eyebrow">Tasks you added</span>}
+            <h2>{phase === "extracted" ? "Extracted tasks" : "Choose a folder"}</h2>
             <p>
               {phase === "extracted"
-                ? `${extractedTasks.length} left · use the arrow keys`
+                ? `${extractedTasks.length} left`
                 : `${ungroupedTasks.length} ${ungroupedTasks.length === 1 ? "task" : "tasks"} left to file`}
             </p>
           </div>
@@ -532,10 +530,8 @@ export function TaskTriageDialog({
 
         {phase === "extracted" ? (
           <ExtractedTaskReview
-            count={extractedTasks.length}
             error={error}
             onResolve={(action) => void resolveExtracted(action)}
-            onOpenOriginal={openOriginalTask}
             resolving={resolving}
             returning={returningTask?.id === currentTask.id}
             task={currentTask}

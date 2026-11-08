@@ -853,8 +853,6 @@ kbd {
 .task-triage-extracted-dates > div { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 6px; }
 .task-triage-extracted-dates dt { color: var(--text-faint); }
 .task-triage-extracted-dates dd { margin: 0; }
-.task-triage-skip-hint { margin: 8px 0 0; color: var(--text-faint); font-size: 10px; text-align: center; }
-.task-triage-extracted .task-triage-shortcuts { flex-wrap: wrap; }
 .task-triage-actions button { display: grid; height: 43px; grid-template-columns: 17px auto 25px; align-items: center; justify-content: center; gap: 8px; border: 1px solid var(--line-strong); border-radius: 11px; background: var(--surface-muted); color: var(--muted); font-size: 11px; font-weight: 620; cursor: pointer; }
 .task-triage-actions button:hover:not(:disabled) { background: var(--surface-hover); color: var(--ink); }
 .task-triage-actions button:disabled { opacity: 0.55; cursor: default; }
@@ -886,7 +884,6 @@ kbd {
 .task-triage-folder-picker .task-folder-option kbd { justify-self: end; }
 .task-triage-folder-picker > div > p { margin: 0; padding: 18px; color: var(--text-faint); font-size: 9px; text-align: center; }
 .task-triage-secondary-actions { display: flex; justify-content: space-between; gap: 8px; margin-top: 10px; }
-.task-triage-extracted-secondary-actions { justify-content: flex-start; }
 .task-triage-secondary-actions > button { display: inline-flex; min-height: 30px; align-items: center; gap: 6px; padding: 0 9px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--surface-muted); color: var(--text-soft); font: inherit; font-size: 9px; font-weight: 600; cursor: pointer; }
 .task-triage-secondary-actions > button:hover:not(:disabled) { background: var(--surface-hover); color: var(--ink); }
 .task-triage-secondary-actions > .task-triage-open-original:hover:not(:disabled) { border-color: var(--blue-border); color: var(--blue-ink); }
