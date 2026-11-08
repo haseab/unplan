@@ -9,6 +9,7 @@ import {
   findTaskExtractionProject,
   isExtractedTodoistTask,
   findTechnicalitiesCalendar,
+  orderExtractedTodoistTasks,
   resolveTaskExtractionDestination,
 } from "./task-extraction";
 
@@ -83,6 +84,52 @@ test("existing Markdown and bare links remain intact and invalid recording dates
 const datedTask = (overrides: Partial<TodoistTask> = {}): TodoistTask => ({
   id: "dated", content: "Plan the lecture", description: "", priority: 1, projectId: "extract", due: null,
   ...overrides,
+});
+
+test("extracted review follows original recording time rather than import, due, or project order", () => {
+  const oldest = datedTask({
+    id: "oldest", childOrder: 9, createdAt: "2026-11-07T12:00:00Z",
+    description: "Transcript old-source at 2026-10-27T20:00:00Z\n[DeepLog:old]",
+    due: { date: "2026-12-01", recurring: false, string: "December" },
+  });
+  const middle = datedTask({
+    id: "middle", childOrder: 2, createdAt: "2026-11-01T12:00:00Z",
+    description: "[View source recording](https://deeplog.app/pendant?recordingId=middle)\nRecorded at 2026-10-28T20:00:00Z\n[DeepLog:middle]",
+  });
+  const newest = datedTask({
+    id: "newest", childOrder: 1, createdAt: "2026-10-30T12:00:00Z",
+    description: "Recording new-source at 2026-10-29T20:00:00Z",
+    due: { date: "2026-10-01", recurring: false, string: "October" },
+  });
+  const input = [newest, oldest, middle];
+  assert.deepEqual(orderExtractedTodoistTasks(input).map(task => task.id), ["oldest", "middle", "newest"]);
+  assert.deepEqual(input, [newest, oldest, middle], "sorting must not mutate provider state");
+  for (const task of input) assert.equal(extractedTaskDates(task)[0].label, "Recorded");
+});
+
+test("review falls back to creation time for missing or invalid sources and puts undated tasks last", () => {
+  const tasks = [
+    datedTask({ id: "undated" }),
+    datedTask({ id: "invalid-created", createdAt: "invalid" }),
+    datedTask({ id: "created", createdAt: "2026-10-28T12:00:00Z" }),
+    datedTask({ id: "recorded", description: "Transcript source at 2026-10-27T12:00:00Z", createdAt: "invalid" }),
+    datedTask({ id: "invalid-source", description: "Recording source at 2026-13-99T99:99:99Z", createdAt: "2026-10-29T12:00:00Z" }),
+  ];
+  assert.deepEqual(orderExtractedTodoistTasks(tasks).map(task => task.id), [
+    "recorded", "created", "invalid-source", "invalid-created", "undated",
+  ]);
+});
+
+test("equal recording times use creation time then task ID and retain separate tasks with identical titles", () => {
+  const shared = { content: "Download Retrace.", description: "Transcript source at 2026-10-28T12:00:00Z" };
+  const tasks = [
+    datedTask({ ...shared, id: "later-import", createdAt: "2026-11-07T12:00:00Z" }),
+    datedTask({ ...shared, id: "b", createdAt: "2026-11-01T12:00:00Z" }),
+    datedTask({ ...shared, id: "a", createdAt: "2026-11-01T12:00:00Z" }),
+  ];
+  const expected = ["a", "b", "later-import"];
+  assert.deepEqual(orderExtractedTodoistTasks(tasks).map(task => task.id), expected);
+  assert.deepEqual(orderExtractedTodoistTasks([...tasks].reverse()).map(task => task.id), expected);
 });
 
 test("recording context uses the source timestamp in the viewer's timezone, separately from the deadline", () => {

@@ -13,6 +13,7 @@ import {
 import { todoistContentWithCalendar } from "@/lib/todoist-calendar";
 import {
   findTaskExtractionProject,
+  orderExtractedTodoistTasks,
   resolveTaskExtractionDestination,
 } from "@/lib/task-extraction";
 
@@ -58,7 +59,7 @@ export function useTodoistTaskExtraction({
     const loadVersion = ++loadVersionRef.current;
     setLoading(true);
     try {
-      const nextTasks = await loadTodoistTasks(token, extractionProjectId);
+      const nextTasks = orderExtractedTodoistTasks(await loadTodoistTasks(token, extractionProjectId));
       if (loadVersion !== loadVersionRef.current) return nextTasks;
       setTasks(nextTasks.filter(({ id }) => !resolvingTaskIdsRef.current.has(id)));
       setError(null);
@@ -96,7 +97,7 @@ export function useTodoistTaskExtraction({
     resolvingTaskIdsRef.current.delete(task.id);
     setTasks((current) => current.some(({ id }) => id === task.id)
       ? current
-      : [task, ...current]);
+      : orderExtractedTodoistTasks([task, ...current]));
   }, []);
 
   const completeTask = React.useCallback(async (taskId: string) => {
