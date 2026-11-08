@@ -9,9 +9,9 @@ function loadModule(path, overrides = {}) {
   const source = ts.transpileModule(readFileSync(new URL(path, import.meta.url), "utf8"), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
   }).outputText;
-  const module = { exports: {} };
-  new Function("require", "module", "exports", source)((name) => overrides[name] ?? require(name), module, module.exports);
-  return module.exports;
+  const loaded = { exports: {} };
+  new Function("require", "module", "exports", source)((name) => overrides[name] ?? require(name), loaded, loaded.exports);
+  return loaded.exports;
 }
 const links = loadModule("../src/lib/next-calendar-call.ts");
 const meeting = loadModule("../src/lib/attention-next-meeting.ts", { "./next-calendar-call": links });
