@@ -10,6 +10,8 @@ import { useJoinNextCall } from "@/hooks/use-join-next-call";
 import { useEventHistoryShortcuts } from "@/hooks/use-event-history-shortcuts";
 
 import { applyGoogleEventSaveResult } from "@/lib/google-event-transfer";
+import { createCalendarToTaskTransfer, calendarToTaskOutcome } from "@/lib/calendar-to-task-transfer";
+import { pendingOperations } from "@/lib/pending-actions";
 
 import { isFollowUpCreationShortcut } from "@/lib/follow-up-keyboard";
 import { scheduleFollowUp } from "@/lib/follow-up-calendar";
@@ -702,7 +704,13 @@ export function CalendarApp({ demo = false }: { demo?: boolean } = {}) {
     updateTask: updateTodoistTask,
   } = useTodoist({ syncProtectedTaskIds: selectedTodoistTaskIds });
   const followUps = useFollowUps(todoistToken);
-  const refreshing = syncing || todoistLoading;
+  const operations = React.useSyncExternalStore(
+    pendingOperations.subscribe,
+    pendingOperations.getSnapshot,
+    pendingOperations.getServerSnapshot,
+  );
+  const refreshing = syncing || todoistLoading
+    || operations.some(operation => operation.phase === "running" || operation.phase === "waiting");
   const {
     completeTask: completeExtractedTask,
     destinationProject: taskExtractionDestination,
@@ -2600,11 +2608,13 @@ export function CalendarApp({ demo = false }: { demo?: boolean } = {}) {
                 eventIds: [...optimisticEventIds],
                 taskIds: stagedTaskIds,
               });
+              const deleted = stagedMoves.map(({ event }) => ({
+                event, index: eventsRef.current.findIndex(({ id }) => id === event.id),
+              }));
               const restoreEvents = (eventsToRestore = todoistCandidates.eligible) => {
-                eventsToRestore.forEach(({ id }) => {
-                  pendingTodoistCalendarRemovalIdsRef.current.delete(id);
-                });
-                setEvents((current) => restoreEventSnapshots(current, eventsToRestore));
+                const ids = new Set(eventsToRestore.map(({ id }) => id));
+                ids.forEach(id => pendingTodoistCalendarRemovalIdsRef.current.delete(id));
+                setEvents(current => restoreDeletedEvents(current, deleted.filter(({ event }) => ids.has(event.id))));
               };
               setEvents((current) => current.filter(
                 (event) => !optimisticEventIds.has(event.id),
@@ -2635,85 +2645,20 @@ export function CalendarApp({ demo = false }: { demo?: boolean } = {}) {
                   },
                   onSubmit: async (reportProgress) => {
                     if (hasGoogleEvents) setSyncing(true);
-                    reportProgress(
-                      stagedMoves.length === 1
-                        ? "Creating Todoist task…"
-                        : `Creating ${stagedMoves.length} Todoist tasks…`,
-                    );
-                    const syncOutcomes = await Promise.all(stagedMoves.map(async (move) => {
-                      try {
-                        const committedTask = await commitStagedTodoistTask(move.task.id, move.input);
-                        return committedTask
-                          ? { ...move, status: "synced" as const }
-                          : { ...move, status: "cancelled" as const };
-                      } catch (error) {
-                        return { ...move, error, status: "sync-failed" as const };
-                      }
-                    }));
-                    const syncFailures = syncOutcomes.flatMap((outcome) =>
-                      outcome.status === "sync-failed" ? [outcome] : [],
-                    );
-                    removeLocalTodoistTasks(syncFailures.map(({ task }) => task.id));
-                    restoreEvents(syncFailures.map(({ event }) => event));
-                    restoreEvents(syncOutcomes.flatMap((outcome) =>
-                      outcome.status === "cancelled" ? [outcome.event] : [],
-                    ));
-
-                    const synced = syncOutcomes.flatMap((outcome) =>
-                      outcome.status === "synced" ? [outcome] : [],
-                    );
-                    if (synced.length > 0 && taskDropProjection?.target) {
-                      reportProgress("Saving task position…");
-                      try {
-                        await persistTodoistTaskOrder();
-                      } catch {
-                        toast.warning("Tasks were created, but their position could not be saved");
-                      }
-                    }
-                    if (synced.some(({ event }) => event.provider === "google")) {
-                      reportProgress("Removing synced events from Google…");
-                    }
-                    const deleteOutcomes = await Promise.all(synced.map(async (move) => {
-                      if (move.event.provider !== "google") {
-                        return { ...move, status: "moved" as const };
-                      }
-                      try {
-                        await deleteGoogleEvent(
-                          move.event,
-                          sendUpdatesForEvent(move.event, sendUpdates),
-                          "single",
-                        );
-                        return { ...move, status: "moved" as const };
-                      } catch (error) {
-                        return { ...move, error, status: "delete-failed" as const };
-                      }
-                    }));
-                    const deleteFailures = deleteOutcomes.flatMap((outcome) =>
-                      outcome.status === "delete-failed" ? [outcome] : [],
-                    );
-                    restoreEvents(deleteFailures.map(({ event }) => event));
-                    console.debug("[BUG:TODOIST-CALENDAR-DROP] [CALENDAR:TO-SIDEBAR] transaction committed", {
-                      deletedEventIds: deleteOutcomes.flatMap((outcome) =>
-                        outcome.status === "moved" ? [outcome.event.id] : [],
-                      ),
-                      restoredEventIds: deleteFailures.map(({ event }) => event.id),
-                    });
-                    if (hasGoogleEvents) setSyncing(false);
-
-                    if (deleteFailures.length > 0) {
-                      toast.warning(
-                        `${deleteFailures.length} ${deleteFailures.length === 1 ? "event was" : "events were"} saved to Todoist but could not be removed from the calendar`,
-                      );
-                    }
-                    if (syncFailures.length > 0) {
-                      const firstError = syncFailures[0].error;
-                      toast.error(
-                        firstError instanceof Error
-                          ? firstError.message
-                          : `${syncFailures.length} ${syncFailures.length === 1 ? "event" : "events"} could not be saved to Todoist`,
-                      );
-                    }
+                    try {
+                      const transfer = createCalendarToTaskTransfer(stagedMoves, {
+                        commitTask: commitStagedTodoistTask,
+                        deleteEvent: event => deleteGoogleEvent(event, sendUpdatesForEvent(event, sendUpdates), "single"),
+                        ...(taskDropProjection?.target ? { persistOrder: persistTodoistTaskOrder } : {}),
+                      });
+                      const result = await transfer.commit(reportProgress);
+                      const failed = result.items.filter(item => item.phase === "create-failed");
+                      removeLocalTodoistTasks(failed.map(({ move }) => move.task.id));
+                      restoreEvents(result.items.filter(item => item.phase !== "complete").map(({ move }) => move.event));
+                      return calendarToTaskOutcome(result);
+                    } finally { if (hasGoogleEvents) setSyncing(false); }
                   },
+                  resourceIds: [...optimisticEventIds, ...stagedTaskIds],
                   onError: (error) => {
                     if (hasGoogleEvents) setSyncing(false);
                     console.error("[BUG:TODOIST-CALENDAR-DROP] [CALENDAR:TO-SIDEBAR] transaction rolled back", {
@@ -4805,66 +4750,26 @@ export function CalendarApp({ demo = false }: { demo?: boolean } = {}) {
           restoreEvents();
         },
         onSubmit: async (reportProgress) => {
-          reportProgress(
-            stagedMoves.length === 1
-              ? "Creating Todoist task…"
-              : "Creating Todoist tasks…",
-          );
-          const outcomes = await Promise.all(stagedMoves.map(async (move) => {
-            const committed = await commitStagedTodoistTask(move.task.id, move.input);
-            return { ...move, committed };
-          }));
-          const cancelled = outcomes.filter(({ committed }) => !committed);
-          if (cancelled.length) {
-            restorePendingUpdates(new Set(cancelled.map(({ event }) => event.id)));
-            cancelled.forEach(({ event }) => {
-              pendingTodoistCalendarRemovalIdsRef.current.delete(event.id);
+          const hasGoogleEvents = stagedMoves.some(({ event }) => event.provider === "google");
+          if (hasGoogleEvents) setSyncing(true);
+          try {
+            const transfer = createCalendarToTaskTransfer(stagedMoves, {
+              commitTask: commitStagedTodoistTask,
+              deleteEvent: event => deleteGoogleEvent(event, sendUpdatesForEvent(event, sendUpdates), "single"),
             });
-            setEvents((current) => restoreDeletedEvents(
-              current,
-              deleted.filter(({ event }) =>
-                cancelled.some((move) => move.event.id === event.id)
-              ),
-            ));
-          }
-          const committed = outcomes.filter((outcome) => outcome.committed);
-          if (committed.some(({ event }) => event.provider === "google")) {
-            setSyncing(true);
-            reportProgress("Removing synced events from Google…");
-          }
-          const deleteOutcomes = await Promise.all(committed.map(async (move) => {
-            if (move.event.provider !== "google") return { ...move, deleted: true };
-            try {
-              await deleteGoogleEvent(
-                move.event,
-                sendUpdatesForEvent(move.event, sendUpdates),
-                "single",
-              );
-              return { ...move, deleted: true };
-            } catch {
-              return { ...move, deleted: false };
+            const result = await transfer.commit(reportProgress);
+            const failed = result.items.filter(item => item.phase === "create-failed");
+            removeLocalTodoistTasks(failed.map(({ move }) => move.task.id));
+            const restoreIds = new Set(result.items.filter(item => item.phase !== "complete").map(({ move }) => move.event.id));
+            if (restoreIds.size) {
+              restorePendingUpdates(restoreIds);
+              restoreIds.forEach(id => pendingTodoistCalendarRemovalIdsRef.current.delete(id));
+              setEvents(current => restoreDeletedEvents(current, deleted.filter(({ event }) => restoreIds.has(event.id))));
             }
-          }));
-          setSyncing(false);
-          const deleteFailures = deleteOutcomes.filter(({ deleted: wasDeleted }) =>
-            !wasDeleted
-          );
-          if (deleteFailures.length) {
-            restorePendingUpdates(new Set(deleteFailures.map(({ event }) => event.id)));
-            deleteFailures.forEach(({ event }) => {
-              pendingTodoistCalendarRemovalIdsRef.current.delete(event.id);
-            });
-            setEvents((current) => restoreDeletedEvents(
-              current,
-              deleted.filter(({ event }) =>
-                deleteFailures.some((move) => move.event.id === event.id)
-              ),
-            ));
-            toast.warning(
-              `${deleteFailures.length} ${deleteFailures.length === 1 ? "event was" : "events were"} added to ${destination} but could not be removed from the calendar`,
-            );
-          }
+            return calendarToTaskOutcome(result);
+          } finally { if (hasGoogleEvents) setSyncing(false); }
         },
+        resourceIds: [...eventIds, ...stagedTaskIds],
         onError: (error) => {
           setSyncing(false);
           removeLocalTodoistTasks(stagedTaskIds);

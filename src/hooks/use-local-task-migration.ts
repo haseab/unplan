@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { isLocalTask } from "@/lib/local-tasks";
-import { getActionToastSyncProtectedResourceIds, subscribeActionToastSync } from "@/lib/action-toast";
+import { pendingOperations } from "@/lib/pending-actions";
 import type { TodoistTask } from "@/lib/todoist";
 
 export function useLocalTaskMigration({ ready, tasks, migrate, onError }: {
@@ -19,7 +19,7 @@ export function useLocalTaskMigration({ ready, tasks, migrate, onError }: {
     if (!ready || running.current || Date.now() < retryAfter.current) return;
     running.current = true;
     try {
-      const protectedIds = getActionToastSyncProtectedResourceIds();
+      const protectedIds = pendingOperations.protectedResourceIds();
       for (const task of latest.current.tasks.filter(isLocalTask)) {
         if (protectedIds.includes(task.id)) continue;
         await latest.current.migrate(task);
@@ -37,7 +37,7 @@ export function useLocalTaskMigration({ ready, tasks, migrate, onError }: {
   React.useEffect(() => {
     if (!ready) return;
     const run = () => { void attempt(); };
-    const unsubscribe = subscribeActionToastSync(run);
+    const unsubscribe = pendingOperations.subscribeSync(run);
     const timer = window.setInterval(run, 30_000);
     window.addEventListener("focus", run);
     return () => { unsubscribe(); window.clearInterval(timer); window.removeEventListener("focus", run); };

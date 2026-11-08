@@ -1,7 +1,10 @@
+import { createLocalGoogleSession } from './helpers/local-google-session.mjs';
 import { mockGoogleAccounts } from './helpers/google-account-fixture.mjs';
 // Run against npm run dev. Provider traffic is mocked in an isolated browser context.
 import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
+const baseURL = process.env.UNPLAN_TEST_URL || 'http://localhost:3004';
+let cleanupSession = async () => {};
 const browser = await chromium.launch({ headless: true, channel: 'chrome' });
 const context = await browser.newContext({ timezoneId: 'America/Los_Angeles', viewport: { width: 1440, height: 1000 } });
 context.setDefaultTimeout(15000);
@@ -41,7 +44,8 @@ const page = await context.newPage();
 page.on('pageerror', error => errors.push(error.message));
 const poll = async (fn) => { for (let i = 0; i < 300; i++) { if (await fn()) return; await new Promise(resolve => setTimeout(resolve, 100)); } throw new Error('Condition not met'); };
 try {
-  await page.goto(process.env.UNPLAN_TEST_URL || 'http://localhost:3004');
+  cleanupSession = await createLocalGoogleSession(context, baseURL);
+  await page.goto(baseURL);
   await page.locator('.calendar-event').first().waitFor();
   for (const event of events) {
     await page.locator(`[data-calendar-event-id="${event.id}"]`).first().click({ modifiers: ['Shift'] });
@@ -92,4 +96,4 @@ try {
   assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('unplan:todoist-group-parents:v1')).Personal), null);
   assert.deepEqual(errors, []);
   console.log('PASS: 23-event selection, sidebar, Cmd+Option+Shift+P, nested creation, search, keyboard assignment, undo, mocked provider move, hierarchy reload, and triage folder creation');
-} finally { await browser.close(); }
+} finally { try { await browser.close(); } finally { await cleanupSession(); } }

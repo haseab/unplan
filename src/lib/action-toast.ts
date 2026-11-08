@@ -1,75 +1,20 @@
-import { Check, CirclePause, Clock3, LoaderCircle } from "lucide-react";
+import { AlertTriangle, Check, CirclePause, Clock3, LoaderCircle } from "lucide-react";
 import { createElement } from "react";
 import { toast } from "sonner";
-
-type ToastId = string | number;
-
-type ActionToastController = {
-  cancel: () => boolean;
-  submit: () => boolean;
-  toastId: ToastId;
-  undo: () => boolean;
-};
-
-type PendingAction = {
-  supersede: (ids: ReadonlySet<string>) => ((restoreIds?: ReadonlySet<string>) => void) | null;
-  coalesceKey?: string;
-  completion: Promise<boolean>;
-  controls: ActionToastController;
-  createdResourceIds: ReadonlySet<string>;
-  isPaused: () => boolean;
-  pause: () => void;
-  refresh: (message: string, duration: number) => void;
-  replace: (message: string, options: ActionToastOptions) => void;
-  resourceIds: ReadonlySet<string>;
-  resume: () => void;
-  submit: () => boolean;
-  undo: () => boolean;
-};
-
-type ActionToastOptions = {
-  coalesceKey?: string;
-  createsResourceIds?: Iterable<string>;
-  duration: number;
-  submitImmediately?: boolean;
-  onSettled?: () => void;
-  resourceScoped?: boolean;
-  onUndo: (resourceIds: ReadonlySet<string>) => void;
-  onSubmit: (reportProgress: (message: string) => void, resourceIds: ReadonlySet<string>) => Promise<void> | void;
-  onError?: (error: unknown) => void;
-  resourceIds?: Iterable<string>;
-  submittingMessage?: string;
-};
-
-export type ActionToastSyncSnapshot = {
-  pausedResourceIds: readonly string[];
-  pendingResourceIds: readonly string[];
-};
-
-const pendingActions = new Map<ToastId, PendingAction>();
-const pendingCoalescedActions = new Map<string, PendingAction>();
-const submittingActions = new Set<PendingAction>();
-const activeActions = new Set<ToastId>();
-const activeCreationActions = new Set<PendingAction>();
-const resourceHolds = new Map<string, ReadonlySet<string>>();
-const syncListeners = new Set<() => void>();
-const EMPTY_SYNC_SNAPSHOT: ActionToastSyncSnapshot = {
-  pausedResourceIds: [],
-  pendingResourceIds: [],
-};
-let syncSnapshot = EMPTY_SYNC_SNAPSHOT;
-let nextToastId = 0;
+import {
+  pendingOperations,
+  pendingActionSyncIntersectsResources,
+  reconcilePendingActionSyncProtection,
+  type PendingActionController,
+  type PendingActionOptions,
+  type PendingActionSyncSnapshot,
+  type PendingOperationSnapshot,
+} from "./pending-actions";
 
 type ActionToastVisualState = "paused" | "queued" | "updated" | "updating";
 
 const actionToastIcon = (state: ActionToastVisualState) => {
-  const Icon = state === "paused"
-    ? CirclePause
-    : state === "queued"
-      ? Clock3
-      : state === "updated"
-        ? Check
-        : LoaderCircle;
+  const Icon = state === "paused" ? CirclePause : state === "queued" ? Clock3 : state === "updated" ? Check : LoaderCircle;
   return createElement(Icon, {
     "aria-hidden": true,
     className: `action-toast-icon action-toast-icon-${state}${state === "updating" ? " spin" : ""}`,
@@ -77,468 +22,73 @@ const actionToastIcon = (state: ActionToastVisualState) => {
   });
 };
 
-const actionIsHeld = (action: PendingAction) =>
-  [...resourceHolds.values()].some((heldIds) =>
-    [...action.resourceIds].some((resourceId) => heldIds.has(resourceId))
-  );
-
-const publishSyncSnapshot = () => {
-  const pendingResourceIds = new Set<string>();
-  const pausedResourceIds = new Set<string>();
-  pendingActions.forEach((action) => {
-    action.resourceIds.forEach((resourceId) => pendingResourceIds.add(resourceId));
-    if (action.isPaused()) {
-      action.resourceIds.forEach((resourceId) => pausedResourceIds.add(resourceId));
-    }
-  });
-  submittingActions.forEach((action) => {
-    action.resourceIds.forEach((resourceId) => pendingResourceIds.add(resourceId));
-  });
-  syncSnapshot = {
-    pausedResourceIds: [...pausedResourceIds],
-    pendingResourceIds: [...pendingResourceIds],
-  };
-  syncListeners.forEach((listener) => listener());
-};
-
-const reconcileResourceHolds = () => {
-  pendingActions.forEach((action) => {
-    if (actionIsHeld(action)) action.pause();
-    else action.resume();
-  });
-  publishSyncSnapshot();
-};
-
-const latestPendingAction = () => {
-  let latest: PendingAction | null = null;
-  for (const action of pendingActions.values()) latest = action;
-  return latest;
-};
-
-/**
- * Shows an optimistic action immediately while delaying its durable mutation.
- * Undo and submit are mutually exclusive. Keyboard undo targets the newest
- * action, while keyboard submit commits every queued action in insertion order.
- */
-export function queueActionToast(
-  message: string,
-  options: ActionToastOptions,
-) {
-  const existing = options.coalesceKey
-    ? pendingCoalescedActions.get(options.coalesceKey)
-    : undefined;
-  if (existing) {
-    existing.replace(message, options);
-    return existing.controls;
-  }
-
-  let state: "cancelled" | "pending" | "submitting" | "complete" | "undone" | "failed" =
-    "pending";
-  let timeoutId: ReturnType<typeof setTimeout> | null = null;
-  let timerStartedAt = 0;
-  let remainingDuration = Math.max(0, options.duration);
-  let paused = false;
-  let currentMessage = message;
-  let currentOptions = options;
-  const initialOnUndo = options.onUndo;
-  const resourceIds = new Set(options.resourceIds ?? []);
-  const createdResourceIds = new Set(options.createsResourceIds ?? []);
-  let resolveCompletion!: (succeeded: boolean) => void;
-  let completionSettled = false;
-  const completion = new Promise<boolean>((resolve) => {
-    resolveCompletion = resolve;
-  });
-
-  const settleCompletion = (succeeded: boolean) => {
-    if (completionSettled) return;
-    completionSettled = true;
-    activeCreationActions.delete(action);
-    resolveCompletion(succeeded);
-  };
-
-  const requiredCreations = () => [...activeCreationActions].filter(
-    (candidate) => candidate !== action
-      && [...candidate.createdResourceIds].some((resourceId) => resourceIds.has(resourceId)),
-  );
-
-  const clearTimer = () => {
-    if (timeoutId !== null) clearTimeout(timeoutId);
-    timeoutId = null;
-  };
-
-  const renderPendingToast = () => {
-    toast(currentMessage, {
-      id: toastId,
-      action: { label: "Undo (⌘Z)", onClick: undo },
+/** Presentation adapter; deadlines, dependencies and settlement belong to the domain store. */
+function presentOperation(operation: PendingOperationSnapshot, controls: PendingActionController) {
+  const { id, phase } = operation;
+  if (phase === "queued" || phase === "paused") {
+    const paused = phase === "paused";
+    toast(operation.message, {
+      id,
+      action: { label: "Undo (⌘Z)", onClick: controls.undo },
       className: paused ? "action-toast-hidden" : "",
       closeButton: true,
       description: paused ? "Unsynced while this event is being edited" : undefined,
       duration: Infinity,
       icon: actionToastIcon(paused ? "paused" : "queued"),
-      onDismiss: () => {
-        // Closing an actionable toast means “keep it”, so commit immediately.
-        submit();
-      },
+      // Dismissing means keep the optimistic action and submit it now.
+      onDismiss: () => { controls.submit(); },
     });
-  };
-
-  const scheduleSubmit = () => {
-    if (state !== "pending" || paused || timeoutId !== null) return;
-    if (remainingDuration <= 0) {
-      submit();
-      return;
-    }
-    timerStartedAt = Date.now();
-    timeoutId = setTimeout(submit, remainingDuration);
-  };
-
-  const pause = () => {
-    if (state !== "pending" || paused) return;
-    if (timeoutId !== null) {
-      remainingDuration = Math.max(0, remainingDuration - (Date.now() - timerStartedAt));
-      clearTimer();
-    }
-    paused = true;
-    renderPendingToast();
-  };
-
-  const resume = () => {
-    if (state !== "pending" || !paused || actionIsHeld(action)) return;
-    paused = false;
-    renderPendingToast();
-    scheduleSubmit();
-  };
-
-  const undo = () => {
-    if (state !== "pending") return false;
-    state = "undone";
-    clearTimer();
-    pendingActions.delete(toastId);
-    if (currentOptions.coalesceKey) {
-      pendingCoalescedActions.delete(currentOptions.coalesceKey);
-    }
-    activeActions.delete(toastId);
-    publishSyncSnapshot();
-    initialOnUndo(new Set(resourceIds));
-    currentOptions.onSettled?.();
-    settleCompletion(false);
-    toast.dismiss(toastId);
-    return true;
-  };
-
-  const cancel = () => {
-    if (state !== "pending") return false;
-    state = "cancelled";
-    clearTimer();
-    pendingActions.delete(toastId);
-    if (currentOptions.coalesceKey) {
-      pendingCoalescedActions.delete(currentOptions.coalesceKey);
-    }
-    activeActions.delete(toastId);
-    publishSyncSnapshot();
-    currentOptions.onSettled?.();
-    settleCompletion(false);
-    toast.dismiss(toastId);
-    return true;
-  };
-
-  const submit = () => {
-    if (state !== "pending") return false;
-    const creationDependencies = requiredCreations();
-    creationDependencies.forEach((dependency) => dependency.submit());
-    state = "submitting";
-    clearTimer();
-    pendingActions.delete(toastId);
-    if (currentOptions.coalesceKey) {
-      pendingCoalescedActions.delete(currentOptions.coalesceKey);
-    }
-    submittingActions.add(action);
-    publishSyncSnapshot();
-    toast.loading(currentOptions.submittingMessage ?? "Saving to Google…", {
-      action: undefined,
-      className: "",
-      closeButton: false,
-      description: undefined,
-      id: toastId,
-      duration: Infinity,
-      icon: actionToastIcon("updating"),
-      onDismiss: undefined,
+  } else if (phase === "waiting" || phase === "running") {
+    toast.loading(operation.progressMessage ?? operation.submittingMessage ?? "Saving to Google…", {
+      id, action: undefined, className: "", closeButton: false, description: undefined,
+      duration: Infinity, icon: actionToastIcon("updating"), onDismiss: undefined,
     });
-
-    const reportProgress = (progressMessage: string) => {
-      if (state !== "submitting") return;
-      toast.loading(progressMessage, {
-        action: undefined,
-        className: "",
-        closeButton: false,
-        description: undefined,
-        duration: Infinity,
-        icon: actionToastIcon("updating"),
-        id: toastId,
-        onDismiss: undefined,
-      });
-    };
-
-    const runSubmit = () => {
-      try {
-        return Promise.resolve(currentOptions.onSubmit(reportProgress, new Set(resourceIds)));
-      } catch (error) {
-        return Promise.reject(error);
-      }
-    };
-    const submission = creationDependencies.length
-      ? Promise.all(creationDependencies.map(({ completion }) => completion))
-        .then(async (outcomes) => {
-          if (outcomes.some((succeeded) => !succeeded)) {
-            throw new Error("A required event creation could not be saved");
-          }
-          await runSubmit();
-        })
-      : runSubmit();
-
-    void submission
-      .then(() => {
-        state = "complete";
-        submittingActions.delete(action);
-        activeActions.delete(toastId);
-        publishSyncSnapshot();
-        toast.success(currentMessage, {
-          action: undefined,
-          className: "",
-          closeButton: false,
-          description: undefined,
-          duration: 1_800,
-          icon: actionToastIcon("updated"),
-          id: toastId,
-          onDismiss: undefined,
-        });
-        currentOptions.onSettled?.();
-        settleCompletion(true);
-      })
-      .catch((error: unknown) => {
-        state = "failed";
-        submittingActions.delete(action);
-        activeActions.delete(toastId);
-        publishSyncSnapshot();
-        toast.dismiss(toastId);
-        if (currentOptions.onError) currentOptions.onError(error);
-        else
-          toast.error(
-            error instanceof Error ? error.message : "The change could not be saved",
-          );
-        currentOptions.onSettled?.();
-        settleCompletion(false);
-      });
-    return true;
-  };
-
-  const toastId: ToastId = `action-toast-${++nextToastId}`;
-  if (options.submitImmediately) {
-    toast.loading(options.submittingMessage ?? "Saving to Google…", {
-      action: undefined,
-      className: "",
-      closeButton: false,
-      description: undefined,
-      id: toastId,
-      duration: Infinity,
-      icon: actionToastIcon("updating"),
-      onDismiss: undefined,
+  } else if (phase === "complete") {
+    toast.success(operation.message, {
+      id, action: undefined, className: "", closeButton: false, description: undefined,
+      duration: 1_800, icon: actionToastIcon("updated"), onDismiss: undefined,
+    });
+  } else if (phase === "needs-attention") {
+    toast.warning(operation.outcome?.message ?? "Some changes need attention", {
+      id, action: undefined, className: "", closeButton: true, description: undefined,
+      duration: 6_000, icon: createElement(AlertTriangle, { size: 16, "aria-hidden": true }), onDismiss: undefined,
     });
   } else {
-    toast(message, {
-      action: { label: "Undo (⌘Z)", onClick: undo },
-      className: "",
-      closeButton: true,
-      duration: Infinity,
-      id: toastId,
-      icon: actionToastIcon("queued"),
-      onDismiss: () => {
-        // Closing an actionable toast means “keep it”, so commit immediately.
-        submit();
-      },
-    });
+    toast.dismiss(id);
+    if (phase === "failed" && !operation.errorHandled) {
+      toast.error(operation.error ?? "The change could not be saved");
+    }
   }
-  const controls: ActionToastController = { cancel, toastId, submit, undo };
-  const refresh = (nextMessage: string, nextDuration: number) => {
-    if (state !== "pending") return;
-    clearTimer();
-    currentMessage = nextMessage;
-    remainingDuration = Math.max(0, nextDuration);
-    paused = actionIsHeld(action);
-    renderPendingToast();
-    scheduleSubmit();
-    publishSyncSnapshot();
-  };
-  const action: PendingAction = {
-    supersede: (ids) => {
-      if (state !== "pending" || !currentOptions.resourceScoped || createdResourceIds.size) return null;
-      const removed = new Set([...resourceIds].filter(id => ids.has(id)));
-      if (!removed.size) return null;
-      const savedOptions = { ...currentOptions, coalesceKey: undefined };
-      const savedMessage = currentMessage;
-      removed.forEach(id => resourceIds.delete(id));
-      if (!resourceIds.size) cancel();
-      else {
-        currentMessage = `Saving changes to ${resourceIds.size} remaining events`;
-        renderPendingToast();
-        publishSyncSnapshot();
-      }
-      const alreadyRestored = new Set<string>();
-      return (restoreIds = removed) => {
-        const restored = [...removed].filter(id => restoreIds.has(id) && !alreadyRestored.has(id));
-        restored.forEach(id => alreadyRestored.add(id));
-        if (restored.length) queueActionToast(savedMessage, { ...savedOptions, resourceIds: restored });
-      };
-    },
-    coalesceKey: options.coalesceKey,
-    completion,
-    controls,
-    createdResourceIds,
-    isPaused: () => paused,
-    pause,
-    refresh,
-    replace: (nextMessage, nextOptions) => {
-      if (state !== "pending") return;
-      currentOptions = nextOptions;
-      createdResourceIds.clear();
-      for (const resourceId of nextOptions.createsResourceIds ?? []) {
-        createdResourceIds.add(resourceId);
-      }
-      if (createdResourceIds.size) activeCreationActions.add(action);
-      else activeCreationActions.delete(action);
-      resourceIds.clear();
-      for (const resourceId of nextOptions.resourceIds ?? []) {
-        resourceIds.add(resourceId);
-      }
-      refresh(nextMessage, nextOptions.duration);
-    },
-    resourceIds,
-    resume,
-    submit,
-    undo,
-  };
-  pendingActions.set(toastId, action);
-  if (options.coalesceKey) pendingCoalescedActions.set(options.coalesceKey, action);
-  activeActions.add(toastId);
-  if (createdResourceIds.size) activeCreationActions.add(action);
-  if (options.submitImmediately) {
-    submit();
-  } else if (actionIsHeld(action)) {
-    paused = true;
-    renderPendingToast();
-  } else {
-    scheduleSubmit();
-  }
-  publishSyncSnapshot();
-
-  return controls;
 }
 
-export const refreshActionToast = (
-  coalesceKey: string,
-  message: string,
-  duration: number,
-) => {
-  const action = pendingCoalescedActions.get(coalesceKey);
-  if (!action) return false;
-  action.refresh(message, duration);
-  return true;
-};
+pendingOperations.subscribe(presentOperation);
 
-export const triggerToastUndo = () => latestPendingAction()?.undo() ?? false;
+const controllers = new WeakMap<PendingActionController, PendingActionController & { toastId: string }>();
 
-export const triggerToastSubmit = () => {
-  let submitted = false;
-  [...pendingActions.values()].forEach((action) => {
-    submitted = action.submit() || submitted;
-  });
-  return submitted;
-};
+/** Compatibility facade for UI callers; completion is distinct from queue acceptance. */
+export function queueActionToast(message: string, options: PendingActionOptions) {
+  const controls = pendingOperations.queue(message, options);
+  let controller = controllers.get(controls);
+  if (!controller) {
+    controller = { ...controls, toastId: controls.id };
+    controllers.set(controls, controller);
+  }
+  return controller;
+}
 
-export const hasPendingActionToast = () => pendingActions.size > 0;
-
-/** True for both the undo window and the durable mutation that follows it. */
-export const hasActiveActionToast = () => activeActions.size > 0;
-
-/** True while a queued or submitting action is creating this resource. */
-export const hasActiveResourceCreation = (resourceId: string) =>
-  [...activeCreationActions].some((action) =>
-    action.createdResourceIds.has(resourceId)
-  );
-
-/**
- * Holds pending mutations that touch the supplied resources. Reusing a scope
- * replaces its previous resource set, which lets UI surfaces model editing as
- * a stable hold rather than balancing pause/resume calls.
- */
-export const setActionToastResourceHold = (
-  scope: string,
-  resourceIds: Iterable<string>,
-) => {
-  const next = new Set(resourceIds);
-  if (next.size) resourceHolds.set(scope, next);
-  else resourceHolds.delete(scope);
-  reconcileResourceHolds();
-};
-
-export const clearActionToastResourceHold = (scope: string) => {
-  if (!resourceHolds.delete(scope)) return;
-  reconcileResourceHolds();
-};
-
-export const subscribeActionToastSync = (listener: () => void) => {
-  syncListeners.add(listener);
-  return () => {
-    syncListeners.delete(listener);
-  };
-};
-
-export const getActionToastSyncSnapshot = () => syncSnapshot;
-export const getActionToastServerSyncSnapshot = () => EMPTY_SYNC_SNAPSHOT;
-
-/**
- * Resources whose local representation must win over an in-flight provider
- * snapshot. This includes active pointer/editor holds before an action toast
- * exists, closing the gap between starting an interaction and queueing its
- * eventual mutation.
- */
-export const getActionToastSyncProtectedResourceIds = () => {
-  const resourceIds = new Set(syncSnapshot.pendingResourceIds);
-  resourceHolds.forEach((heldIds) => {
-    heldIds.forEach((resourceId) => resourceIds.add(resourceId));
-  });
-  return [...resourceIds];
-};
-
-export const actionToastSyncIntersectsResources = (
-  snapshot: ActionToastSyncSnapshot,
-  resourceIds: ReadonlySet<string>,
-) => snapshot.pendingResourceIds.some((resourceId) => resourceIds.has(resourceId));
-
-/**
- * Latches selected pending resources until their mutation settles. This keeps
- * sync protected when an optimistic mutation moves selection to another task.
- */
-export const reconcileActionToastSyncProtection = (
-  snapshot: ActionToastSyncSnapshot,
-  selectedResourceIds: ReadonlySet<string>,
-  protectedResourceIds: ReadonlySet<string>,
-) => {
-  const pendingResourceIds = new Set(snapshot.pendingResourceIds);
-  const nextProtectedResourceIds = new Set(
-    [...protectedResourceIds].filter((resourceId) => pendingResourceIds.has(resourceId)),
-  );
-  snapshot.pendingResourceIds.forEach((resourceId) => {
-    if (selectedResourceIds.has(resourceId)) nextProtectedResourceIds.add(resourceId);
-  });
-  return nextProtectedResourceIds;
-};
-
-/** A removal supersedes pending edits, while unrelated resources remain queued. */
-export const supersedePendingResourceUpdates = (ids: ReadonlySet<string>) => {
-  const restorers = [...pendingActions.values()].flatMap(action => {
-    const restore = action.supersede(ids);
-    return restore ? [restore] : [];
-  });
-  return (restoreIds: ReadonlySet<string> = ids) => restorers.forEach(restore => restore(restoreIds));
-};
+export type ActionToastSyncSnapshot = PendingActionSyncSnapshot;
+export const refreshActionToast = pendingOperations.refresh;
+export const triggerToastUndo = pendingOperations.undoLatest;
+export const triggerToastSubmit = pendingOperations.submitAll;
+export const hasPendingActionToast = pendingOperations.hasPending;
+export const hasActiveActionToast = pendingOperations.hasActive;
+export const hasActiveResourceCreation = pendingOperations.hasActiveResourceCreation;
+export const setActionToastResourceHold = pendingOperations.hold;
+export const clearActionToastResourceHold = pendingOperations.release;
+export const subscribeActionToastSync = pendingOperations.subscribeSync;
+export const getActionToastSyncSnapshot = pendingOperations.getSyncSnapshot;
+export const getActionToastServerSyncSnapshot = pendingOperations.getServerSyncSnapshot;
+export const getActionToastSyncProtectedResourceIds = pendingOperations.protectedResourceIds;
+export const actionToastSyncIntersectsResources = pendingActionSyncIntersectsResources;
+export const reconcileActionToastSyncProtection = reconcilePendingActionSyncProtection;
+export const supersedePendingResourceUpdates = pendingOperations.supersede;
