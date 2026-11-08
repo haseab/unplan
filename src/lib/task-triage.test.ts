@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  describeTaskFollowUpInterval,
   orderTaskTriageTasks,
   isTaskTriageCalendarShortcut,
   taskTriageFolders,
@@ -9,10 +10,48 @@ import {
   taskTriageShortcutMode,
 } from "./task-triage";
 import type { TodoistTask } from "./todoist";
-import { todoistContentReturnedToTriage } from "./todoist-calendar";
+import { todoistContentReturnedToTriage, todoistContentWithReviewAt } from "./todoist-calendar";
+import { nextTaskReviewDate, parseTaskReviewPeriod } from "./task-review-period";
 
 const task = (id: string, content = id): TodoistTask => ({
   id, content, description: "", due: null, priority: 1, projectId: "inbox",
+});
+
+test("follow-up intervals use compact days and hours, with minutes only below one day", () => {
+  const now = new Date("2026-11-07T12:00:00Z");
+  const cases = [
+    [1, "1 min"], [30, "30 min"], [60, "1h"], [61, "1h 1 min"],
+    [120, "2h"], [1002, "16h 42 min"], [1439, "23h 59 min"],
+    [1440, "1d"], [1441, "1d"], [1500, "1d 1h"], [2401, "1d 16h"],
+    [9004, "6d 6h"], [10080, "7d"],
+  ] as const;
+  for (const [minutes, label] of cases) {
+    const content = todoistContentWithReviewAt("Follow up", new Date(now.getTime() + minutes * 60_000), now);
+    assert.equal(describeTaskFollowUpInterval(task("follow-up", content)), label);
+  }
+});
+
+test("explicit periods use compact labels while calendar periods retain their units", () => {
+  const now = new Date("2026-11-07T12:00:00Z");
+  for (const [input, label] of [
+    ["9004 minutes", "6d 6h"], ["61 minutes", "1h 1 min"],
+    ["1002 minutes", "16h 42 min"], ["49 hours", "2d 1h"],
+    ["1 day", "1d"], ["2 weeks", "2w"], ["1 month", "1mo"], ["2 years", "2y"],
+  ]) {
+    const period = parseTaskReviewPeriod(input, now)!;
+    const content = todoistContentWithReviewAt("Follow up", nextTaskReviewDate(period, now), now, period);
+    assert.equal(describeTaskFollowUpInterval(task("follow-up", content)), label);
+  }
+});
+
+test("follow-up labels round to the nearest minute and retain older tasks' folder defaults", () => {
+  const now = new Date("2026-11-07T12:00:00Z");
+  for (const [seconds, label] of [[10, "1 min"], [3590, "1h"]] as const) {
+    const content = todoistContentWithReviewAt("Follow up", new Date(now.getTime() + seconds * 1000), now);
+    assert.equal(describeTaskFollowUpInterval(task("follow-up", content)), label);
+  }
+  assert.equal(describeTaskFollowUpInterval(task("legacy", todoistContentReturnedToTriage("Follow up", "Priority Tomorrow"))), "3d");
+  assert.equal(describeTaskFollowUpInterval(task("legacy")), "7d");
 });
 
 test("refreshed tasks can keep their previous folder only while it exists", () => {
