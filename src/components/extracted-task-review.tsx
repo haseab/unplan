@@ -21,14 +21,20 @@ export function ExtractedTaskReview({ error, onResolve, resolving, returning, ta
     <div className="task-triage-extracted">
       <article className="task-triage-task-card" data-returning={returning ? "true" : undefined}>
         <h3><InlineMarkdownLinks>{details.title || task.content}</InlineMarkdownLinks></h3>
-        {dates.length > 0 && (
-          <dl className="task-triage-extracted-dates">
-            {dates.map(({ label, dateTime, text }) => (
-              <div key={label}><dt>{label}</dt><dd><time dateTime={dateTime}>{text}</time></dd></div>
-            ))}
-          </dl>
+        {(dates.length > 0 || task.description) && (
+          <footer className="task-triage-extracted-footer">
+            {dates.length > 0 && (
+              <div className="task-triage-extracted-dates">
+                {dates.map(({ label, dateTime, text }) => (
+                  <time aria-label={`${label}: ${text}`} dateTime={dateTime} key={label}>
+                    {label === "Due" ? `Due ${text}` : text}
+                  </time>
+                ))}
+              </div>
+            )}
+            {task.description && <p><InlineMarkdownLinks preferBrowserTab>{extractedTaskDescriptionMarkdown(task.description)}</InlineMarkdownLinks></p>}
+          </footer>
         )}
-        {task.description && <p><InlineMarkdownLinks preferBrowserTab>{extractedTaskDescriptionMarkdown(task.description)}</InlineMarkdownLinks></p>}
       </article>
       {error && <p className="task-triage-error" role="alert">{error}</p>}
       <div className="task-triage-actions task-triage-extracted-actions">
