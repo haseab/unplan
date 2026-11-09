@@ -1,6 +1,6 @@
 import type { NextRequest } from "next/server";
 import { enforceRateLimit } from "@/lib/request-rate-limit";
-import { readTodoistProviderResponse, todoistProviderFetch } from "@/lib/todoist-server";
+import { readTodoistProviderResponse, todoistProviderFetch, todoistErrorResponse } from "@/lib/todoist-server";
 import { migrateLocalTask } from "@/lib/local-task-migration-server";
 
 export async function POST(request: NextRequest) {
@@ -26,6 +26,6 @@ export async function POST(request: NextRequest) {
   } catch (caught) {
     const error = caught as Error & { status?: number };
     console.warn("[TODOIST:LOCAL-MIGRATION] Upload failed", { status: error.status });
-    return Response.json({ error: error.message }, { status: error.status ?? 502 });
+    return todoistErrorResponse(error);
   }
 }
