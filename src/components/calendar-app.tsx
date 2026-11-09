@@ -18,6 +18,7 @@ import { scheduleFollowUp } from "@/lib/follow-up-calendar";
 import { isTaskRefreshSettingsTask } from "@/lib/task-refresh-settings";
 import { isFollowUpTask } from "@/lib/todoist-follow-ups";
 import { FollowUpManager } from "@/components/follow-up-manager";
+import { useTriageLink } from "@/hooks/use-triage-link";
 import { useFollowUps } from "@/hooks/use-follow-ups";
 import { FollowUpSetupDialog, FollowUpReviewDialog } from "@/components/follow-up-dialogs";
 import { type FollowUp } from "@/lib/follow-ups";
@@ -715,6 +716,7 @@ export function CalendarApp({ demo = false }: { demo?: boolean } = {}) {
     completeTask: completeExtractedTask,
     destinationProject: taskExtractionDestination,
     extractionProject,
+    refresh: refreshExtractedTasks,
     optimisticallyRemoveTask: optimisticallyRemoveExtractedTask,
     resolveTask: resolveExtractedTask,
     restoreTask: restoreExtractedTask,
@@ -1157,6 +1159,15 @@ export function CalendarApp({ demo = false }: { demo?: boolean } = {}) {
       setShowFollowUpReview(true);
     } catch (error) { toast.error(error instanceof Error ? error.message : "Follow-ups could not sync"); }
   };
+
+  useTriageLink(Boolean(todoistToken) && !todoistLoading && todoistProjects.length > 0, async (mode) => {
+    if (mode === "extracted") await refreshExtractedTasks();
+    setRightSidebarTab("todos");
+    triageAfterFollowUps.current = false;
+    setTaskTriageMode(mode);
+    setShowFollowUpReview(false);
+    setShowTaskTriage(true);
+  });
 
   const completeFollowUpReview = React.useCallback(() => {
     setShowFollowUpReview(false);
