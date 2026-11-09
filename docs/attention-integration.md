@@ -31,3 +31,34 @@ active. Polling pauses in BB's hidden windows and refreshes when they regain foc
 
 Validation: `node --test tests/attention-next-meeting-route.mjs`, plus the
 `src/lib/attention-next-meeting.test.ts` and existing next-calendar-call tests.
+
+## Calendar tracking
+
+`GET /api/integrations/calendar-whitespace` uses the same bearer key and a
+separate account selection: `ATTENTION_WHITESPACE_ACCOUNT_EMAIL` is currently
+`hullah3000@gmail.com`. Every non-deleted calendar in that account's Google
+calendarList is included, even if unselected, including shared/subscribed
+calendars listed under that account. Other connected Google accounts are not
+queried. Missing or ambiguous personal-account connections fail closed.
+The legacy `ATTENTION_WHITESPACE_CALENDAR_ID` variable is a fallback account email.
+
+Returns `accountEmail`, `calendarCount`, `weekly: {start,end,hours}`, and
+`recent: {start,end,hours}` for the rolling seven days and 24 hours ending at the
+same instant. `calendarId` remains as a legacy alias for the account email.
+Duplicate and overlapping timed events across calendars count once. Cancelled,
+self-declined and all-day events do not fill timed whitespace. Overnight gaps
+count. All calendar-list and event pages must finish successfully; errors fail
+closed. Results cache for 30 seconds.
+
+BB shows recent hours in red and weekly hours in gray, with a white ! on red
+when unavailable. Clicking Calendar tracking opens the Unplan PWA.
+
+## Current calendar activity
+
+`GET /api/integrations/current-activity` uses the same bearer key and configured
+accounts/selected calendars as next meeting. It returns `{active, checkedAt}`.
+Google ignores milliseconds in time filters, so this endpoint fetches events
+within one minute before/after now and checks exact event times locally:
+`start <= now < end`. Upcoming or ended events in that wider query do not count.
+All-day, cancelled and self-declined events do not count; solo timed activities do.
+Successful responses cache for 30 seconds; BB also caches planning reads for 15 seconds.

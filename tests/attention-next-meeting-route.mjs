@@ -15,6 +15,8 @@ function loadModule(path, overrides = {}) {
 }
 const links = loadModule("../src/lib/next-calendar-call.ts");
 const meeting = loadModule("../src/lib/attention-next-meeting.ts", { "./next-calendar-call": links });
+const whitespace = loadModule("../src/lib/calendar-whitespace.ts");
+const current = loadModule("../src/lib/current-activity.ts");
 const accountSelection = loadModule("../src/lib/attention-calendar-accounts.ts");
 
 test("calendar integration isolates owners, follows pages, respects visibility, caches and fails closed", async () => {
@@ -38,12 +40,15 @@ test("calendar integration isolates owners, follows pages, respects visibility, 
     if (!url.searchParams.has("pageToken")) return Response.json({ items: [{ ...event("Declined", 1), attendees: [{ self: true, responseStatus: "declined" }] }], nextPageToken: "next" });
     return Response.json({ items: [event("Team sync", 2), event("Later", 3)] });
   };
-  const { GET } = loadModule("../src/app/api/integrations/next-meeting/route.ts", {
+  const { integrationCalendar } = loadModule("../src/lib/attention-calendar-integration.ts", {
+    "@/lib/calendar-whitespace": whitespace,
+    "@/lib/current-activity": current,
     "@/lib/google-account-store": { listStoredGoogleAccounts: async (owner) => { assert.equal(owner, process.env.ATTENTION_GOOGLE_OWNER_ID); return [{ id: "account-one", status: "active" }]; } },
     "@/lib/google-auth-server": { serverGoogleAccessToken: async (owner, account) => { assert.equal(owner, process.env.ATTENTION_GOOGLE_OWNER_ID); assert.equal(account, "account-one"); return "private-google-token"; } },
     "@/lib/attention-next-meeting": meeting,
     "@/lib/attention-calendar-accounts": accountSelection,
   });
+  const GET = (request) => integrationCalendar(request, "meeting");
   const request = (token = key) => new Request("https://unplan.io/api/integrations/next-meeting", { headers: { Authorization: `Bearer ${token}` } });
   try {
     assert.equal((await GET(request("wrong"))).status, 401);
@@ -74,7 +79,9 @@ test("email configuration must resolve to exactly one owner", async () => {
   let rows = [];
   let tokenCalls = 0;
   globalThis.fetch = async () => Response.json({ items: [] });
-  const { GET } = loadModule("../src/app/api/integrations/next-meeting/route.ts", {
+  const { integrationCalendar } = loadModule("../src/lib/attention-calendar-integration.ts", {
+    "@/lib/calendar-whitespace": whitespace,
+    "@/lib/current-activity": current,
     "@/lib/google-account-store": {
       googleAuthPool: () => ({ query: async (_sql, values) => { assert.deepEqual(values, ["owner@example.test"]); return { rows }; } }),
       listStoredGoogleAccounts: async (owner) => { assert.equal(owner, "selected-owner"); return [{ id: "account", status: "active" }]; },
@@ -83,6 +90,7 @@ test("email configuration must resolve to exactly one owner", async () => {
     "@/lib/attention-next-meeting": meeting,
     "@/lib/attention-calendar-accounts": accountSelection,
   });
+  const GET = (request) => integrationCalendar(request, "meeting");
   const request = () => new Request("https://unplan.io/api/integrations/next-meeting?owner=caller-cannot-choose", { headers: { Authorization: `Bearer ${process.env.ATTENTION_API_KEY}` } });
   try {
     assert.equal((await GET(request())).status, 503);
@@ -116,7 +124,9 @@ test("searches both configured Google accounts and returns the earlier meeting a
     const start = now + (personal ? 1 : 5) * 3600000;
     return Response.json({ items: [{ summary: personal ? "Personal meeting" : "Work meeting", start: { dateTime: new Date(start).toISOString() }, end: { dateTime: new Date(start + 3600000).toISOString() }, hangoutLink: "https://meet.google.com/abc" }] });
   };
-  const { GET } = loadModule("../src/app/api/integrations/next-meeting/route.ts", {
+  const { integrationCalendar } = loadModule("../src/lib/attention-calendar-integration.ts", {
+    "@/lib/calendar-whitespace": whitespace,
+    "@/lib/current-activity": current,
     "@/lib/google-account-store": {
       googleAuthPool: () => ({ query: async (_sql, values) => {
         assert.deepEqual(values, [["haseab@f.inc", "hullah3000@gmail.com"], null]);
@@ -131,6 +141,7 @@ test("searches both configured Google accounts and returns the earlier meeting a
     "@/lib/attention-next-meeting": meeting,
     "@/lib/attention-calendar-accounts": accountSelection,
   });
+  const GET = (request) => integrationCalendar(request, "meeting");
   try {
     const response = await GET(new Request("https://unplan.io/api/integrations/next-meeting", { headers: { Authorization: `Bearer ${key}` } }));
     assert.equal(response.status, 200);
@@ -139,5 +150,137 @@ test("searches both configured Google accounts and returns the earlier meeting a
   } finally {
     globalThis.fetch = originalFetch;
     for (const [name, value] of Object.entries(previous)) { if (value === undefined) delete process.env[name]; else process.env[name] = value; }
+  }
+});
+
+test("whitespace reads every calendar under only the personal account, including unselected calendars", async () => {
+  const names = ["ATTENTION_API_KEY", "ATTENTION_GOOGLE_OWNER_ID", "ATTENTION_GOOGLE_EMAIL", "ATTENTION_GOOGLE_EMAILS", "ATTENTION_WHITESPACE_ACCOUNT_EMAIL", "ATTENTION_WHITESPACE_CALENDAR_ID"];
+  const previous = Object.fromEntries(names.map(name => [name,process.env[name]]));
+  const originalFetch = globalThis.fetch;
+  process.env.ATTENTION_API_KEY = "read-only-key-".repeat(4);
+  process.env.ATTENTION_GOOGLE_EMAILS = "work@example.test,personal@example.test";
+  process.env.ATTENTION_WHITESPACE_ACCOUNT_EMAIL = "personal@example.test";
+  delete process.env.ATTENTION_WHITESPACE_CALENDAR_ID;
+  let calls = 0;
+  let end;
+  const overrides = {
+    "@/lib/google-account-store": {googleAuthPool:()=>({query:async(_sql,values)=>{
+      assert.deepEqual(values,[["personal@example.test"],null]);
+      return {rows:[{id:"personal",ownerId:"personal-owner",email:"personal@example.test",status:"active"}]};
+    }})},
+    "@/lib/google-auth-server": {serverGoogleAccessToken: async(owner,id)=>{assert.equal(owner,"personal-owner");assert.equal(id,"personal");return "private-token";}},
+    "@/lib/attention-next-meeting": meeting,
+    "@/lib/attention-calendar-accounts": accountSelection,
+    "@/lib/calendar-whitespace": whitespace,
+    "@/lib/current-activity": current,
+  };
+  const {integrationCalendar} = loadModule("../src/lib/attention-calendar-integration.ts",overrides);
+  globalThis.fetch = async(input)=>{
+    calls++;
+    const url = new URL(String(input));
+    const secondary = "secondary@group.calendar.google.com";
+    const subscribed = "subscribed@group.calendar.google.com";
+    if (url.pathname.endsWith("/calendarList")) {
+      return Response.json(url.searchParams.has("pageToken")
+        ? {items:[{id:subscribed,selected:false},{id:"deleted",deleted:true}]}
+        : {items:[{id:"personal@example.test",primary:true},{id:secondary,selected:false}],nextPageToken:"more-calendars"});
+    }
+    const calendar = decodeURIComponent(url.pathname).split("/calendars/")[1]?.split("/events")[0];
+    assert.ok(["personal@example.test",secondary,subscribed].includes(calendar));
+    end = Date.parse(url.searchParams.get("timeMax"));
+    assert.equal(end-Date.parse(url.searchParams.get("timeMin")),168*3600000);
+    const [from,to] = calendar === "personal@example.test" ? [2,1] : calendar === secondary ? [5,2] : [4,3];
+    const event = {start:{dateTime:new Date(end-from*3600000).toISOString()},end:{dateTime:new Date(end-to*3600000).toISOString()}};
+    return Response.json({items:[event],...(!url.searchParams.has("pageToken")?{nextPageToken:"next"}:{})});
+  };
+  const request = ()=> new Request("https://unplan.io/api/integrations/calendar-whitespace",{headers:{Authorization:`Bearer ${process.env.ATTENTION_API_KEY}`}});
+  try {
+    const response = await integrationCalendar(request(),"whitespace");
+    assert.equal(response.status,200);
+    const body = await response.json();
+    assert.equal(body.calendarId,"personal@example.test");
+    assert.equal(body.weekly.hours,164);
+    assert.equal(body.accountEmail,"personal@example.test");
+    assert.equal(body.calendarCount,3);
+    assert.equal(body.recent.hours,20);
+    assert.equal(Date.parse(body.recent.end)-Date.parse(body.recent.start),24*3600000);
+    assert.equal(Date.parse(body.weekly.end),end);
+    assert.equal(calls,8);
+    await integrationCalendar(request(),"whitespace");
+    assert.equal(calls,8);
+    delete process.env.ATTENTION_WHITESPACE_ACCOUNT_EMAIL;
+    assert.equal((await integrationCalendar(request(),"whitespace")).status,503);
+    process.env.ATTENTION_WHITESPACE_ACCOUNT_EMAIL="other@example.test";
+    const failed = await integrationCalendar(request(),"whitespace");
+    assert.equal(failed.status,503);
+    assert.doesNotMatch(await failed.text(),/private-token|hours/);
+  } finally {
+    globalThis.fetch=originalFetch;
+    for(const [name,value] of Object.entries(previous)) {if(value===undefined)delete process.env[name];else process.env[name]=value;}
+  }
+});
+
+
+test("current activity uses a Google-safe window and checks exact event boundaries locally", async () => {
+  const names = ["ATTENTION_API_KEY", "ATTENTION_GOOGLE_OWNER_ID", "ATTENTION_GOOGLE_EMAIL", "ATTENTION_GOOGLE_EMAILS"];
+  const previous = Object.fromEntries(names.map(name => [name, process.env[name]]));
+  const originalFetch = globalThis.fetch;
+  const originalNow = Date.now;
+  const now = Date.parse("2026-11-09T08:34:42.123Z");
+  Date.now = () => now;
+  process.env.ATTENTION_API_KEY = "current-activity-test-key-".repeat(3);
+  process.env.ATTENTION_GOOGLE_OWNER_ID = "personal-owner";
+  delete process.env.ATTENTION_GOOGLE_EMAIL;
+  delete process.env.ATTENTION_GOOGLE_EMAILS;
+  const timed = (from, to) => ({
+    summary: "Building - Attention Queue",
+    start: { dateTime: new Date(now + from).toISOString() },
+    end: { dateTime: new Date(now + to).toISOString() },
+  });
+  try {
+    for (const [events, expected] of [
+      [[timed(-20 * 60000, 25 * 60000)], true],
+      [[timed(0, 60000)], true],
+      [[timed(1, 60000)], false],
+      [[timed(-60000, 0)], false],
+      [[timed(-60000, 1)], true],
+      [[{ start: { date: "2026-11-09" }, end: { date: "2026-11-10" } }], false],
+      [[{ ...timed(-60000, 60000), status: "cancelled" }], false],
+      [[{ ...timed(-60000, 60000), attendees: [{ self: true, responseStatus: "declined" }] }], false],
+    ]) {
+      let eventQuery;
+      globalThis.fetch = async (input) => {
+        const url = new URL(String(input));
+        if (url.pathname.endsWith("/calendarList")) return Response.json({ items: [{ id: "personal@example.test", primary: true, selected: true }] });
+        eventQuery = url;
+        // Google ignores milliseconds in these bounds. A collapsed window misses ongoing events.
+        const from = Math.floor(Date.parse(url.searchParams.get("timeMin")) / 1000) * 1000;
+        const to = Math.floor(Date.parse(url.searchParams.get("timeMax")) / 1000) * 1000;
+        return Response.json({ items: to <= from ? [] : events.filter(event =>
+          !event.start.dateTime || (Date.parse(event.start.dateTime) < to && Date.parse(event.end.dateTime) > from)
+        ) });
+      };
+      const { integrationCalendar } = loadModule("../src/lib/attention-calendar-integration.ts", {
+        "@/lib/calendar-whitespace": whitespace,
+        "@/lib/current-activity": current,
+        "@/lib/attention-next-meeting": meeting,
+        "@/lib/attention-calendar-accounts": accountSelection,
+        "@/lib/google-account-store": { listStoredGoogleAccounts: async () => [{ id: "personal-account", status: "active" }] },
+        "@/lib/google-auth-server": { serverGoogleAccessToken: async () => "private-token" },
+      });
+      const response = await integrationCalendar(new Request("https://unplan.io/api/integrations/current-activity", {
+        headers: { Authorization: `Bearer ${process.env.ATTENTION_API_KEY}` },
+      }), "current");
+      assert.equal(response.status, 200);
+      assert.deepEqual(await response.json(), { active: expected, checkedAt: new Date(now).toISOString() });
+      assert.ok(Date.parse(eventQuery.searchParams.get("timeMin")) < now);
+      assert.ok(Date.parse(eventQuery.searchParams.get("timeMax")) > now + 1000);
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+    Date.now = originalNow;
+    for (const [name, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[name]; else process.env[name] = value;
+    }
   }
 });
