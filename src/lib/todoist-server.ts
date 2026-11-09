@@ -1,7 +1,10 @@
 import { TODOIST_TOKEN_HEADER } from "@/lib/todoist";
 import type { NextRequest } from "next/server";
+import { TodoistRequestCoordinator } from "./todoist-request-coordinator";
+export { todoistErrorResponse } from "./todoist-request-coordinator";
 
-const TODOIST_API_URL = "https://api.todoist.com/api/v1";
+const shared = globalThis as typeof globalThis & { unplanTodoistRequests?: TodoistRequestCoordinator };
+const coordinator = shared.unplanTodoistRequests ??= new TodoistRequestCoordinator();
 
 export const todoistProviderFetch = (
   request: NextRequest,
@@ -13,15 +16,8 @@ export const todoistProviderFetch = (
   return todoistTokenFetch(token, path, init);
 };
 
-export const todoistTokenFetch = (token: string, path: string, init?: RequestInit) => fetch(`${TODOIST_API_URL}${path}`, {
-  ...init,
-  cache: "no-store",
-  headers: {
-    Authorization: `Bearer ${token}`,
-    ...(init?.body ? { "Content-Type": "application/json" } : {}),
-    ...init?.headers,
-  },
-});
+export const todoistTokenFetch = (token: string, path: string, init?: RequestInit) =>
+  coordinator.request(token, path, init);
 
 export const readTodoistProviderResponse = async (response: Response) => {
   const text = await response.text();

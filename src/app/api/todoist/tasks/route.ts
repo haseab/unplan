@@ -1,6 +1,6 @@
 import { enforceRateLimit } from "@/lib/request-rate-limit";
 import { collectTodoistPages, type TodoistPage } from "@/lib/todoist";
-import { readTodoistProviderResponse, todoistProviderFetch } from "@/lib/todoist-server";
+import { readTodoistProviderResponse, todoistProviderFetch, todoistErrorResponse } from "@/lib/todoist-server";
 import type { NextRequest } from "next/server";
 
 export async function GET(request: NextRequest) {
@@ -28,7 +28,7 @@ export async function GET(request: NextRequest) {
   } catch (caught) {
     const error = caught as Error & { status?: number };
     console.warn("[TODOIST:API] Task import failed", { status: error.status });
-    return Response.json({ error: error.message }, { status: error.status ?? 502 });
+    return todoistErrorResponse(error);
   }
 }
 
@@ -156,7 +156,7 @@ export async function POST(request: NextRequest) {
     } catch (caught) {
       const error = caught as Error & { status?: number };
       console.warn("[TODOIST:API] Task deletion failed", { status: error.status });
-      return Response.json({ error: error.message }, { status: error.status ?? 502 });
+      return todoistErrorResponse(error);
     }
   }
 
@@ -176,7 +176,7 @@ export async function POST(request: NextRequest) {
     } catch (caught) {
       const error = caught as Error & { status?: number };
       console.warn("[TODOIST:API] Task move failed", { status: error.status });
-      return Response.json({ error: error.message }, { status: error.status ?? 502 });
+      return todoistErrorResponse(error);
     }
   }
 
@@ -221,6 +221,6 @@ export async function POST(request: NextRequest) {
   } catch (caught) {
     const error = caught as Error & { status?: number };
     console.warn("[TODOIST:API] Task mutation failed", { action: body.action, status: error.status });
-    return Response.json({ error: error.message }, { status: error.status ?? 502 });
+    return todoistErrorResponse(error);
   }
 }

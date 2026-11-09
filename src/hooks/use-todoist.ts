@@ -95,6 +95,7 @@ export function useTodoist({
     React.useState<TodoistBucketSelectionRequest | null>(null);
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+  const taskRefreshRef = React.useRef<{ token: string; promise: Promise<TodoistTask[]> } | null>(null);
   const taskLoadVersionRef = React.useRef(0);
   const taskLoadControllerRef = React.useRef<AbortController | null>(null);
   const syncProtectedTaskIdsRef = React.useRef(syncProtectedTaskIds);
@@ -222,7 +223,7 @@ export function useTodoist({
     return nextTasks;
   }, []);
 
-  const refresh = React.useCallback(async (candidateToken?: string) => {
+  const loadTasks = React.useCallback(async (candidateToken?: string) => {
     const activeToken = candidateToken ?? token;
     if (!activeToken) {
       taskLoadVersionRef.current += 1;
@@ -315,6 +316,21 @@ export function useTodoist({
       if (loadVersion === taskLoadVersionRef.current) setLoading(false);
     }
   }, [hasProtectedPendingMutation, storeBucketProjectIds, token]);
+
+  // Focus, visibility, and calendar reconciliation can all request the same
+  // refresh. Join it instead of aborting and restarting every project import.
+  const refresh = React.useCallback((candidateToken?: string) => {
+    const activeToken = candidateToken ?? token;
+    const current = taskRefreshRef.current;
+    if (current?.token === activeToken) return current.promise;
+    const flight = { token: activeToken, promise: loadTasks(candidateToken) };
+    flight.promise = flight.promise.finally(() => {
+      if (taskRefreshRef.current === flight) taskRefreshRef.current = null;
+    });
+    taskRefreshRef.current = flight;
+    return flight.promise;
+  }, [loadTasks, token]);
+
 
   React.useEffect(() => {
     const frame = window.requestAnimationFrame(() => {
