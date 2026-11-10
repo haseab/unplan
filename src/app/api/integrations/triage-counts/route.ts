@@ -1,3 +1,4 @@
+import { triageRevision } from "@/lib/triage-revision";
 import { attentionTriageCounts } from "@/lib/attention-triage-counts";
 import { readTaskRefreshState, secretMatches } from "@/lib/task-refresh-server";
 
@@ -13,7 +14,7 @@ export async function GET(request: Request) {
   const token = process.env.TODOIST_API_KEY?.trim();
   if (!token) return json({ error: "Todoist is not configured" }, 503);
   const extraBucketIds = (process.env.ATTENTION_TODOIST_BUCKET_IDS ?? "").split(",").map((id) => id.trim()).filter(Boolean);
-  const key = JSON.stringify([token, extraBucketIds]);
+  const key = JSON.stringify([token, extraBucketIds, triageRevision()]);
   if (cached?.key === key && Date.now() - cached.at < 15_000) return json(cached.value);
   try {
     if (pending?.key !== key) {

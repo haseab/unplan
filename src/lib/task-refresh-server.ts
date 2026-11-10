@@ -29,6 +29,7 @@ export async function readTaskRefreshState(token: string) {
 export async function saveTaskRefreshSettings(token: string, settings: TaskRefreshSettings) {
   const state = await readTaskRefreshState(token);
   if (state.record && Date.parse(state.record.settings.updatedAt) > Date.parse(settings.updatedAt)) return state.record.settings;
+  settings = { ...settings, ...(settings.triage ? {} : state.record?.settings.triage ? { triage: state.record.settings.triage } : {}) };
   const payload = { content: "Unplan refresh settings", description: TASK_REFRESH_SETTINGS_PREFIX + JSON.stringify(settings) };
   if (state.record) {
     await requestTodoist(token, `/tasks/${encodeURIComponent(state.record.task.id)}`, { method: "POST", body: JSON.stringify(payload) });

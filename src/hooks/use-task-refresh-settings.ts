@@ -1,19 +1,24 @@
 "use client";
 
 import * as React from "react";
-import { TODOIST_TOKEN_HEADER } from "@/lib/todoist";
+import { TODOIST_PROJECT_STORAGE_KEY, TODOIST_TOKEN_HEADER } from "@/lib/todoist";
 import { parseTaskFolderActivity, TASK_FOLDER_ACTIVITY_STORAGE_KEY } from "@/lib/task-folder-activity";
-import { readTodoistFolderPreferences, TODOIST_GROUP_PARENTS_STORAGE_KEY } from "@/lib/todoist-folder-backup";
+import { readTodoistFolderPreferences, TODOIST_GROUP_PARENTS_STORAGE_KEY, TODOIST_CUSTOM_GROUPS_STORAGE_KEY, TODOIST_GROUP_ORDER_STORAGE_KEY } from "@/lib/todoist-folder-backup";
 import { TASK_FOLDERS_CHANGED } from "@/lib/task-folder-creation";
 import { parseTaskRefreshSettings, TASK_REFRESH_SETTINGS_UPDATED_AT, type TaskRefreshSettings } from "@/lib/task-refresh-settings";
+import { DEFAULT_TASK_CALENDAR_STORAGE_KEY } from "@/lib/task-calendar-preferences";
 import { readJsonResponse } from "@/lib/http-client";
 
-const fingerprint = (settings: TaskRefreshSettings) => JSON.stringify([settings.activity, settings.parents, settings.timeZone]);
+const fingerprint = (settings: TaskRefreshSettings) => JSON.stringify([settings.activity, settings.parents, settings.timeZone, settings.triage]);
+const readNames = (key: string): string[] => {
+  try { const v: unknown = JSON.parse(localStorage.getItem(key) ?? "[]"); return Array.isArray(v) ? v.filter((s): s is string => typeof s === "string") : []; } catch { return []; }
+};
 const readLocal = (): TaskRefreshSettings => {
   const activity = parseTaskFolderActivity(localStorage.getItem(TASK_FOLDER_ACTIVITY_STORAGE_KEY));
   const dates = Object.values(activity).map((entry) => Date.parse(entry.changedAt));
   const latest = Math.max(0, ...dates);
   return {
+    triage: { customGroups: readNames(TODOIST_CUSTOM_GROUPS_STORAGE_KEY), groupOrder: readNames(TODOIST_GROUP_ORDER_STORAGE_KEY), defaultCalendarId: localStorage.getItem(DEFAULT_TASK_CALENDAR_STORAGE_KEY), preferredProjectId: localStorage.getItem(TODOIST_PROJECT_STORAGE_KEY) },
     activity, parents: readTodoistFolderPreferences(localStorage).groupParents,
     timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
     updatedAt: localStorage.getItem(TASK_REFRESH_SETTINGS_UPDATED_AT) ?? new Date(latest).toISOString(),
@@ -23,6 +28,14 @@ const applyLocal = (settings: TaskRefreshSettings) => {
   localStorage.setItem(TASK_FOLDER_ACTIVITY_STORAGE_KEY, JSON.stringify(settings.activity));
   localStorage.setItem(TODOIST_GROUP_PARENTS_STORAGE_KEY, JSON.stringify(settings.parents));
   localStorage.setItem(TASK_REFRESH_SETTINGS_UPDATED_AT, settings.updatedAt);
+  if (settings.triage) {
+    localStorage.setItem(TODOIST_CUSTOM_GROUPS_STORAGE_KEY, JSON.stringify(settings.triage.customGroups));
+    localStorage.setItem(TODOIST_GROUP_ORDER_STORAGE_KEY, JSON.stringify(settings.triage.groupOrder));
+    if (settings.triage.defaultCalendarId) localStorage.setItem(DEFAULT_TASK_CALENDAR_STORAGE_KEY, settings.triage.defaultCalendarId);
+    else localStorage.removeItem(DEFAULT_TASK_CALENDAR_STORAGE_KEY);
+    if (settings.triage.preferredProjectId) localStorage.setItem(TODOIST_PROJECT_STORAGE_KEY, settings.triage.preferredProjectId);
+    else localStorage.removeItem(TODOIST_PROJECT_STORAGE_KEY);
+  }
   window.dispatchEvent(new Event(TASK_FOLDERS_CHANGED));
 };
 
@@ -44,7 +57,15 @@ export function useTaskRefreshSettings(token: string) {
         if (disposed) return;
         if (!response.serverManaged && !response.serverConfigured) return;
         const local = readLocal();
-        const remote = parseTaskRefreshSettings(response.settings);
+        let remote = parseTaskRefreshSettings(response.settings);
+        // Migrate existing browser preferences without replacing newer server folder rules.
+        if (remote && !remote.triage) {
+          const merged = { ...remote, triage: local.triage, updatedAt: new Date().toISOString() };
+          const saved = await readJsonResponse<SettingsResponse>(await fetch("/api/task-refresh/settings", {
+            method: "PUT", headers: { ...headers, "Content-Type": "application/json" }, body: JSON.stringify(merged),
+          }), "Could not share triage settings");
+          remote = parseTaskRefreshSettings(saved.settings);
+        }
         const localWins = !remote || Date.parse(local.updatedAt) > Date.parse(remote.updatedAt);
         let chosen = remote;
         if (localWins && (!remote || fingerprint(local) !== fingerprint(remote))) {
