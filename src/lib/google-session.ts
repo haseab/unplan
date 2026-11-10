@@ -1,3 +1,4 @@
+import { bbApiOwner } from "./bb-api-context";
 import "server-only";
 
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
@@ -12,6 +13,8 @@ const cookieOptions = { httpOnly: true, secure, sameSite: "lax" as const, path: 
 const tokenHash = (token: string) => createHash("sha256").update(token).digest("hex");
 
 export const readGoogleSession = async ({ renew = true }: { renew?: boolean } = {}) => {
+  const ownerId = bbApiOwner();
+  if (ownerId) return { ownerId, tokenHash: "bb-api" };
   const jar = await cookies();
   const token = jar.get(GOOGLE_SESSION_COOKIE)?.value;
   if (!token || !/^[A-Za-z0-9_-]{43}$/.test(token)) return null;

@@ -1,3 +1,4 @@
+import { calendarToDoItems, type ToDoCalendarEvent } from "./attention-to-do-list";
 import { currentActivity } from "@/lib/current-activity";
 import { calendarWhitespace, type CalendarOccupancyEvent } from "@/lib/calendar-whitespace";
 import { createHash, timingSafeEqual } from "node:crypto";
@@ -12,7 +13,7 @@ const json = (body: unknown, status = 200) => Response.json(body, {
 type Meeting = NonNullable<ReturnType<typeof attentionMeeting>>;
 const caches = new Map<string, { owner: string; at: number; body: unknown }>();
 
-export async function integrationCalendar(request: Request, mode: "meeting" | "whitespace" | "current") {
+export async function integrationCalendar(request: Request, mode: "meeting" | "whitespace" | "current" | "todo") {
   const expected = process.env.ATTENTION_API_KEY;
   const whitespaceAccount = mode === "whitespace" ? (process.env.ATTENTION_WHITESPACE_ACCOUNT_EMAIL ?? process.env.ATTENTION_WHITESPACE_CALENDAR_ID)?.trim().toLowerCase() : undefined;
   if (mode === "whitespace" && !whitespaceAccount) return json({ error: "Whitespace account is not configured" }, 503);
@@ -31,11 +32,12 @@ export async function integrationCalendar(request: Request, mode: "meeting" | "w
     const signal = AbortSignal.any([request.signal, AbortSignal.timeout(20_000)]);
     const meetings: Meeting[] = [];
     const events: CalendarOccupancyEvent[] = [];
+    const todoEvents: ToDoCalendarEvent[] = [];
     const start = now - 7 * 86400_000;
     // Google ignores milliseconds in timeMin/timeMax. Fetch a real window, then
     // currentActivity applies the exact start <= now < end check locally.
     const rangeStart = mode === "whitespace" ? start : mode === "current" ? now - 60_000 : now;
-    const rangeEnd = mode === "whitespace" ? now : mode === "current" ? now + 60_000 : now + 30 * 86400_000;
+    const rangeEnd = mode === "whitespace" ? now : mode === "current" ? now + 60_000 : now + (mode === "todo" ? 7 : 30) * 86400_000;
     let calendarCount = 0;
     for (const account of targets) {
       let token = await serverGoogleAccessToken(account.ownerId, account.id);
@@ -52,14 +54,14 @@ export async function integrationCalendar(request: Request, mode: "meeting" | "w
         if (!response.ok) throw new Error("Google Calendar unavailable");
         return response;
       }
-      const calendars: string[] = [];
+      const calendars: Array<{id: string; backgroundColor?: string; timeZone?: string}> = [];
       let calendarPage: string | undefined;
       for (let page = 0; page < 10; page++) {
-        const query = new URLSearchParams({ maxResults: "250", fields: "items(id,selected,primary,deleted),nextPageToken" });
+        const query = new URLSearchParams({ maxResults: "250", fields: "items(id,selected,primary,deleted,backgroundColor,timeZone),nextPageToken" });
         if (calendarPage) query.set("pageToken", calendarPage);
-        const data = await (await google(`/users/me/calendarList?${query}`)).json() as { items?: Array<{ id: string; selected?: boolean; primary?: boolean; deleted?: boolean }>; nextPageToken?: string };
+        const data = await (await google(`/users/me/calendarList?${query}`)).json() as { items?: Array<{ id: string; selected?: boolean; primary?: boolean; deleted?: boolean; backgroundColor?: string; timeZone?: string }>; nextPageToken?: string };
         for (const calendar of data.items ?? []) {
-          if (!calendar.deleted && (mode === "whitespace" || (calendar.selected ?? calendar.primary))) calendars.push(calendar.id);
+          if (!calendar.deleted && (mode === "whitespace" || (calendar.selected ?? calendar.primary))) calendars.push(calendar);
         }
         calendarPage = data.nextPageToken;
         if (!calendarPage) break;
@@ -75,10 +77,11 @@ export async function integrationCalendar(request: Request, mode: "meeting" | "w
             const query = new URLSearchParams({
               timeMin: new Date(rangeStart).toISOString(), timeMax: new Date(rangeEnd).toISOString(),
               singleEvents: "true", orderBy: "startTime", showDeleted: "false", maxResults: "100",
-              fields: "items(summary,status,eventType,start,end,hangoutLink,htmlLink,description,location,conferenceData,attendees(self,responseStatus)),nextPageToken",
+              fields: "items(id,summary,status,eventType,start,end,colorId,recurrence,recurringEventId,extendedProperties/private,hangoutLink,htmlLink,description,location,conferenceData,attendees(self,responseStatus)),nextPageToken",
             });
             if (eventPage) query.set("pageToken", eventPage);
-            const data = await (await google(`/calendars/${encodeURIComponent(calendar)}/events?${query}`)).json() as { items?: MeetingEvent[]; nextPageToken?: string };
+            const data = await (await google(`/calendars/${encodeURIComponent(calendar.id)}/events?${query}`)).json() as { items?: Array<MeetingEvent & ToDoCalendarEvent>; nextPageToken?: string };
+            if (mode === "todo") todoEvents.push(...(data.items ?? []).map((event) => ({ ...event, id: event.id ? JSON.stringify([account.id, calendar.id, event.id]) : undefined, calendarColor: calendar.backgroundColor, timeZone: calendar.timeZone })));
             if (mode !== "meeting") events.push(...(data.items ?? []));
             const first = (data.items ?? []).map((event) => attentionMeeting(event, now)).find((meeting) => meeting !== null);
             if (mode === "meeting" && first) { meetings.push(first); eventPage = undefined; break; }
@@ -91,7 +94,7 @@ export async function integrationCalendar(request: Request, mode: "meeting" | "w
     }
     const meeting = meetings.sort((a, b) => Date.parse(a.start) - Date.parse(b.start))[0] ?? null;
     if (mode !== "meeting" && calendarCount === 0) throw new Error("No calendars available");
-    const body = mode === "meeting" ? { meeting } : mode === "current"
+    const body = mode === "todo" ? { tasks: calendarToDoItems(todoEvents, now), checkedAt: new Date(now).toISOString() } : mode === "meeting" ? { meeting } : mode === "current"
       ? currentActivity(events, now) : {
         calendarId: whitespaceAccount, // Legacy field; this identifies the account, not one calendar.
         accountEmail: whitespaceAccount,
