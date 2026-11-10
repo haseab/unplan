@@ -1,3 +1,4 @@
+import { bbApiOwner } from "./bb-api-context";
 import "server-only";
 
 import { GOOGLE_ACCOUNT_HEADER } from "./google-auth-shared";
@@ -10,7 +11,7 @@ const GOOGLE_API_ROOT = "https://www.googleapis.com/calendar/v3";
 
 export const hasGoogleAuthorization = (request: Request) =>
   Boolean(request.headers.get(GOOGLE_ACCOUNT_HEADER)
-    && request.headers.get("cookie")?.split(";").some((part) => part.trim().startsWith(`${GOOGLE_SESSION_COOKIE}=`)));
+    && (bbApiOwner() || request.headers.get("cookie")?.split(";").some((part) => part.trim().startsWith(`${GOOGLE_SESSION_COOKIE}=`))));
 
 export const googleFetch = async (request: Request, path: string, init: RequestInit = {}) => {
   if (!["GET", "HEAD"].includes(init.method?.toUpperCase() ?? "GET")

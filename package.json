@@ -48,7 +48,8 @@
     "test:todoist-task-creation:browser": "node tests/todoist-task-creation.mjs",
     "test:task-refresh": "tsc src/lib/task-refresh.test.ts --outDir /tmp/unplan-task-refresh-tests --module commonjs --target es2022 --esModuleInterop --skipLibCheck && node --test /tmp/unplan-task-refresh-tests/src/lib/task-refresh.test.js",
     "test:priority-review": "tsc src/lib/task-review-date.test.ts src/lib/priority-task-review.test.ts src/lib/priority-review-keyboard.test.ts --outDir /tmp/unplan-priority-review-tests --module commonjs --target es2022 --esModuleInterop --skipLibCheck && TZ=America/Los_Angeles NODE_PATH=./node_modules node --test /tmp/unplan-priority-review-tests/task-review-date.test.js /tmp/unplan-priority-review-tests/priority-task-review.test.js /tmp/unplan-priority-review-tests/priority-review-keyboard.test.js",
-    "test:triage": "tsc src/lib/triage-service.test.ts src/lib/triage-calendar-server.test.ts --outDir /tmp/unplan-triage-tests --module commonjs --target es2022 --esModuleInterop --skipLibCheck && NODE_PATH=./node_modules node --conditions=react-server --test /tmp/unplan-triage-tests/triage-service.test.js /tmp/unplan-triage-tests/triage-calendar-server.test.js"
+    "test:triage": "tsc src/lib/triage-service.test.ts src/lib/triage-calendar-server.test.ts --outDir /tmp/unplan-triage-tests --module commonjs --target es2022 --esModuleInterop --skipLibCheck && NODE_PATH=./node_modules node --conditions=react-server --test /tmp/unplan-triage-tests/triage-service.test.js /tmp/unplan-triage-tests/triage-calendar-server.test.js",
+    "test:bb-api": "tsc src/lib/bb-api-policy.test.ts src/lib/attention-to-do-list.test.ts --outDir /tmp/unplan-bb-api-tests --module commonjs --target es2022 --esModuleInterop --skipLibCheck && NODE_PATH=./node_modules node --test /tmp/unplan-bb-api-tests/bb-api-policy.test.js /tmp/unplan-bb-api-tests/attention-to-do-list.test.js"
   },
   "dependencies": {
     "@next/env": "16.4.5",

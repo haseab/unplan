@@ -7,10 +7,18 @@ import ts from "typescript";
 const require = createRequire(import.meta.url);
 function loadModule(path, overrides = {}) {
   const source = ts.transpileModule(readFileSync(new URL(path, import.meta.url), "utf8"), {
-    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true },
   }).outputText;
   const loaded = { exports: {} };
-  new Function("require", "module", "exports", source)((name) => overrides[name] ?? require(name), loaded, loaded.exports);
+  new Function("require", "module", "exports", source)((name) => {
+    if (overrides[name] !== undefined) return overrides[name];
+    if (name === "server-only") return {};
+    const alias = name.startsWith("./") ? `@/lib/${name.slice(2)}` : name;
+    if (overrides[alias] !== undefined) return overrides[alias];
+    if (name.startsWith("@/")) return loadModule(`../src/${name.slice(2)}.ts`, overrides);
+    if (name.startsWith(".")) return loadModule(new URL(`${name}.ts`, new URL(path, import.meta.url)).href, overrides);
+    return require(name);
+  }, loaded, loaded.exports);
   return loaded.exports;
 }
 const links = loadModule("../src/lib/next-calendar-call.ts");
