@@ -1,5 +1,6 @@
 "use client";
 
+import { DEFAULT_TASK_CALENDAR_STORAGE_KEY } from "@/lib/task-calendar-preferences";
 import { AppInformationLinks } from "@/components/app-information-links";
 import { GoogleConnectButton } from "@/components/google-connect-button";
 import { useRouter } from "next/navigation";
@@ -468,7 +469,7 @@ type TodoistCalendarDropPoint = {
 
 const hours = Array.from({ length: 24 }, (_, index) => index);
 const DEFAULT_CALENDAR_STORAGE_KEY = "unplan:default-event-calendar";
-const DEFAULT_TASK_CALENDAR_STORAGE_KEY = "unplan:default-task-calendar";
+
 const EVENT_CREATION_DRAG_THRESHOLD = 5;
 const CROSS_SERVICE_DRAG_THRESHOLD = 12;
 const TODOIST_KEYBOARD_MOVE_TOAST_DEBOUNCE_MS = 350;
@@ -1048,6 +1049,13 @@ export function CalendarApp({ demo = false }: { demo?: boolean } = {}) {
     () => findTechnicalitiesCalendar(writableCalendars),
     [writableCalendars],
   );
+  React.useEffect(() => {
+    const reload = () => {
+      setPreferredTaskCalendarId(window.localStorage.getItem(DEFAULT_TASK_CALENDAR_STORAGE_KEY));
+    };
+    window.addEventListener(TASK_FOLDERS_CHANGED, reload);
+    return () => window.removeEventListener(TASK_FOLDERS_CHANGED, reload);
+  }, []);
   const defaultTaskCalendar = React.useMemo(
     () => writableCalendars.find((calendar) => calendar.id === preferredTaskCalendarId)
       ?? technicalitiesCalendar
@@ -1210,6 +1218,7 @@ export function CalendarApp({ demo = false }: { demo?: boolean } = {}) {
   const setDefaultTaskCalendarId = React.useCallback((calendarId: string) => {
     setPreferredTaskCalendarId(calendarId);
     window.localStorage.setItem(DEFAULT_TASK_CALENDAR_STORAGE_KEY, calendarId);
+    window.dispatchEvent(new Event(TASK_FOLDERS_CHANGED));
   }, []);
 
   const clearEventSelection = React.useCallback(() => {

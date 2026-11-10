@@ -37,6 +37,7 @@ const readStoredNames = (key: string) => {
 
 const writeStoredNames = (key: string, names: Iterable<string>) => {
   window.localStorage.setItem(key, JSON.stringify([...names]));
+  notifyFoldersChanged();
 };
 
 const readStoredParents = () => {
@@ -234,6 +235,13 @@ export function useTodoistCustomGroups() {
   React.useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- Restore local storage after hydration.
     setGroups(readStoredNames(TODOIST_CUSTOM_GROUPS_STORAGE_KEY));
+    const reload = () => setGroups(readStoredNames(TODOIST_CUSTOM_GROUPS_STORAGE_KEY));
+    window.addEventListener(TASK_FOLDERS_CHANGED, reload);
+    window.addEventListener("storage", reload);
+    return () => {
+      window.removeEventListener(TASK_FOLDERS_CHANGED, reload);
+      window.removeEventListener("storage", reload);
+    };
   }, []);
 
   return [groups, setGroups] as const;

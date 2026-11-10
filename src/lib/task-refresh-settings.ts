@@ -1,10 +1,11 @@
+import type { TriagePreferences } from "./triage-contract";
 import { parseTaskFolderActivity, type TaskFolderActivity } from "./task-folder-activity";
 import type { TodoistGroupParents } from "./todoist-calendar";
 import type { TodoistTask } from "./todoist";
 
 export const TASK_REFRESH_SETTINGS_PREFIX = "unplan:task-refresh-settings:v1\n";
 export const TASK_REFRESH_SETTINGS_UPDATED_AT = "unplan:task-refresh-settings:updated-at:v1";
-export type TaskRefreshSettings = { activity: TaskFolderActivity; parents: TodoistGroupParents; timeZone: string; updatedAt: string };
+export type TaskRefreshSettings = { activity: TaskFolderActivity; parents: TodoistGroupParents; timeZone: string; updatedAt: string; triage?: TriagePreferences };
 export const isTaskRefreshSettingsTask = (task: TodoistTask) => task.description.startsWith(TASK_REFRESH_SETTINGS_PREFIX);
 
 export function parseTaskRefreshSettings(value: unknown): TaskRefreshSettings | null {
@@ -16,7 +17,9 @@ export function parseTaskRefreshSettings(value: unknown): TaskRefreshSettings | 
   if (!parents || typeof parents !== "object" || Array.isArray(parents)) return null;
   const entries = Object.entries(parents);
   if (entries.some(([key, parent]) => !key || (parent !== null && typeof parent !== "string"))) return null;
-  return { activity: parseTaskFolderActivity(JSON.stringify(input.activity ?? {})), parents: Object.fromEntries(entries), timeZone: input.timeZone, updatedAt: input.updatedAt };
+  const triage = input.triage;
+  if (triage && (!Array.isArray(triage.customGroups) || !Array.isArray(triage.groupOrder) || [...triage.customGroups, ...triage.groupOrder].some((g) => typeof g !== "string" || g.length > 200) || (triage.defaultCalendarId !== null && typeof triage.defaultCalendarId !== "string") || (triage.preferredProjectId !== null && typeof triage.preferredProjectId !== "string"))) return null;
+  return { ...(triage ? { triage } : {}), activity: parseTaskFolderActivity(JSON.stringify(input.activity ?? {})), parents: Object.fromEntries(entries), timeZone: input.timeZone, updatedAt: input.updatedAt };
 }
 
 export function taskRefreshSettingsFromTask(task: TodoistTask): TaskRefreshSettings | null {

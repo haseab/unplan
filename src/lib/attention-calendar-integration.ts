@@ -1,10 +1,10 @@
 import { currentActivity } from "@/lib/current-activity";
 import { calendarWhitespace, type CalendarOccupancyEvent } from "@/lib/calendar-whitespace";
 import { createHash, timingSafeEqual } from "node:crypto";
-import { googleAuthPool, listStoredGoogleAccounts } from "@/lib/google-account-store";
+import { attentionCalendarTargets } from "./attention-calendar-targets";
 import { serverGoogleAccessToken } from "@/lib/google-auth-server";
 import { attentionMeeting, type MeetingEvent } from "@/lib/attention-next-meeting";
-import { AttentionAccountSelectionError, selectAttentionAccounts, type AttentionCalendarAccount } from "@/lib/attention-calendar-accounts";
+import { AttentionAccountSelectionError } from "@/lib/attention-calendar-accounts";
 
 const json = (body: unknown, status = 200) => Response.json(body, {
   status, headers: { "Cache-Control": "no-store" },
@@ -26,25 +26,7 @@ export async function integrationCalendar(request: Request, mode: "meeting" | "w
   const cache = caches.get(mode);
   if (cache?.owner === identity && Date.now() - cache.at < 30_000) return json(cache.body);
   try {
-    let targets: AttentionCalendarAccount[];
-    if (emails.length) {
-      if (emails.length > 10) throw new Error("Account limit reached");
-      const result = await googleAuthPool().query<AttentionCalendarAccount>(
-        'SELECT owner_id AS "ownerId", google_id AS id, email, status FROM unplan_google_accounts WHERE LOWER(email) = ANY($1::text[]) AND ($2::text IS NULL OR owner_id = $2)',
-        [emails, owner ?? null],
-      );
-      targets = selectAttentionAccounts(result.rows, emails);
-    } else {
-      let ownerId = owner;
-      if (!ownerId) {
-        const result = await googleAuthPool().query<{ owner_id: string }>("SELECT DISTINCT owner_id FROM unplan_google_accounts WHERE LOWER(email) = LOWER($1)", [email]);
-        if (result.rows.length !== 1) throw new Error("Configure an unambiguous Google account owner");
-        ownerId = result.rows[0].owner_id;
-      }
-      const accounts = await listStoredGoogleAccounts(ownerId);
-      if (!accounts.length || accounts.some((account) => account.status !== "active") || accounts.length > 10) throw new Error("Reconnect Google in Unplan");
-      targets = accounts.map((account) => ({ ...account, ownerId }));
-    }
+    const targets = await attentionCalendarTargets(whitespaceAccount);
     const now = Date.now();
     const signal = AbortSignal.any([request.signal, AbortSignal.timeout(20_000)]);
     const meetings: Meeting[] = [];

@@ -1,5 +1,7 @@
 "use client";
 
+import { TASK_FOLDERS_CHANGED } from "@/lib/task-folder-creation";
+
 import * as React from "react";
 import { useLocalTaskMigration } from "./use-local-task-migration";
 import { withoutLocalMigrationDuplicates } from "@/lib/local-task-migration";
@@ -771,6 +773,7 @@ export function useTodoist({
     else window.localStorage.removeItem(TODOIST_PROJECT_STORAGE_KEY);
     if (normalizedSectionId) window.localStorage.setItem(TODOIST_SECTION_STORAGE_KEY, normalizedSectionId);
     else window.localStorage.removeItem(TODOIST_SECTION_STORAGE_KEY);
+    window.dispatchEvent(new Event(TASK_FOLDERS_CHANGED));
     if (!projectChanged) return;
     storeBucketProjectIds([...bucketProjectIdsRef.current, projectId]);
     const loadVersion = ++taskLoadVersionRef.current;
