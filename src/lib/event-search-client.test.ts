@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { CalendarEvent, CalendarSource } from "./calendar-types";
-import { searchGoogleEvents } from "./event-search-client";
+import { IncompleteEventSearchError, searchGoogleEvents } from "./event-search-client";
 import { createGoogleCalendarSourceId } from "./google-source-id";
 
 const calendar = (accountId: string): CalendarSource => ({
@@ -25,7 +25,7 @@ const resultEvent: CalendarEvent = {
   title: "Planning review",
 };
 
-test("multi-account search returns healthy results when one account fails", async () => {
+test("multi-account search rejects incomplete results when one account fails", async () => {
   const originalFetch = globalThis.fetch;
   const originalWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
   const storage = new Map<string, string>([[
@@ -47,15 +47,19 @@ test("multi-account search returns healthy results when one account fails", asyn
   };
 
   try {
-    const results = await searchGoogleEvents(
+    await assert.rejects(searchGoogleEvents(
       "planning",
       [calendar("failed-account"), calendar("healthy-account")],
       new Date("2026-08-23T00:00:00.000Z"),
       new AbortController().signal,
       "exact",
       "past",
-    );
-    assert.deepEqual(results.map(({ id }) => id), ["healthy-event"]);
+    ), (error: unknown) => {
+      assert.ok(error instanceof IncompleteEventSearchError);
+      assert.match(error.message, /Account unavailable/);
+      assert.deepEqual(error.events.map(event => event.id), ["healthy-event"]);
+      return true;
+    });
   } finally {
     globalThis.fetch = originalFetch;
     if (originalWindow) Object.defineProperty(globalThis, "window", originalWindow);
@@ -100,6 +104,11 @@ test("Google search requests the selected side of now", async () => {
     assert.equal(requests[0].has("timeMax"), false);
 
     requests.length = 0;
+    await searchGoogleEvents("planning", [calendar("healthy-account")], now, new AbortController().signal, "exact", "fortnight");
+    assert.equal(requests.length, 1);
+    assert.equal(requests[0].get("timeMax"), now.toISOString());
+    assert.equal(requests[0].get("timeMin"), new Date(now.getTime() - 14 * 86400000).toISOString());
+    requests.length = 0;
     await searchGoogleEvents(
       "planning",
       [calendar("healthy-account")],
@@ -111,6 +120,8 @@ test("Google search requests the selected side of now", async () => {
     assert.equal(requests.length, 2);
     assert.equal(requests.some((request) => request.has("timeMin")), true);
     assert.equal(requests.some((request) => request.has("timeMax")), true);
+    globalThis.fetch = async () => Response.json({ events: [resultEvent], errors: [{ message: "Calendar unavailable" }] });
+    await assert.rejects(searchGoogleEvents("planning", [calendar("healthy-account")], now, new AbortController().signal, "exact", "past"), /Calendar unavailable/);
   } finally {
     globalThis.fetch = originalFetch;
     if (originalWindow) Object.defineProperty(globalThis, "window", originalWindow);

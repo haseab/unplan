@@ -187,7 +187,8 @@ import {
   buildEventDeletionPlan,
   type RecurringDeleteScope,
 } from "@/lib/recurring-delete";
-import { searchGoogleEvents } from "@/lib/event-search-client";
+import { mergeSearchSnapshots, selectSearchMatches } from "@/lib/search-bulk-edit";
+import { IncompleteEventSearchError, searchGoogleEvents } from "@/lib/event-search-client";
 import {
   type EventSearchTimeRange,
   mergeCalendarSearchResults,
@@ -1894,18 +1895,20 @@ export function CalendarApp({ demo = false }: { demo?: boolean } = {}) {
       timeRange: EventSearchTimeRange,
       signal: AbortSignal,
       onPartialResults: (results: CalendarEvent[]) => void,
+      sourceCalendarId?: string,
     ) => {
       const searchedAt = new Date();
       const loadedResults = searchLoadedEvents(
-        eventsRef.current,
+        sourceCalendarId ? eventsRef.current.filter(event => event.calendarId === sourceCalendarId) : eventsRef.current,
         query,
         searchedAt,
         timeRange,
       );
       const googleCalendars = google.connected
-        ? calendars.filter((calendar) => calendar.provider === "google")
+        ? calendars.filter((calendar) => calendar.provider === "google" && (!sourceCalendarId || calendar.id === sourceCalendarId))
         : [];
       if (!googleCalendars.length) return loadedResults;
+      onPartialResults(loadedResults);
 
       const calendarKey = googleCalendars
         .map((calendar) => calendar.id)
@@ -1972,24 +1975,31 @@ export function CalendarApp({ demo = false }: { demo?: boolean } = {}) {
         exactResults = searchLoadedEvents(events, query, searchedAt, timeRange);
         reportResults();
         return exactResults;
+      }, (error: unknown) => {
+        if (error instanceof IncompleteEventSearchError) {
+          exactResults = searchLoadedEvents(error.events, query, searchedAt, timeRange);
+          reportResults();
+        }
+        throw error;
       });
       const broadPromise = cacheEntry.promise.then((events) => {
         broadResults = searchLoadedEvents(events, query, searchedAt, timeRange);
         reportResults();
         return broadResults;
+      }, (error: unknown) => {
+        if (error instanceof IncompleteEventSearchError) {
+          broadResults = searchLoadedEvents(error.events, query, searchedAt, timeRange);
+          reportResults();
+        }
+        throw error;
       });
       const [exactOutcome, broadOutcome] = await Promise.allSettled([
         exactPromise,
         broadPromise,
       ]);
       if (signal.aborted) throw new DOMException("Search aborted", "AbortError");
-      if (
-        exactOutcome.status === "rejected"
-        && broadOutcome.status === "rejected"
-        && loadedResults.length === 0
-      ) {
-        throw exactOutcome.reason;
-      }
+      if (exactOutcome.status === "rejected") throw exactOutcome.reason;
+      if (broadOutcome.status === "rejected") throw broadOutcome.reason;
       return mergeCalendarSearchResults(
         [loadedResults, exactResults, broadResults],
         searchedAt,
@@ -2019,6 +2029,26 @@ export function CalendarApp({ demo = false }: { demo?: boolean } = {}) {
     setSelected(new Set([event.id]));
     setWeekStart(targetDate);
   }, [setEventSearchOpen, weekStart]);
+
+  const editSearchMatches = React.useCallback((matches: CalendarEvent[]) => {
+    const selection = selectSearchMatches(eventsRef.current, matches, calendars);
+    if (!selection.length) {
+      toast.error("No editable matches. Search again or choose a writable calendar.");
+      return;
+    }
+    dismissCreationDraft();
+    setEventDetailsPreview(null);
+    setEventSearchOpen(false);
+    setShowVisibleEventFinder(false);
+    setEvents(current => mergeSearchSnapshots(current, selection));
+    setSelected(new Set(selection.map(event => event.id)));
+    selectionAnchorRef.current = calendarEventKey(selection[0].calendarId, selection[0].id);
+    setActiveSelectionSurface("calendar");
+    setRightSidebarTab("events");
+    window.requestAnimationFrame(() => {
+      document.querySelector<HTMLElement>(".event-sidebar-panel")?.focus({ preventScroll: true });
+    });
+  }, [calendars, dismissCreationDraft, setEventSearchOpen]);
 
   const navigateToSearchTask = React.useCallback((task: TodoistTask) => {
     setEventSearchOpen(false);
@@ -3988,6 +4018,8 @@ export function CalendarApp({ demo = false }: { demo?: boolean } = {}) {
         event.preventDefault();
         if (event.key === "ArrowLeft") {
           focusCalendarSurface();
+        } else if (rightSidebarTab === "events" && selected.size) {
+          document.querySelector<HTMLElement>(".event-sidebar-panel")?.focus({ preventScroll: true });
         } else if (rightSidebarTab === "todos") {
           focusSidebarSurface();
         } else {
@@ -5064,7 +5096,7 @@ export function CalendarApp({ demo = false }: { demo?: boolean } = {}) {
     const cursorUpdated = cursorOriginal && updatedById.get(cursorOriginal.id);
     if (cursorUpdated) selectionAnchorRef.current = calendarEventKey(cursorUpdated.calendarId, cursorUpdated.id);
 
-    setEvents((current) => current.map((event) =>
+    setEvents((current) => mergeSearchSnapshots(current, originals).map((event) =>
       updatedById.get(event.id) ?? event,
     ));
     if (destinationCalendar) {
@@ -5112,16 +5144,9 @@ export function CalendarApp({ demo = false }: { demo?: boolean } = {}) {
           : "Saving event changes…",
       },
     );
-    setRightSidebarTab("todos");
-    setActiveSelectionSurface("calendar");
-    const cursor = cursorUpdated ?? updatedEvents[0];
-    if (cursor) {
-      const cursorKey = calendarEventKey(cursor.calendarId, cursor.id);
-      selectionAnchorRef.current = cursorKey;
-      window.requestAnimationFrame(() => focusRenderedEvent(cursorKey, false));
-    }
+    // Keep the selection editor and focus available for the next field shortcut.
     return true;
-  }, [calendars, chooseGuestNotifications, clearEventMutationOrigins, confirmBulkAction, finishOperation, focusRenderedEvent, persistMovedEvents, rememberEventMutationOrigins, toastDuration]);
+  }, [calendars, chooseGuestNotifications, clearEventMutationOrigins, confirmBulkAction, finishOperation, persistMovedEvents, rememberEventMutationOrigins, toastDuration]);
 
   const keyboardMoveDependenciesRef = React.useRef<Record<string, unknown> | null>(null);
   React.useEffect(() => {
@@ -6431,6 +6456,7 @@ export function CalendarApp({ demo = false }: { demo?: boolean } = {}) {
               <span>Find visible calendar events</span><kbd>⌘ F</kbd>
               <span>Next / previous visible search result</span><span><kbd>↵</kbd> <kbd>⇧ ↵</kbd></span>
               <span>Select visible search result</span><kbd>⌘ ↵</kbd>
+              <span>Edit search matches in sidebar</span><kbd>⌘ →</kbd>
               <span>Search all events and tasks</span><kbd>⌘ K</kbd>
               <span>Open settings</span><kbd>⌘ ,</kbd>
               <span>Review extracted or event tasks</span><kbd>⌘ E</kbd>
@@ -6454,6 +6480,7 @@ export function CalendarApp({ demo = false }: { demo?: boolean } = {}) {
       )}
       {showVisibleEventFinder && (
         <VisibleEventFinder
+          onEditMatches={editSearchMatches}
           activeEventKey={selectedEvents.length === 1
             ? calendarEventKey(selectedEvents[0].calendarId, selectedEvents[0].id)
             : null}
@@ -6478,6 +6505,13 @@ export function CalendarApp({ demo = false }: { demo?: boolean } = {}) {
       )}
       {showEventSearch && (
         <EventSearchDialog
+          onEditMatches={editSearchMatches}
+          onBulkTasksCalendar={(tasks, calendarId) => {
+            const latestById = new Map(visibleTodoistTasks.map(task => [task.id, task]));
+            const latest = tasks.flatMap(task => latestById.get(task.id) ?? []);
+            if (latest.length !== tasks.length) return Promise.reject(new Error("A task changed since this review. Search again before applying."));
+            return changeSidebarTodoistTasksCalendar(latest, calendarId, () => undefined);
+          }}
           calendars={calendars}
           onOpenChange={setEventSearchOpen}
           onSelectEvent={navigateToSearchEvent}

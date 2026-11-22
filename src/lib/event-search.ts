@@ -1,7 +1,7 @@
 import type { CalendarEvent } from "./calendar-types";
 import { matchesSearchKeywords, searchKeywords } from "./keyword-search";
 
-export type EventSearchTimeRange = "all" | "future" | "past";
+export type EventSearchTimeRange = "all" | "future" | "past" | "fortnight";
 
 const searchableEventText = (event: CalendarEvent) => [
   event.title,
@@ -25,6 +25,7 @@ const matchesTimeRange = (
   timeRange: EventSearchTimeRange,
 ) => {
   if (timeRange === "all") return true;
+  if (timeRange === "fortnight") return new Date(event.end).getTime() > now.getTime() - 14 * 86400000 && new Date(event.start).getTime() < now.getTime();
   const isPast = new Date(event.end).getTime() <= now.getTime();
   return timeRange === "past" ? isPast : !isPast;
 };

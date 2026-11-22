@@ -3,6 +3,8 @@
 import { format, parseISO } from "date-fns";
 import { CalendarDays, CornerDownLeft, ListTodo, LoaderCircle, MapPin, Search, X } from "lucide-react";
 import * as React from "react";
+import { isSearchMatchesEditShortcut } from "@/lib/search-bulk-edit";
+import { SearchTaskBulkEditor } from "@/components/search-task-bulk-editor";
 import type { CalendarEvent, CalendarSource } from "@/lib/calendar-types";
 import type { EventSearchTimeRange } from "@/lib/event-search";
 import type { TodoistTask } from "@/lib/todoist";
@@ -11,10 +13,12 @@ import {
   type TodoistTaskSearchResult,
 } from "@/lib/todoist-calendar";
 
-type SearchStatus = "idle" | "loading" | "ready" | "error";
+type SearchStatus = "idle" | "loading" | "ready";
 
 type EventSearchDialogProps = {
   calendars: CalendarSource[];
+  onEditMatches: (events: CalendarEvent[]) => void;
+  onBulkTasksCalendar: (tasks: TodoistTask[], calendarId: string) => Promise<boolean>;
   onOpenChange: (open: boolean) => void;
   onSelectEvent: (event: CalendarEvent) => void;
   onSelectTask: (task: TodoistTask) => void;
@@ -24,6 +28,7 @@ type EventSearchDialogProps = {
     timeRange: EventSearchTimeRange,
     signal: AbortSignal,
     onPartialResults: (results: CalendarEvent[]) => void,
+    sourceCalendarId?: string,
   ) => Promise<CalendarEvent[]>;
   tasks: TodoistTask[];
 };
@@ -41,6 +46,7 @@ const TIME_RANGES: Array<{ label: string; value: EventSearchTimeRange }> = [
   { label: "All", value: "all" },
   { label: "Future", value: "future" },
   { label: "Past", value: "past" },
+  { label: "Last 2 weeks", value: "fortnight" },
 ];
 
 const eventDateLabel = (event: CalendarEvent) => {
@@ -52,6 +58,8 @@ const eventDateLabel = (event: CalendarEvent) => {
 
 export function EventSearchDialog({
   calendars,
+  onEditMatches,
+  onBulkTasksCalendar,
   onOpenChange,
   onSelectEvent,
   onSelectTask,
@@ -59,6 +67,8 @@ export function EventSearchDialog({
   searchEvents,
   tasks,
 }: EventSearchDialogProps) {
+  const [reviewing, setReviewing] = React.useState<"tasks" | null>(null);
+  const [sourceCalendarId, setSourceCalendarId] = React.useState("");
   const [activeIndex, setActiveIndex] = React.useState(-1);
   const [error, setError] = React.useState("");
   const [query, setQuery] = React.useState("");
@@ -82,7 +92,7 @@ export function EventSearchDialog({
   }, [open]);
 
   React.useEffect(() => {
-    if (!open) return;
+    if (!open || reviewing) return;
     const normalizedQuery = query.trim();
     if (normalizedQuery.length < MINIMUM_QUERY_LENGTH) return;
 
@@ -101,17 +111,18 @@ export function EventSearchDialog({
           ...taskResults,
         ];
         setResults(nextResults);
+        const visibleResults = nextResults.filter(result => !sourceCalendarId || (result.kind === "event" && result.event.calendarId === sourceCalendarId));
         setActiveIndex(() => {
           const preservedIndex = activeResultKeyRef.current
-            ? nextResults.findIndex(
+            ? visibleResults.findIndex(
               (result) => resultKey(result) === activeResultKeyRef.current,
             )
             : -1;
           const nextIndex = preservedIndex >= 0
             ? preservedIndex
-            : nextResults.length ? 0 : -1;
+            : visibleResults.length ? 0 : -1;
           activeResultKeyRef.current = nextIndex >= 0
-            ? resultKey(nextResults[nextIndex])
+            ? resultKey(visibleResults[nextIndex])
             : null;
           return nextIndex;
         });
@@ -123,23 +134,22 @@ export function EventSearchDialog({
         timeRange,
         controller.signal,
         (partialResults) => applyResults(partialResults, false),
+        sourceCalendarId || undefined,
       )
         .then((nextResults) => {
           applyResults(nextResults, true);
         })
         .catch((searchError: unknown) => {
           if (controller.signal.aborted) return;
-          setResults(taskResults);
-          setActiveIndex(taskResults.length ? 0 : -1);
-          activeResultKeyRef.current = taskResults.length
-            ? resultKey(taskResults[0])
-            : null;
+          setResults(current => [...current.filter(result => result.kind === "event"), ...taskResults]);
+          setActiveIndex(-1);
+          activeResultKeyRef.current = null;
           setError(
             searchError instanceof Error
               ? searchError.message
               : "Events could not be searched",
           );
-          setStatus(taskResults.length ? "ready" : "error");
+          setStatus("ready");
         });
     }, SEARCH_DEBOUNCE_MS);
 
@@ -147,7 +157,7 @@ export function EventSearchDialog({
       controller.abort();
       window.clearTimeout(timer);
     };
-  }, [open, query, searchEvents, tasks, timeRange]);
+  }, [open, query, reviewing, searchEvents, sourceCalendarId, tasks, timeRange]);
 
   React.useEffect(() => {
     if (activeIndex < 0) return;
@@ -157,6 +167,12 @@ export function EventSearchDialog({
   }, [activeIndex, listboxId]);
 
   if (!open) return null;
+  const filteredResults = results.filter(result => !sourceCalendarId || (result.kind === "event" && result.event.calendarId === sourceCalendarId));
+  const eventMatches = filteredResults.flatMap(result => result.kind === "event" ? [result.event] : []);
+  const taskMatches = filteredResults.flatMap(result => result.kind === "task" ? [result.task] : []);
+  const backToSearch = () => { setReviewing(null); window.requestAnimationFrame(() => inputRef.current?.focus()); };
+  if (reviewing === "tasks") return <SearchTaskBulkEditor calendars={calendars} tasks={taskMatches} query={query} onBack={backToSearch}
+    onApply={async (selected, calendarId) => { const applied = await onBulkTasksCalendar(selected, calendarId); if (applied) onOpenChange(false); return applied; }} />;
 
   const chooseResult = (result: UnifiedSearchResult) => {
     if (result.kind === "event") onSelectEvent(result.event);
@@ -176,15 +192,22 @@ export function EventSearchDialog({
   };
 
   const handleKeyDown = (event: React.KeyboardEvent) => {
+    if (isSearchMatchesEditShortcut(event)) {
+      event.preventDefault();
+      event.stopPropagation();
+      if (status === "ready" && !error && eventMatches.length) onEditMatches(eventMatches);
+      return;
+    }
     if (event.key === "Escape") {
       event.preventDefault();
       event.stopPropagation();
       onOpenChange(false);
       return;
     }
+    if (event.target !== inputRef.current && event.key !== "Tab") return;
     if (
       ["ArrowDown", "ArrowLeft", "ArrowRight", "ArrowUp"].includes(event.key)
-      && results.length
+      && filteredResults.length
     ) {
       event.preventDefault();
       const delta = event.key === "ArrowDown" || event.key === "ArrowRight"
@@ -192,21 +215,21 @@ export function EventSearchDialog({
         : -1;
       setActiveIndex((current) => {
         const startIndex = current >= 0 ? current : delta > 0 ? -1 : 0;
-        const nextIndex = (startIndex + delta + results.length) % results.length;
-        activeResultKeyRef.current = resultKey(results[nextIndex]);
+        const nextIndex = (startIndex + delta + filteredResults.length) % filteredResults.length;
+        activeResultKeyRef.current = resultKey(filteredResults[nextIndex]);
         return nextIndex;
       });
       return;
     }
     if (event.key === "Enter" && activeIndex >= 0) {
       event.preventDefault();
-      chooseResult(results[activeIndex]);
+      if (filteredResults[activeIndex]) chooseResult(filteredResults[activeIndex]);
       return;
     }
     if (event.key !== "Tab" || !dialogRef.current) return;
 
     const focusable = [...dialogRef.current.querySelectorAll<HTMLElement>(
-      "button:not([disabled]), input:not([disabled])",
+      "button:not([disabled]), input:not([disabled]), select:not([disabled])",
     )];
     const first = focusable[0];
     const last = focusable.at(-1);
@@ -223,11 +246,9 @@ export function EventSearchDialog({
     ? "Type at least two characters to search events and tasks."
     : status === "loading" && results.length === 0
       ? "Searching events and tasks…"
-      : status === "error"
-        ? error
-        : results.length === 0
-          ? `No events or tasks found for “${query.trim()}”.`
-          : "";
+      : filteredResults.length === 0
+        ? error || `No events or tasks found for “${query.trim()}”.`
+        : "";
 
   return (
     <div className="modal-backdrop" onMouseDown={() => onOpenChange(false)}>
@@ -297,12 +318,22 @@ export function EventSearchDialog({
           ))}
         </div>
 
+        <div className="search-bulk-toolbar">
+          <select aria-label="Search source calendar" value={sourceCalendarId} onChange={event => { setSourceCalendarId(event.target.value); setActiveIndex(0); setStatus(query.trim().length >= MINIMUM_QUERY_LENGTH ? "loading" : "idle"); }}>
+            <option value="">All calendars and tasks</option>
+            {calendars.map(calendar => <option key={calendar.id} value={calendar.id}>{calendar.name}</option>)}
+          </select>
+          <button disabled={status !== "ready" || Boolean(error) || !eventMatches.length} title="Edit matches in sidebar (⌘/Ctrl+→)" onClick={() => onEditMatches(eventMatches)}>Edit {eventMatches.length} {eventMatches.length === 1 ? "event" : "events"}…</button>
+          <button disabled={status !== "ready" || !taskMatches.length} onClick={() => setReviewing("tasks")}>Edit {taskMatches.length} {taskMatches.length === 1 ? "task" : "tasks"}…</button>
+        </div>
+        <p className="search-bulk-hint">Event scope: {timeRange === "all" ? "all history and future" : TIME_RANGES.find(range => range.value === timeRange)?.label.toLowerCase()}. Tasks search all currently synced tasks.</p>
+        {error && <p className="event-search-error" role="alert">{error} Bulk event editing is unavailable until search completes successfully.</p>}
         <div className="event-search-results" id={listboxId} role="listbox">
           {prompt ? (
-            <div className={`event-search-empty ${status === "error" ? "event-search-error" : ""}`}>
+            <div className={`event-search-empty ${error ? "event-search-error" : ""}`}>
               {prompt}
             </div>
-          ) : results.map((result, index) => (
+          ) : filteredResults.map((result, index) => (
             <button
               key={resultKey(result)}
               id={`${listboxId}-option-${index}`}

@@ -133,7 +133,10 @@ const loadGoogleEvents = async (
 ) => {
   const events: GoogleEvent[] = [];
   let pageToken: string | undefined;
+  let pages = 0;
   do {
+    if (request.signal.aborted) throw new Error("Search cancelled");
+    if (searchQuery && pages++ >= 4) throw new Error("Too many search matches. Choose a narrower time range or search term.");
     const query = buildGoogleEventsQuery({
       pageToken,
       searchQuery,
@@ -143,6 +146,7 @@ const loadGoogleEvents = async (
     const response = await googleFetch(
       request,
       `/calendars/${encodeURIComponent(providerCalendarId)}/events?${query}`,
+      { signal: request.signal },
     );
     const responseText = await response.text();
     let data: GoogleEventsResponse = {};

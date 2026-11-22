@@ -144,3 +144,19 @@ test("calendar search merges visible and historical matches without duplicates",
     ["future-planning", "planning", "older-planning"],
   );
 });
+
+test("last two weeks includes overlapping events but excludes older and future matches", () => {
+  const old = event("old", "Planning", "2026-08-01T10:00:00Z", "2026-08-02T10:00:00Z");
+  assert.deepEqual(searchLoadedEvents([old, planning, futurePlanning], "planning", now, "fortnight").map(item => item.id), ["planning"]);
+});
+
+
+test("last two weeks uses overlap boundaries and excludes starts at now", () => {
+  const boundary = new Date(now.getTime() - 14 * 86400000).toISOString();
+  const before = new Date(now.getTime() - 15 * 86400000).toISOString();
+  const inside = new Date(now.getTime() - 13 * 86400000).toISOString();
+  const overlap = event("overlap", "Planning", before, inside);
+  const ended = event("ended", "Planning", before, boundary);
+  const starting = event("starting", "Planning", now.toISOString(), futurePlanning.end);
+  assert.deepEqual(searchLoadedEvents([overlap, ended, starting], "planning", now, "fortnight").map(item => item.id), ["overlap"]);
+});

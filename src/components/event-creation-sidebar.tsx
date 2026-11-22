@@ -786,6 +786,7 @@ export function EventCreationSidebar({
   return (
     <div
       className="event-sidebar-panel"
+      tabIndex={-1}
       aria-label={isShowingSelection ? "Event details" : "Create event"}
       data-event-creation-surface="true"
       onBlurCapture={(event) => {

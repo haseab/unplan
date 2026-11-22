@@ -6,8 +6,16 @@ import type { EventSearchTimeRange } from "./event-search";
 
 type EventSearchResponse = {
   error?: string;
+  errors?: Array<{ message: string }>;
   events?: CalendarEvent[];
 };
+
+export class IncompleteEventSearchError extends Error {
+  constructor(message: string, readonly events: CalendarEvent[]) {
+    super(message);
+    this.name = "IncompleteEventSearchError";
+  }
+}
 
 export type GoogleEventSearchStrategy = "broad" | "exact";
 
@@ -36,7 +44,8 @@ export const searchGoogleEvents = async (
         search: query,
         searchStrategy: strategy,
       });
-      params.set(range === "past" ? "timeMax" : "timeMin", now.toISOString());
+      if (range === "fortnight") params.set("timeMin", new Date(now.getTime() - 14 * 86400000).toISOString());
+      params.set(range === "past" || range === "fortnight" ? "timeMax" : "timeMin", now.toISOString());
       accountCalendars.forEach((calendar) => {
         params.append("sourceId", calendar.id);
         params.append("color", calendar.backgroundColor);
@@ -50,8 +59,8 @@ export const searchGoogleEvents = async (
         response,
         "Events could not be searched",
       );
-      if (!response.ok) {
-        throw new Error(data.error || "Events could not be searched");
+      if (!response.ok || data.errors?.length) {
+        throw new IncompleteEventSearchError(data.error || data.errors?.[0]?.message || "Events could not be searched", data.events ?? []);
       }
       return data.events ?? [];
     })),
@@ -59,9 +68,14 @@ export const searchGoogleEvents = async (
   const successful = results.flatMap((result) =>
     result.status === "fulfilled" ? [result.value] : [],
   );
-  if (!successful.length && results.length) {
+  if (successful.length !== results.length) {
     const failure = results.find((result) => result.status === "rejected");
-    throw failure?.reason ?? new Error("Events could not be searched");
+    const reason: unknown = failure?.reason;
+    const partial = results.flatMap(result => result.status === "rejected" && result.reason instanceof IncompleteEventSearchError ? result.reason.events : []);
+    throw new IncompleteEventSearchError(
+      reason instanceof Error ? reason.message : "Events could not be searched",
+      [...successful.flat(), ...partial],
+    );
   }
   return successful.flat();
 };
