@@ -1,13 +1,4 @@
 import type { CalendarEvent, CalendarSource } from "./calendar-types";
-import type { EventColorChange } from "./event-color";
-import { calendarsForEventSelection, moveSelectionToCalendar, recolorEventSelection } from "./multi-event-selection";
-
-export type SearchBulkChanges = {
-  calendarId?: string;
-  color?: EventColorChange;
-  transparency?: CalendarEvent["transparency"];
-  visibility?: CalendarEvent["visibility"];
-};
 
 export const searchEventKey = (event: CalendarEvent) => `${event.calendarId}:${event.id}`;
 
@@ -18,26 +9,6 @@ export const editableSearchEvents = (events: CalendarEvent[], calendars: Calenda
   return [...unique.values()];
 };
 
-/** Apply only staged fields, retaining snapshots for undo and offscreen provider moves. */
-export const buildSearchBulkUpdates = (
-  events: CalendarEvent[],
-  selectedKeys: ReadonlySet<string>,
-  changes: SearchBulkChanges,
-  calendars: CalendarSource[],
-) => {
-  const originals = editableSearchEvents(events, calendars).filter(event => selectedKeys.has(searchEventKey(event)));
-  const destination = changes.calendarId ? calendars.find(calendar => calendar.id === changes.calendarId && calendar.writable !== false) : undefined;
-  if (changes.calendarId && (!destination || !calendarsForEventSelection(originals, calendars, calendars.filter(calendar => calendar.writable !== false)).some(calendar => calendar.id === destination.id))) return { originals: [], updated: [] };
-  let updated = destination ? moveSelectionToCalendar(originals, destination) : originals;
-  if (changes.color) updated = recolorEventSelection(updated, changes.color, calendars);
-  updated = updated.map(event => ({ ...event,
-    ...(changes.transparency ? { transparency: changes.transparency } : {}),
-    ...(changes.visibility ? { visibility: changes.visibility } : {}),
-  }));
-  const changed = updated.flatMap((event, index) => JSON.stringify(event) !== JSON.stringify(originals[index]) ? [index] : []);
-  return { originals: changed.map(index => originals[index]), updated: changed.map(index => updated[index]) };
-};
-
 /** Include offscreen matches without replacing newer in-memory copies. */
 export const mergeSearchSnapshots = (loaded: CalendarEvent[], snapshots: CalendarEvent[]) => {
   const byId = new Map(snapshots.map(event => [event.id, event]));
@@ -45,24 +16,21 @@ export const mergeSearchSnapshots = (loaded: CalendarEvent[], snapshots: Calenda
   return [...byId.values()];
 };
 
-/** Rebase only reviewed field changes onto the latest loaded version. */
-export const rebaseSearchBulkUpdates = (
-  updated: CalendarEvent[],
-  reviewed: CalendarEvent[],
+/** Transfer only completed search matches to the ordinary selection editor. */
+export const selectSearchMatches = (
   loaded: CalendarEvent[],
+  matches: CalendarEvent[],
+  calendars: CalendarSource[],
 ) => {
   const latestById = new Map(loaded.map(event => [event.id, event]));
-  const reviewedById = new Map(reviewed.map(event => [event.id, event]));
-  return updated.map(next => {
-    const snapshot = reviewedById.get(next.id);
-    if (!snapshot) throw new Error("Search review is missing an event. Search again before applying.");
-    const latest = latestById.get(next.id) ?? snapshot;
-    if (latest.calendarId !== snapshot.calendarId) throw new Error("An event moved since this review. Search again before applying.");
-    const patch: Record<string, unknown> = {};
-    for (const key of new Set([...Object.keys(snapshot), ...Object.keys(next)])) {
-      const field = key as keyof CalendarEvent;
-      if (JSON.stringify(snapshot[field]) !== JSON.stringify(next[field])) patch[field] = next[field];
-    }
-    return { ...latest, ...patch };
-  });
+  return editableSearchEvents(matches.flatMap(snapshot => {
+    const latest = latestById.get(snapshot.id);
+    // A moved event no longer belongs to the searched source calendar.
+    if (latest && latest.calendarId !== snapshot.calendarId) return [];
+    return [latest ?? snapshot];
+  }), calendars);
 };
+
+export const isSearchMatchesEditShortcut = (event: {
+  metaKey: boolean; ctrlKey: boolean; altKey: boolean; shiftKey: boolean; key: string;
+}) => (event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey && event.key === "ArrowRight";

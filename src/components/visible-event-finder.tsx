@@ -2,14 +2,12 @@
 
 import { ChevronDown, ChevronUp, Search, X } from "lucide-react";
 import * as React from "react";
+import { isSearchMatchesEditShortcut } from "@/lib/search-bulk-edit";
 import type { CalendarEvent } from "@/lib/calendar-types";
-import { SearchBulkEditor } from "@/components/search-bulk-editor";
-import type { CalendarSource } from "@/lib/calendar-types";
 import { searchVisibleEvents } from "@/lib/visible-event-search";
 
 type VisibleEventFinderProps = {
-  calendars: CalendarSource[];
-  onBulkUpdate: (updated: CalendarEvent[], originals: CalendarEvent[]) => Promise<boolean>;
+  onEditMatches: (events: CalendarEvent[]) => void;
   activeEventKey: string | null;
   getViewportEvents: () => CalendarEvent[];
   inputRef: React.RefObject<HTMLInputElement | null>;
@@ -23,8 +21,7 @@ const SEARCH_DEBOUNCE_MS = 0;
 const eventKey = (event: CalendarEvent) => `${event.calendarId}:${event.id}`;
 
 export function VisibleEventFinder({
-  calendars,
-  onBulkUpdate,
+  onEditMatches,
   activeEventKey,
   getViewportEvents,
   inputRef,
@@ -33,7 +30,6 @@ export function VisibleEventFinder({
   onMatchesChange,
   onNavigate,
 }: VisibleEventFinderProps) {
-  const [reviewing, setReviewing] = React.useState(false);
   const [candidateCount, setCandidateCount] = React.useState(
     () => getViewportEvents().length,
   );
@@ -117,6 +113,12 @@ export function VisibleEventFinder({
       event.currentTarget.select();
       return;
     }
+    if (isSearchMatchesEditShortcut(event)) {
+      event.preventDefault();
+      event.stopPropagation();
+      if (query.trim() && results.length && !searching) onEditMatches(results);
+      return;
+    }
     if (event.key === "Escape") {
       event.preventDefault();
       event.stopPropagation();
@@ -155,8 +157,6 @@ export function VisibleEventFinder({
       ? `${resolvedActiveIndex + 1} of ${results.length}`
       : "No matches";
 
-  if (reviewing) return <SearchBulkEditor calendars={calendars} events={results} query={query} scope="Visible calendar events" onBack={() => { setReviewing(false); window.requestAnimationFrame(() => inputRef.current?.focus()); }} onApply={async (updated, originals) => { const applied = await onBulkUpdate(updated, originals); if (applied) onCancel(); return applied; }} />;
-
   return (
     <section className="visible-event-finder" aria-label="Find visible calendar events">
       <Search size={15} aria-hidden="true" />
@@ -191,7 +191,7 @@ export function VisibleEventFinder({
       <button aria-label="Next match" disabled={!results.length} onClick={() => move(1)} onPointerDown={(event) => event.preventDefault()} type="button">
         <ChevronDown size={14} />
       </button>
-      <button className="visible-event-edit-matches" disabled={!query.trim() || !results.length || searching} onClick={() => setReviewing(true)} type="button">Edit matches</button>
+      <button className="visible-event-edit-matches" disabled={!query.trim() || !results.length || searching} onClick={() => onEditMatches(results)} title="Edit matches in sidebar (⌘/Ctrl+→)" type="button">Edit matches</button>
       <button aria-label="Cancel quick find" onClick={onCancel} type="button">
         <X size={14} />
       </button>

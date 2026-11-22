@@ -187,7 +187,7 @@ import {
   buildEventDeletionPlan,
   type RecurringDeleteScope,
 } from "@/lib/recurring-delete";
-import { mergeSearchSnapshots, rebaseSearchBulkUpdates } from "@/lib/search-bulk-edit";
+import { mergeSearchSnapshots, selectSearchMatches } from "@/lib/search-bulk-edit";
 import { IncompleteEventSearchError, searchGoogleEvents } from "@/lib/event-search-client";
 import {
   type EventSearchTimeRange,
@@ -2029,6 +2029,26 @@ export function CalendarApp({ demo = false }: { demo?: boolean } = {}) {
     setSelected(new Set([event.id]));
     setWeekStart(targetDate);
   }, [setEventSearchOpen, weekStart]);
+
+  const editSearchMatches = React.useCallback((matches: CalendarEvent[]) => {
+    const selection = selectSearchMatches(eventsRef.current, matches, calendars);
+    if (!selection.length) {
+      toast.error("No editable matches. Search again or choose a writable calendar.");
+      return;
+    }
+    dismissCreationDraft();
+    setEventDetailsPreview(null);
+    setEventSearchOpen(false);
+    setShowVisibleEventFinder(false);
+    setEvents(current => mergeSearchSnapshots(current, selection));
+    setSelected(new Set(selection.map(event => event.id)));
+    selectionAnchorRef.current = calendarEventKey(selection[0].calendarId, selection[0].id);
+    setActiveSelectionSurface("calendar");
+    setRightSidebarTab("events");
+    window.requestAnimationFrame(() => {
+      document.querySelector<HTMLElement>(".event-sidebar-panel")?.focus({ preventScroll: true });
+    });
+  }, [calendars, dismissCreationDraft, setEventSearchOpen]);
 
   const navigateToSearchTask = React.useCallback((task: TodoistTask) => {
     setEventSearchOpen(false);
@@ -3998,6 +4018,8 @@ export function CalendarApp({ demo = false }: { demo?: boolean } = {}) {
         event.preventDefault();
         if (event.key === "ArrowLeft") {
           focusCalendarSurface();
+        } else if (rightSidebarTab === "events" && selected.size) {
+          document.querySelector<HTMLElement>(".event-sidebar-panel")?.focus({ preventScroll: true });
         } else if (rightSidebarTab === "todos") {
           focusSidebarSurface();
         } else {
@@ -5032,14 +5054,12 @@ export function CalendarApp({ demo = false }: { demo?: boolean } = {}) {
 
   const bulkUpdateEventDetails = React.useCallback(async (
     updatedEvents: CalendarEvent[],
-    reviewedOriginals?: CalendarEvent[],
   ) => {
     if (!updatedEvents.length) return false;
-    if (reviewedOriginals) updatedEvents = rebaseSearchBulkUpdates(updatedEvents, reviewedOriginals, eventsRef.current);
     const updatedById = new Map(
       updatedEvents.map((event) => [event.id, event]),
     );
-    const originals = mergeSearchSnapshots(eventsRef.current, reviewedOriginals ?? []).filter((event) =>
+    const originals = eventsRef.current.filter((event) =>
       updatedById.has(event.id),
     );
     const originalsById = new Map(originals.map((event) => [event.id, event]));
@@ -5052,7 +5072,7 @@ export function CalendarApp({ demo = false }: { demo?: boolean } = {}) {
     const destinationCalendar = calendarMoves.length
       ? calendars.find((calendar) => calendar.id === calendarMoves[0].calendarId)
       : null;
-    const confirmed = reviewedOriginals ? true : calendarMoves.length
+    const confirmed = calendarMoves.length
       ? sourceCalendarCount <= 1 || await confirmBulkAction({
           action: "move",
           confirmLabel: `Move ${updatedEvents.length}`,
@@ -5124,16 +5144,9 @@ export function CalendarApp({ demo = false }: { demo?: boolean } = {}) {
           : "Saving event changes…",
       },
     );
-    setRightSidebarTab("todos");
-    setActiveSelectionSurface("calendar");
-    const cursor = cursorUpdated ?? updatedEvents[0];
-    if (cursor) {
-      const cursorKey = calendarEventKey(cursor.calendarId, cursor.id);
-      selectionAnchorRef.current = cursorKey;
-      window.requestAnimationFrame(() => focusRenderedEvent(cursorKey, false));
-    }
+    // Keep the selection editor and focus available for the next field shortcut.
     return true;
-  }, [calendars, chooseGuestNotifications, clearEventMutationOrigins, confirmBulkAction, finishOperation, focusRenderedEvent, persistMovedEvents, rememberEventMutationOrigins, toastDuration]);
+  }, [calendars, chooseGuestNotifications, clearEventMutationOrigins, confirmBulkAction, finishOperation, persistMovedEvents, rememberEventMutationOrigins, toastDuration]);
 
   const keyboardMoveDependenciesRef = React.useRef<Record<string, unknown> | null>(null);
   React.useEffect(() => {
@@ -6443,6 +6456,7 @@ export function CalendarApp({ demo = false }: { demo?: boolean } = {}) {
               <span>Find visible calendar events</span><kbd>⌘ F</kbd>
               <span>Next / previous visible search result</span><span><kbd>↵</kbd> <kbd>⇧ ↵</kbd></span>
               <span>Select visible search result</span><kbd>⌘ ↵</kbd>
+              <span>Edit search matches in sidebar</span><kbd>⌘ →</kbd>
               <span>Search all events and tasks</span><kbd>⌘ K</kbd>
               <span>Open settings</span><kbd>⌘ ,</kbd>
               <span>Review extracted or event tasks</span><kbd>⌘ E</kbd>
@@ -6466,8 +6480,7 @@ export function CalendarApp({ demo = false }: { demo?: boolean } = {}) {
       )}
       {showVisibleEventFinder && (
         <VisibleEventFinder
-          calendars={calendars}
-          onBulkUpdate={bulkUpdateEventDetails}
+          onEditMatches={editSearchMatches}
           activeEventKey={selectedEvents.length === 1
             ? calendarEventKey(selectedEvents[0].calendarId, selectedEvents[0].id)
             : null}
@@ -6492,7 +6505,7 @@ export function CalendarApp({ demo = false }: { demo?: boolean } = {}) {
       )}
       {showEventSearch && (
         <EventSearchDialog
-          onBulkUpdate={bulkUpdateEventDetails}
+          onEditMatches={editSearchMatches}
           onBulkTasksCalendar={(tasks, calendarId) => {
             const latestById = new Map(visibleTodoistTasks.map(task => [task.id, task]));
             const latest = tasks.flatMap(task => latestById.get(task.id) ?? []);

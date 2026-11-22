@@ -3,7 +3,7 @@
 import { format, parseISO } from "date-fns";
 import { CalendarDays, CornerDownLeft, ListTodo, LoaderCircle, MapPin, Search, X } from "lucide-react";
 import * as React from "react";
-import { SearchBulkEditor } from "@/components/search-bulk-editor";
+import { isSearchMatchesEditShortcut } from "@/lib/search-bulk-edit";
 import { SearchTaskBulkEditor } from "@/components/search-task-bulk-editor";
 import type { CalendarEvent, CalendarSource } from "@/lib/calendar-types";
 import type { EventSearchTimeRange } from "@/lib/event-search";
@@ -17,7 +17,7 @@ type SearchStatus = "idle" | "loading" | "ready";
 
 type EventSearchDialogProps = {
   calendars: CalendarSource[];
-  onBulkUpdate: (updated: CalendarEvent[], originals: CalendarEvent[]) => Promise<boolean>;
+  onEditMatches: (events: CalendarEvent[]) => void;
   onBulkTasksCalendar: (tasks: TodoistTask[], calendarId: string) => Promise<boolean>;
   onOpenChange: (open: boolean) => void;
   onSelectEvent: (event: CalendarEvent) => void;
@@ -58,7 +58,7 @@ const eventDateLabel = (event: CalendarEvent) => {
 
 export function EventSearchDialog({
   calendars,
-  onBulkUpdate,
+  onEditMatches,
   onBulkTasksCalendar,
   onOpenChange,
   onSelectEvent,
@@ -67,7 +67,7 @@ export function EventSearchDialog({
   searchEvents,
   tasks,
 }: EventSearchDialogProps) {
-  const [reviewing, setReviewing] = React.useState<"events" | "tasks" | null>(null);
+  const [reviewing, setReviewing] = React.useState<"tasks" | null>(null);
   const [sourceCalendarId, setSourceCalendarId] = React.useState("");
   const [activeIndex, setActiveIndex] = React.useState(-1);
   const [error, setError] = React.useState("");
@@ -171,9 +171,6 @@ export function EventSearchDialog({
   const eventMatches = filteredResults.flatMap(result => result.kind === "event" ? [result.event] : []);
   const taskMatches = filteredResults.flatMap(result => result.kind === "task" ? [result.task] : []);
   const backToSearch = () => { setReviewing(null); window.requestAnimationFrame(() => inputRef.current?.focus()); };
-  if (reviewing === "events") return <SearchBulkEditor calendars={calendars} events={eventMatches} query={query}
-    scope={`${TIME_RANGES.find(range => range.value === timeRange)?.label} · ${sourceCalendarId ? calendarNames.get(sourceCalendarId) : "All calendars"}`}
-    onBack={backToSearch} onApply={async (updated, originals) => { const applied = await onBulkUpdate(updated, originals); if (applied) onOpenChange(false); return applied; }} />;
   if (reviewing === "tasks") return <SearchTaskBulkEditor calendars={calendars} tasks={taskMatches} query={query} onBack={backToSearch}
     onApply={async (selected, calendarId) => { const applied = await onBulkTasksCalendar(selected, calendarId); if (applied) onOpenChange(false); return applied; }} />;
 
@@ -195,6 +192,12 @@ export function EventSearchDialog({
   };
 
   const handleKeyDown = (event: React.KeyboardEvent) => {
+    if (isSearchMatchesEditShortcut(event)) {
+      event.preventDefault();
+      event.stopPropagation();
+      if (status === "ready" && !error && eventMatches.length) onEditMatches(eventMatches);
+      return;
+    }
     if (event.key === "Escape") {
       event.preventDefault();
       event.stopPropagation();
@@ -320,7 +323,7 @@ export function EventSearchDialog({
             <option value="">All calendars and tasks</option>
             {calendars.map(calendar => <option key={calendar.id} value={calendar.id}>{calendar.name}</option>)}
           </select>
-          <button disabled={status !== "ready" || Boolean(error) || !eventMatches.length} onClick={() => setReviewing("events")}>Edit {eventMatches.length} {eventMatches.length === 1 ? "event" : "events"}…</button>
+          <button disabled={status !== "ready" || Boolean(error) || !eventMatches.length} title="Edit matches in sidebar (⌘/Ctrl+→)" onClick={() => onEditMatches(eventMatches)}>Edit {eventMatches.length} {eventMatches.length === 1 ? "event" : "events"}…</button>
           <button disabled={status !== "ready" || !taskMatches.length} onClick={() => setReviewing("tasks")}>Edit {taskMatches.length} {taskMatches.length === 1 ? "task" : "tasks"}…</button>
         </div>
         <p className="search-bulk-hint">Event scope: {timeRange === "all" ? "all history and future" : TIME_RANGES.find(range => range.value === timeRange)?.label.toLowerCase()}. Tasks search all currently synced tasks.</p>
