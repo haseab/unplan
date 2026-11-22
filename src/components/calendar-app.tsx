@@ -187,7 +187,8 @@ import {
   buildEventDeletionPlan,
   type RecurringDeleteScope,
 } from "@/lib/recurring-delete";
-import { searchGoogleEvents } from "@/lib/event-search-client";
+import { mergeSearchSnapshots, rebaseSearchBulkUpdates } from "@/lib/search-bulk-edit";
+import { IncompleteEventSearchError, searchGoogleEvents } from "@/lib/event-search-client";
 import {
   type EventSearchTimeRange,
   mergeCalendarSearchResults,
@@ -1894,18 +1895,20 @@ export function CalendarApp({ demo = false }: { demo?: boolean } = {}) {
       timeRange: EventSearchTimeRange,
       signal: AbortSignal,
       onPartialResults: (results: CalendarEvent[]) => void,
+      sourceCalendarId?: string,
     ) => {
       const searchedAt = new Date();
       const loadedResults = searchLoadedEvents(
-        eventsRef.current,
+        sourceCalendarId ? eventsRef.current.filter(event => event.calendarId === sourceCalendarId) : eventsRef.current,
         query,
         searchedAt,
         timeRange,
       );
       const googleCalendars = google.connected
-        ? calendars.filter((calendar) => calendar.provider === "google")
+        ? calendars.filter((calendar) => calendar.provider === "google" && (!sourceCalendarId || calendar.id === sourceCalendarId))
         : [];
       if (!googleCalendars.length) return loadedResults;
+      onPartialResults(loadedResults);
 
       const calendarKey = googleCalendars
         .map((calendar) => calendar.id)
@@ -1972,24 +1975,31 @@ export function CalendarApp({ demo = false }: { demo?: boolean } = {}) {
         exactResults = searchLoadedEvents(events, query, searchedAt, timeRange);
         reportResults();
         return exactResults;
+      }, (error: unknown) => {
+        if (error instanceof IncompleteEventSearchError) {
+          exactResults = searchLoadedEvents(error.events, query, searchedAt, timeRange);
+          reportResults();
+        }
+        throw error;
       });
       const broadPromise = cacheEntry.promise.then((events) => {
         broadResults = searchLoadedEvents(events, query, searchedAt, timeRange);
         reportResults();
         return broadResults;
+      }, (error: unknown) => {
+        if (error instanceof IncompleteEventSearchError) {
+          broadResults = searchLoadedEvents(error.events, query, searchedAt, timeRange);
+          reportResults();
+        }
+        throw error;
       });
       const [exactOutcome, broadOutcome] = await Promise.allSettled([
         exactPromise,
         broadPromise,
       ]);
       if (signal.aborted) throw new DOMException("Search aborted", "AbortError");
-      if (
-        exactOutcome.status === "rejected"
-        && broadOutcome.status === "rejected"
-        && loadedResults.length === 0
-      ) {
-        throw exactOutcome.reason;
-      }
+      if (exactOutcome.status === "rejected") throw exactOutcome.reason;
+      if (broadOutcome.status === "rejected") throw broadOutcome.reason;
       return mergeCalendarSearchResults(
         [loadedResults, exactResults, broadResults],
         searchedAt,
@@ -5022,12 +5032,14 @@ export function CalendarApp({ demo = false }: { demo?: boolean } = {}) {
 
   const bulkUpdateEventDetails = React.useCallback(async (
     updatedEvents: CalendarEvent[],
+    reviewedOriginals?: CalendarEvent[],
   ) => {
     if (!updatedEvents.length) return false;
+    if (reviewedOriginals) updatedEvents = rebaseSearchBulkUpdates(updatedEvents, reviewedOriginals, eventsRef.current);
     const updatedById = new Map(
       updatedEvents.map((event) => [event.id, event]),
     );
-    const originals = eventsRef.current.filter((event) =>
+    const originals = mergeSearchSnapshots(eventsRef.current, reviewedOriginals ?? []).filter((event) =>
       updatedById.has(event.id),
     );
     const originalsById = new Map(originals.map((event) => [event.id, event]));
@@ -5040,7 +5052,7 @@ export function CalendarApp({ demo = false }: { demo?: boolean } = {}) {
     const destinationCalendar = calendarMoves.length
       ? calendars.find((calendar) => calendar.id === calendarMoves[0].calendarId)
       : null;
-    const confirmed = calendarMoves.length
+    const confirmed = reviewedOriginals ? true : calendarMoves.length
       ? sourceCalendarCount <= 1 || await confirmBulkAction({
           action: "move",
           confirmLabel: `Move ${updatedEvents.length}`,
@@ -5064,7 +5076,7 @@ export function CalendarApp({ demo = false }: { demo?: boolean } = {}) {
     const cursorUpdated = cursorOriginal && updatedById.get(cursorOriginal.id);
     if (cursorUpdated) selectionAnchorRef.current = calendarEventKey(cursorUpdated.calendarId, cursorUpdated.id);
 
-    setEvents((current) => current.map((event) =>
+    setEvents((current) => mergeSearchSnapshots(current, originals).map((event) =>
       updatedById.get(event.id) ?? event,
     ));
     if (destinationCalendar) {
@@ -6454,6 +6466,8 @@ export function CalendarApp({ demo = false }: { demo?: boolean } = {}) {
       )}
       {showVisibleEventFinder && (
         <VisibleEventFinder
+          calendars={calendars}
+          onBulkUpdate={bulkUpdateEventDetails}
           activeEventKey={selectedEvents.length === 1
             ? calendarEventKey(selectedEvents[0].calendarId, selectedEvents[0].id)
             : null}
@@ -6478,6 +6492,13 @@ export function CalendarApp({ demo = false }: { demo?: boolean } = {}) {
       )}
       {showEventSearch && (
         <EventSearchDialog
+          onBulkUpdate={bulkUpdateEventDetails}
+          onBulkTasksCalendar={(tasks, calendarId) => {
+            const latestById = new Map(visibleTodoistTasks.map(task => [task.id, task]));
+            const latest = tasks.flatMap(task => latestById.get(task.id) ?? []);
+            if (latest.length !== tasks.length) return Promise.reject(new Error("A task changed since this review. Search again before applying."));
+            return changeSidebarTodoistTasksCalendar(latest, calendarId, () => undefined);
+          }}
           calendars={calendars}
           onOpenChange={setEventSearchOpen}
           onSelectEvent={navigateToSearchEvent}

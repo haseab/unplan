@@ -61,8 +61,8 @@ export const moveSelectionToCalendar = (
   ...event,
   calendarId: calendar.id,
   calendarColor: calendar.backgroundColor,
-  color: event.colorId ? event.color : calendar.backgroundColor,
-  textColor: event.colorId ? event.textColor : calendar.foregroundColor,
+  color: event.colorId || event.customColor ? event.color : calendar.backgroundColor,
+  textColor: event.colorId || event.customColor ? event.textColor : calendar.foregroundColor,
 }));
 
 export const recolorEventSelection = (

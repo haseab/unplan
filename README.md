@@ -125,3 +125,11 @@ New tasks require a Todoist connection and use the normal pending-save/Undo flow
 Older browser-only tasks upload automatically when Todoist is connected; local
 copies remain until the upload succeeds. Expiration runs only on the server.
 The browser reads updated tasks every minute and when the app regains focus.
+
+### Search and bulk editing
+
+- **⌘F / Ctrl+F** finds events currently visible in the calendar. Choose **Edit matches** to review and edit the matching events together.
+- **⌘K / Ctrl+K** searches calendar history, future events, and currently synced tasks. Choose **Past**, **Future**, **All**, or **Last 2 weeks**, and optionally restrict events to a source calendar.
+- Choose **Edit events** to stage calendar, color, availability, and visibility changes. The review lists each title, date, and source calendar; uncheck any matches to exclude them. Changes are sent only after **Apply**, with the existing undo window and guest-notification choices.
+- **Edit tasks** changes the calendar (and its default color) for matching synced tasks. Completed or archived provider tasks are not fetched by this search.
+- Read-only events cannot be edited. Calendar moves use the same account restrictions as ordinary multi-selection. Recurring matches edit only the listed occurrences. Incomplete searches cannot be bulk edited; very large searches require a narrower scope.
