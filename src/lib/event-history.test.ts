@@ -10,10 +10,11 @@ const key = {
 const event = { start: "2026-11-01T01:30:15.123-07:00", end: "2026-11-01T01:45:30.456-08:00" };
 const now = Date.parse("2026-11-05T20:00:00Z");
 
-test("history shortcuts match Command/Ctrl+P, Shift+Command/Ctrl+P and macOS Option+P", () => {
+test("history shortcuts distinguish Limitless, Retrace and Deeplog from the task folder shortcut", () => {
   for (const modifier of [{ metaKey: true }, { ctrlKey: true }]) {
     assert.equal(eventHistoryShortcut({ ...key, ...modifier }), "limitless");
-    assert.equal(eventHistoryShortcut({ ...key, ...modifier, shiftKey: true, key: "P" }), "retrace");
+    assert.equal(eventHistoryShortcut({ ...key, ...modifier, shiftKey: true, key: "P" }), null);
+    assert.equal(eventHistoryShortcut({ ...key, ...modifier, altKey: true, shiftKey: true, key: "∏" }), "retrace");
   }
   assert.equal(eventHistoryShortcut({ ...key, altKey: true, key: "π" }), "deeplog");
   assert.equal(eventHistoryShortcut({ ...key, metaKey: true, code: "" }), "limitless");

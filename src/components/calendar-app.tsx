@@ -4069,7 +4069,7 @@ export function CalendarApp({ demo = false }: { demo?: boolean } = {}) {
         }
       }
       if (isEditableTarget(event.target)) return;
-      if (modifier && event.shiftKey && event.altKey && (event.code === "KeyP" || event.key.toLowerCase() === "p")
+      if (modifier && event.shiftKey && !event.altKey && (event.code === "KeyP" || event.key.toLowerCase() === "p")
         && (activeSelectionSurface === "calendar" || rightSidebarTab === "events")
         && selected.size && !document.querySelector(".modal-backdrop")) {
         event.preventDefault();
@@ -6434,7 +6434,7 @@ export function CalendarApp({ demo = false }: { demo?: boolean } = {}) {
               <span>New event after / before selected event</span><span><kbd>N</kbd> <kbd>⌥ N</kbd></span>
               <span>Duplicate a past event at the latest 15-minute block</span><kbd>S</kbd>
               <span>Limitless history for a selected past event</span><kbd>⌘ P</kbd>
-              <span>Retrace for a selected past event</span><kbd>⌘ ⇧ P</kbd>
+              <span>Retrace for a selected past event</span><kbd>⌘ ⌥ ⇧ P</kbd>
               <span>Deeplog time entries for a selected past event</span><kbd>⌥ P</kbd>
               <span>Sync calendars</span><kbd>R</kbd>
               <span>Previous / next period</span><span><kbd>K</kbd> <kbd>J</kbd></span>
@@ -6451,7 +6451,7 @@ export function CalendarApp({ demo = false }: { demo?: boolean } = {}) {
               <span>Focus calendar / sidebar</span><span><kbd>⌘ ←</kbd> <kbd>⌘ →</kbd></span>
               <span>Toggle left sidebar</span><kbd>⌘ \\</kbd>
               <span>Schedule sidebar task now</span><kbd>⌘ ⇧ ←</kbd>
-              <span>Add selected events to task folder</span><kbd>⌘ ⌥ ⇧ P</kbd>
+              <span>Add selected events to task folder</span><kbd>⌘ ⇧ P</kbd>
               <span>Move calendar event to Triage</span><kbd>⌘ ⇧ →</kbd>
               <span>Go to any date</span><kbd>⌘ G</kbd>
               <span>Find visible calendar events</span><kbd>⌘ F</kbd>
