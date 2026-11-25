@@ -201,7 +201,7 @@ import {
 } from "@/lib/event-participants";
 import { useTodoistGroupPreferences } from "@/hooks/use-todoist-group-preferences";
 import { useTaskTriagePhase } from "@/hooks/use-task-triage-phase";
-import { useExtractedTaskReview } from "@/hooks/use-extracted-task-review";
+import { useTaskReviewSession } from "@/hooks/use-task-review-session";
 import { priorityTaskContentRefreshedNow, priorityTaskContentWithReviewAt } from "@/lib/priority-task-review";
 import { isNormalTaskTriageTask, taskTriageKeepContent, taskTriageShortcutMode } from "@/lib/task-triage";
 import {
@@ -1094,18 +1094,19 @@ export function CalendarApp({ demo = false }: { demo?: boolean } = {}) {
     () => visibleTodoistTasks.filter((task) => isNormalTaskTriageTask(task, taskGroupParents, now)),
     [visibleTodoistTasks, taskGroupParents, now],
   );
-  const { pendingTasks: extractedReviewTasks, skipTask: skipExtractedTask } = useExtractedTaskReview(extractedTasks, showTaskTriage);
+  const { pendingTasks: extractedReviewTasks, skipTask: skipExtractedTask } = useTaskReviewSession(extractedTasks, showTaskTriage);
+  const { pendingTasks: normalReviewTasks, skipTask: skipNormalTask } = useTaskReviewSession(ungroupedTodoistTasks, showTaskTriage);
   const { phase: triagePhase, completeFollowUp: completeTaskFollowUpPhase } = useTaskTriagePhase({
     open: showTaskTriage,
     initialMode: taskTriageMode,
     extractedTaskCount: extractedReviewTasks.length,
-    normalTaskCount: ungroupedTodoistTasks.length,
+    normalTaskCount: normalReviewTasks.length,
   });
   const completeTaskFollowUpTriage = React.useCallback(() => {
     completeTaskFollowUpPhase();
     setTaskTriageMode("normal");
-    setShowTaskTriage(ungroupedTodoistTasks.length > 0);
-  }, [completeTaskFollowUpPhase, ungroupedTodoistTasks.length]);
+    setShowTaskTriage(normalReviewTasks.length > 0);
+  }, [completeTaskFollowUpPhase, normalReviewTasks.length]);
   useCalendarActivityTitle({
     connected: google.connected,
     settingsOpen: showSettings,
@@ -6570,6 +6571,7 @@ export function CalendarApp({ demo = false }: { demo?: boolean } = {}) {
         tasks={visibleTodoistTasks}
         extractedTasks={extractedReviewTasks}
         onSkipExtracted={skipExtractedTask}
+        onSkipNormal={skipNormalTask}
         groups={todoistGroups}
         phase={triagePhase}
         onCompleteFollowUp={completeTaskFollowUpTriage}
@@ -6730,7 +6732,7 @@ export function CalendarApp({ demo = false }: { demo?: boolean } = {}) {
         }}
         open={showTaskTriage}
         returningTask={returningTriageTask}
-        ungroupedTasks={ungroupedTodoistTasks}
+        ungroupedTasks={normalReviewTasks}
       />
       <SettingsDialog
         calendars={writableCalendars}

@@ -193,3 +193,12 @@ export function isTaskTriageCalendarShortcut(event: Pick<KeyboardEvent, "key" | 
   return (phase === "extracted" || phase === "normal")
     && (event.metaKey || event.ctrlKey) && event.shiftKey;
 }
+
+/** Plain Tab skips filing; modified Tab and editing retain their normal behavior. */
+export function isTaskTriageSkipShortcut(
+  event: Pick<KeyboardEvent, "key" | "metaKey" | "ctrlKey" | "altKey" | "shiftKey" | "repeat" | "isComposing">,
+  editing: boolean,
+) {
+  return event.key === "Tab" && !editing && !event.metaKey && !event.ctrlKey
+    && !event.altKey && !event.shiftKey && !event.repeat && !event.isComposing;
+}
