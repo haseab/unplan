@@ -64,7 +64,7 @@ try {
   assert.equal(await press({ metaKey: true }), false, 'no selection leaves native keys alone');
   await select('past');
   await page.keyboard.press('Meta+p');
-  await page.keyboard.press('Meta+Shift+p');
+  await page.keyboard.press('Meta+Alt+Shift+p');
   assert.equal(await press({ key: 'π', altKey: true }), true, 'macOS Option+P is handled');
   const opened = await navigations();
   assert.equal(opened.length, 3);
@@ -87,7 +87,7 @@ try {
 
   for (const id of ['ongoing', 'future']) {
     await select(id);
-    for (const options of [{ metaKey: true }, { metaKey: true, shiftKey: true }, { key: 'π', altKey: true }]) {
+    for (const options of [{ metaKey: true }, { metaKey: true, altKey: true, shiftKey: true }, { key: 'π', altKey: true }]) {
       assert.equal(await press(options), false, `${id} event has no history shortcut`);
     }
   }
@@ -107,11 +107,11 @@ try {
   assert.equal((await navigations()).length, 3, 'dialogs block history navigation');
   await page.keyboard.press('Escape');
   await page.locator('.calendar-workspace').focus();
-  await page.keyboard.press('Meta+Alt+Shift+p');
+  await page.keyboard.press('Meta+Shift+p');
   await page.getByRole('heading', { name: '1 selected task', exact: true }).waitFor();
   assert.equal((await navigations()).length, 3, 'folder shortcut remains distinct');
   assert.deepEqual(errors, []);
-  console.log('PASS: all three history shortcuts, exact timestamps, past-only guards, repeats, selection, editors, dialogs, sidebar focus and reassigned folder shortcut');
+  console.log('PASS: history shortcuts, exact timestamps, past-only guards, repeats, selection, editors, dialogs, sidebar focus and Command+Shift+P folder shortcut');
 } catch (error) {
   console.error('[TEST:EVENT-HISTORY]', { errors, body: await page?.locator('body').innerText() });
   throw error;

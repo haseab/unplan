@@ -10,10 +10,11 @@ export function eventHistoryShortcut(event: HistoryKey): EventHistoryDestination
   // Option+P produces π on macOS, so prefer the physical key code.
   if (event.isComposing || (event.code !== "KeyP" && event.key.toLowerCase() !== "p")) return null;
   if (event.altKey) {
+    if ((event.metaKey || event.ctrlKey) && event.shiftKey) return "retrace";
     return !event.metaKey && !event.ctrlKey && !event.shiftKey ? "deeplog" : null;
   }
   if (!event.metaKey && !event.ctrlKey) return null;
-  return event.shiftKey ? "retrace" : "limitless";
+  return event.shiftKey ? null : "limitless";
 }
 
 export function pastEventHistoryUrl(
