@@ -4,7 +4,7 @@ import * as React from "react";
 import type { TodoistTask } from "@/lib/todoist";
 
 /** Skipping only defers review for this open session; provider tasks stay untouched. */
-export function useExtractedTaskReview(tasks: TodoistTask[], open: boolean) {
+export function useTaskReviewSession(tasks: TodoistTask[], open: boolean) {
   const [session, setSession] = React.useState({ open, skippedIds: new Set<string>() });
   if (session.open !== open) {
     setSession({ open, skippedIds: new Set() });

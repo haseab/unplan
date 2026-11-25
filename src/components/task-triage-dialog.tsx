@@ -7,6 +7,7 @@ import {
   CalendarPlus,
   ExternalLink,
   RefreshCw,
+  SkipForward,
   Trash2,
   X,
 } from "lucide-react";
@@ -30,6 +31,7 @@ import {
   orderTaskTriageTasks,
   taskTriageFolders,
   isTaskTriageCalendarShortcut,
+  isTaskTriageSkipShortcut,
   describeTaskFollowUpInterval,
   taskTriagePreviousFolder,
   type TaskTriageFolder,
@@ -54,6 +56,7 @@ type TaskTriageDialogProps = {
   onRenameTask: (task: TodoistTask, title: string) => Promise<void>;
   onResolveExtracted: (task: TodoistTask, resolution: "delete" | "keep") => Promise<void>;
   onSkipExtracted: (task: TodoistTask) => void;
+  onSkipNormal: (task: TodoistTask) => void;
   onReturnAnimationEnd: (taskId: string) => void;
   open: boolean;
   returningTask: { direction: PriorityReviewCard["direction"]; id: string } | null;
@@ -75,6 +78,7 @@ type NormalTaskReviewProps = {
   onOpenOriginal: () => void;
   onQueryChange: (query: string) => void;
   onSchedule: () => void;
+  onSkip: () => void;
   onRename: (title: string) => Promise<void>;
   onFolderScroll: (scrollTop: number) => void;
   query: string;
@@ -100,6 +104,7 @@ function NormalTaskReview({
   onQueryChange,
   onRename,
   onSchedule,
+  onSkip,
   onFolderScroll,
   query,
   resolving,
@@ -123,7 +128,18 @@ function NormalTaskReview({
   };
 
   return (
-    <div className="task-triage-normal">
+    <div className="task-triage-normal" onKeyDown={(event) => {
+      const target = event.target;
+      const editing = target instanceof HTMLElement && (
+        Boolean(target.closest(".task-folder-create-form"))
+        || target.matches("textarea, select, input:not([aria-label='Search folders'])")
+        || target.isContentEditable
+      );
+      if (!isTaskTriageSkipShortcut(event.nativeEvent, editing)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      if (!resolving && !savingTitle && !editingTitle) onSkip();
+    }}>
       <article className="task-triage-task-preview">
         <span>Task to file</span>
         {details.triageSourceGroup && (
@@ -219,7 +235,7 @@ function NormalTaskReview({
         folderScrollTop={folderScrollTop} folders={folders} allFolders={allFolders}
         highlightedFolder={highlightedFolder} onAssign={onAssign} onCreateFolder={onCreateFolder}
         onHighlight={onHighlight} onQueryChange={onQueryChange} onFolderScroll={onFolderScroll}
-        onEditTitle={() => beginTitleEdit(true)} query={query} resolving={resolving || savingTitle}
+        query={query} resolving={resolving || savingTitle}
         searchInputRef={searchInputRef} totalFolders={totalFolders}
       />
       <div className="task-triage-secondary-actions">
@@ -252,6 +268,16 @@ function NormalTaskReview({
           <span>Delete task</span>
           <kbd>⌘⌫</kbd>
         </button>
+        <button
+          disabled={resolving || savingTitle || editingTitle}
+          onClick={onSkip}
+          title="Skip for this review session (Tab)"
+          type="button"
+        >
+          <SkipForward size={14} />
+          <span>Skip</span>
+          <kbd>Tab</kbd>
+        </button>
       </div>
     </div>
   );
@@ -274,6 +300,7 @@ export function TaskTriageDialog({
   onRestorePriorityTask,
   onResolveExtracted,
   onSkipExtracted,
+  onSkipNormal,
   onReturnAnimationEnd,
   open,
   returningTask,
@@ -550,6 +577,13 @@ export function TaskTriageDialog({
             onAssign={(group) => void assignFolder(group)}
             onDelete={() => void deleteNormalTask()}
             onSchedule={() => void scheduleCurrentTask()}
+            onSkip={() => {
+              if (resolving) return;
+              setError(null);
+              setFolderQuery("");
+              setHighlightedFolder(0);
+              onSkipNormal(currentTask);
+            }}
             onHighlight={setHighlightedFolder}
             onOpenOriginal={openOriginalTask}
             onFolderScroll={setFolderScrollTop}

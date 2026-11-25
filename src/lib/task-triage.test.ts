@@ -4,6 +4,7 @@ import {
   describeTaskFollowUpInterval,
   orderTaskTriageTasks,
   isTaskTriageCalendarShortcut,
+  isTaskTriageSkipShortcut,
   taskTriageFolders,
   taskTriagePhase,
   taskTriagePreviousFolder,
@@ -223,4 +224,19 @@ test("Cmd/Ctrl Shift Left schedules extraction and task triage; Cmd/Ctrl Left st
     }
   }
   assert.equal(isTaskTriageCalendarShortcut({ ...key, metaKey: true }, "priority", false), false);
+});
+
+test("plain Tab skips filing without taking over editing or modified navigation", () => {
+  const key = {
+    key: "Tab", metaKey: false, ctrlKey: false, altKey: false,
+    shiftKey: false, repeat: false, isComposing: false,
+  };
+  assert.equal(isTaskTriageSkipShortcut(key, false), true);
+  assert.equal(isTaskTriageSkipShortcut(key, true), false);
+  for (const change of [
+    { key: "Enter" }, { metaKey: true }, { ctrlKey: true }, { altKey: true },
+    { shiftKey: true }, { repeat: true }, { isComposing: true },
+  ]) {
+    assert.equal(isTaskTriageSkipShortcut({ ...key, ...change }, false), false);
+  }
 });

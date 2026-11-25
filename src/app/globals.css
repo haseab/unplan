@@ -885,8 +885,8 @@ kbd {
 .task-triage-folder-picker .task-folder-option small { overflow: hidden; color: var(--text-faint); font-size: 8.5px; font-weight: 450; text-overflow: ellipsis; white-space: nowrap; }
 .task-triage-folder-picker .task-folder-option kbd { justify-self: end; }
 .task-triage-folder-picker > div > p { margin: 0; padding: 18px; color: var(--text-faint); font-size: 9px; text-align: center; }
-.task-triage-secondary-actions { display: flex; justify-content: space-between; gap: 8px; margin-top: 10px; }
-.task-triage-secondary-actions > button { display: inline-flex; min-height: 30px; align-items: center; gap: 6px; padding: 0 9px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--surface-muted); color: var(--text-soft); font: inherit; font-size: 9px; font-weight: 600; cursor: pointer; }
+.task-triage-secondary-actions { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px; margin-top: 10px; }
+.task-triage-secondary-actions > button { display: inline-flex; min-height: 30px; align-items: center; gap: 4px; padding: 0 6px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--surface-muted); color: var(--text-soft); font: inherit; font-size: 9px; font-weight: 600; cursor: pointer; }
 .task-triage-secondary-actions > button:hover:not(:disabled) { background: var(--surface-hover); color: var(--ink); }
 .task-triage-secondary-actions > .task-triage-open-original:hover:not(:disabled) { border-color: var(--blue-border); color: var(--blue-ink); }
 .task-triage-secondary-actions > .task-triage-delete-task:hover:not(:disabled) { border-color: color-mix(in oklab, #ef8982 45%, var(--line-strong)); background: color-mix(in oklab, #ef8982 9%, var(--surface)); color: #ef8982; }
