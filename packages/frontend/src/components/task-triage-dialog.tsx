@@ -407,7 +407,7 @@ export function TaskTriageDialog({
         searchInputRef.current?.focus();
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [currentTask, open, phase, embedded]);
+  }, [currentTask, open, phase, embedded, hadReviewFocus]);
 
   React.useEffect(() => {
     if (!returningTask || (phase !== "priority" && returningTask.id !== currentTask?.id)) return;

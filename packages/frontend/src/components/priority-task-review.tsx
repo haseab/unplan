@@ -176,7 +176,7 @@ export function PriorityTaskReview({
     };
     window.addEventListener("keydown", onKeyDown, true);
     return () => window.removeEventListener("keydown", onKeyDown, true);
-  }, [onClose, resolveCurrent, completeCurrent, scheduleCurrent]);
+  }, [onClose, resolveCurrent, completeCurrent, scheduleCurrent, current, departure, embedded, onPrevious, onSkip, titleBusy]);
 
   if (finished)
     return (
