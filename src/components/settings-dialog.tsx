@@ -30,6 +30,8 @@ import {
 type SettingsDialogProps = {
   calendars: CalendarSource[];
   defaultCalendarId: string | null;
+  defaultPastCalendarId: string | null;
+  onDefaultPastCalendarChange: (calendarId: string) => void;
   defaultTaskCalendarId: string | null;
   onDefaultCalendarChange: (calendarId: string) => void;
   onDefaultTaskCalendarChange: (calendarId: string) => void;
@@ -57,6 +59,8 @@ const showSettingsSaved = (message: string) =>
 export function SettingsDialog({
   calendars,
   defaultCalendarId,
+  defaultPastCalendarId,
+  onDefaultPastCalendarChange,
   defaultTaskCalendarId,
   onDefaultCalendarChange,
   onDefaultTaskCalendarChange,
@@ -118,7 +122,7 @@ export function SettingsDialog({
   const updateDefaultCalendar = (calendarId: string) => {
     onDefaultCalendarChange(calendarId);
     const calendarName = calendars.find((calendar) => calendar.id === calendarId)?.name;
-    showSettingsSaved(calendarName ? `${calendarName} set as the default calendar` : "Default calendar updated");
+    showSettingsSaved(calendarName ? `${calendarName} set as the default calendar for future events` : "Default calendar updated");
   };
 
   const updateDefaultTaskCalendar = (calendarId: string) => {
@@ -215,15 +219,34 @@ export function SettingsDialog({
         <div className="settings-content">
           <section className="settings-section settings-primary-section">
             <div className="settings-section-heading">
-              <span>New events</span>
+              <span>Past events</span>
+              <strong>{calendars.find((calendar) => calendar.id === defaultPastCalendarId)?.name ?? "Unavailable"}</strong>
+            </div>
+            <p>Used for new events whose start time is before now.</p>
+            <div className="settings-calendar-picker">
+              <CalendarPicker
+                ariaLabel="Default calendar for past events"
+                calendars={calendars}
+                onChange={(calendarId) => {
+                  onDefaultPastCalendarChange(calendarId);
+                  showSettingsSaved("Default calendar for past events updated");
+                }}
+                value={defaultPastCalendarId}
+              />
+            </div>
+          </section>
+
+          <section className="settings-section settings-primary-section">
+            <div className="settings-section-heading">
+              <span>Future events</span>
               <strong>{calendars.find((calendar) => calendar.id === defaultCalendarId)?.name ?? "Unavailable"}</strong>
             </div>
             <p>
-              Used when you create an event by dragging empty calendar space.
+              Used for new events starting now or in the future.
             </p>
             <div className="settings-calendar-picker">
               <CalendarPicker
-                ariaLabel="Default calendar for new events"
+                ariaLabel="Default calendar for future events"
                 calendars={calendars}
                 onChange={updateDefaultCalendar}
                 value={defaultCalendarId}
