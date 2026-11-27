@@ -28,10 +28,9 @@ import {
 } from "@/lib/todoist-calendar";
 import { readTodoistFolderPreferences } from "@/lib/todoist-folder-backup";
 import {
-  orderTaskTriageTasks,
   taskTriageFolders,
   isTaskTriageCalendarShortcut,
-  isTaskTriageSkipShortcut,
+  taskTriageNavigationAction,
   describeTaskFollowUpInterval,
   taskTriagePreviousFolder,
   type TaskTriageFolder,
@@ -57,6 +56,7 @@ type TaskTriageDialogProps = {
   onResolveExtracted: (task: TodoistTask, resolution: "delete" | "keep") => Promise<void>;
   onSkipExtracted: (task: TodoistTask) => void;
   onSkipNormal: (task: TodoistTask) => void;
+  onPreviousNormal?: () => void;
   onReturnAnimationEnd: (taskId: string) => void;
   open: boolean;
   returningTask: { direction: PriorityReviewCard["direction"]; id: string } | null;
@@ -79,6 +79,7 @@ type NormalTaskReviewProps = {
   onQueryChange: (query: string) => void;
   onSchedule: () => void;
   onSkip: () => void;
+  onPrevious?: () => void;
   onRename: (title: string) => Promise<void>;
   onFolderScroll: (scrollTop: number) => void;
   query: string;
@@ -105,6 +106,7 @@ function NormalTaskReview({
   onRename,
   onSchedule,
   onSkip,
+  onPrevious,
   onFolderScroll,
   query,
   resolving,
@@ -135,10 +137,13 @@ function NormalTaskReview({
         || target.matches("textarea, select, input:not([aria-label='Search folders'])")
         || target.isContentEditable
       );
-      if (!isTaskTriageSkipShortcut(event.nativeEvent, editing)) return;
+      const action = taskTriageNavigationAction(event.nativeEvent, editing);
+      if (!action || (action === "previous" && !onPrevious)) return;
       event.preventDefault();
       event.stopPropagation();
-      if (!resolving && !savingTitle && !editingTitle) onSkip();
+      if (resolving || savingTitle || editingTitle) return;
+      if (action === "previous") onPrevious?.();
+      else onSkip();
     }}>
       <article className="task-triage-task-preview">
         <span>Task to file</span>
@@ -227,7 +232,7 @@ function NormalTaskReview({
           >
             <ArrowRight size={15} />
             <span>{details.reviewAt ? `Follow up again in ${describeTaskFollowUpInterval(task)}` : `Keep in ${todoistGroupDisplayName(previousFolder)}`}</span>
-            <kbd>→</kbd>
+            <kbd>⌘→</kbd>
           </button>
         </div>
       )}
@@ -301,6 +306,7 @@ export function TaskTriageDialog({
   onResolveExtracted,
   onSkipExtracted,
   onSkipNormal,
+  onPreviousNormal,
   onReturnAnimationEnd,
   open,
   returningTask,
@@ -316,10 +322,9 @@ export function TaskTriageDialog({
     groupParents: {},
   });
   const searchInputRef = React.useRef<HTMLInputElement>(null);
-  const orderedTasks = React.useMemo(() => orderTaskTriageTasks(ungroupedTasks), [ungroupedTasks]);
   const currentTask = phase === "extracted"
     ? extractedTasks[0] ?? null
-    : phase === "normal" ? orderedTasks[0] ?? null : null;
+    : phase === "normal" ? ungroupedTasks[0] ?? null : null;
   const priorityReviewVisible = open && phase === "priority" && !resolving;
   const previousFolder = taskTriagePreviousFolder(currentTask, groups);
   const folders = React.useMemo(() => taskTriageFolders({
@@ -480,8 +485,9 @@ export function TaskTriageDialog({
         phase === "normal"
         && previousFolder
         && event.key === "ArrowRight"
-        && !event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey
+        && !(event.metaKey && event.ctrlKey) && !event.altKey && !event.shiftKey
         && !event.repeat && !event.isComposing
+        && (!(event.metaKey || event.ctrlKey) || !folderQuery)
         && !(event.target instanceof HTMLElement
           && (event.target.matches("textarea, input:not([aria-label='Search folders'])")
             || event.target.isContentEditable))
@@ -502,7 +508,7 @@ export function TaskTriageDialog({
     };
     window.addEventListener("keydown", handleKeyDown, true);
     return () => window.removeEventListener("keydown", handleKeyDown, true);
-  }, [assignFolder, close, currentTask, deleteNormalTask, open, openOriginalTask, phase, previousFolder, resolveExtracted, scheduleCurrentTask]);
+  }, [assignFolder, close, currentTask, deleteNormalTask, open, openOriginalTask, phase, previousFolder, folderQuery, resolveExtracted, scheduleCurrentTask]);
 
   if (!open || (!currentTask && !priorityReviewVisible)) return null;
 
@@ -577,6 +583,13 @@ export function TaskTriageDialog({
             onAssign={(group) => void assignFolder(group)}
             onDelete={() => void deleteNormalTask()}
             onSchedule={() => void scheduleCurrentTask()}
+            onPrevious={onPreviousNormal ? () => {
+              if (resolving) return;
+              setError(null);
+              setFolderQuery("");
+              setHighlightedFolder(0);
+              onPreviousNormal();
+            } : undefined}
             onSkip={() => {
               if (resolving) return;
               setError(null);

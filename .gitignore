@@ -45,3 +45,8 @@ next-env.d.ts
 
 # Cloudflare local build state
 **/.wrangler/
+
+# Managed development session artifacts
+/.next-sessions/
+/.vite-sessions/
+/.debug/dev-sessions/

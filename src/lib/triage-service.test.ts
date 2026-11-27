@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createTriageService, type TriageDependencies } from "./triage-service";
 import { parseTriageAction } from "./triage-contract";
-import { calendarEventDetailsFromTodoistContent, todoistContentWithGroupChange } from "./todoist-calendar";
+import { calendarEventDetailsFromTodoistContent, todoistContentWithGroupChange, todoistContentWithReviewAt } from "./todoist-calendar";
 import type { TodoistTask } from "./todoist";
 
 const task = (id = "t", projectId = "inbox"): TodoistTask => ({ id, projectId, content: "Review proposal", description: "Source details", priority: 1, due: null });
@@ -23,11 +23,27 @@ test("snapshot uses the same visible task scope and persisted hierarchy as count
   assert.deepEqual(data.tasks.map((t) => t.id), ["t"]);
   assert.deepEqual(data.extractedTasks.map((t) => t.id), ["ex"]);
   assert.ok(data.groups.includes("Priority Today")); assert.equal(data.groupParents.Child, "Priority Today");
-  assert.equal(data.defaultCalendarId, "google|a|c");
+  assert.equal(data.defaultCalendarId, null);
+  assert.deepEqual(data.calendars, []);
 });
-test("calendar failure does not block task review", async () => {
-  const { service } = setup({ calendars: async () => { throw new Error("down"); } });
-  const data = await service.snapshot(); assert.equal(data.tasks.length, 1); assert.ok(data.calendarError); assert.equal(data.defaultCalendarId, null);
+test("loading all triage queues never requests Google Calendar", async () => {
+  let calendarReads = 0;
+  const { service } = setup({ calendars: async () => { calendarReads++; throw new Error("down"); } });
+  const data = await service.snapshot();
+  assert.equal(data.tasks.length, 1);
+  assert.equal(calendarReads, 0);
+  assert.equal(data.calendarError, null);
+  assert.deepEqual(data.calendars, []);
+});
+test("snapshot returns only queue members, using the same rules as badge counts", async () => {
+  const { service, tasks } = setup();
+  tasks.push({ ...task("filed"), content: todoistContentWithGroupChange("Filed", "Work") });
+  tasks.push({ ...task("future"), content: todoistContentWithReviewAt("Future", new Date(Date.now() + 86400000)) });
+  tasks.push({ ...task("follow"), content: todoistContentWithGroupChange("Follow", "Priority Today") });
+  const data = await service.snapshot();
+  assert.deepEqual(new Set(data.tasks.map((t) => t.id)), new Set(["t", "follow"]));
+  assert.deepEqual(data.extractedTasks.map((t) => t.id), ["ex"]);
+  assert.ok(data.groups.includes("Work"), "folder choices still include filed tasks' groups");
 });
 test("a stale decision performs no provider writes", async () => {
   const { service, calls, tasks } = setup();

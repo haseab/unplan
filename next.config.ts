@@ -18,4 +18,12 @@ const nextConfig: NextConfig = {
   },
 };
 
+
+// Managed previews use their assigned origin and isolated caches. Normal development is unchanged.
+if (process.env.DEV_SESSION_ID) {
+  nextConfig.distDir = process.env.DEV_DIST_DIR;
+  nextConfig.typescript = { ...nextConfig.typescript, tsconfigPath: process.env.DEV_TSCONFIG_PATH };
+  nextConfig.allowedDevOrigins = [...(nextConfig.allowedDevOrigins ?? []), process.env.NEXT_DEV_ALLOWED_ORIGINS ?? "127.0.0.1"];
+}
+
 export default nextConfig;

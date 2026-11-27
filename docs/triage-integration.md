@@ -53,3 +53,26 @@ The BB plugin has separate bridge, session, component, and navigation tests.
 Deploy the Unplan API before expecting the BB page to load live tasks. A missing
 endpoint is shown as a deployment requirement, never as a successful empty
 queue. This change does not deploy production or commit/publish either repository.
+
+## Lightweight queue loading
+
+Triage reads first resolve the Todoist project list, then fetch tasks only from
+Inbox, the managed `unplan-calendar` / `unplan-calendar-N` projects,
+`task-extraction`, and existing project IDs explicitly listed in
+`ATTENTION_TODOIST_BUCKET_IDS`. Pagination is retained for each source. They
+never fall back to an unscoped account-wide task read. Folder settings remain
+in the Inbox settings task.
+
+The snapshot sends only Extraction, Task triage, and Follow-up queue members,
+using the same membership rules as triage counts. Folder names and hierarchy
+are derived from the scoped source data, including filed tasks, so filing
+choices are preserved. No Google Calendar request is made for a snapshot or
+triage counts. Legacy calendar response fields remain empty/null (the stored
+default calendar ID can still be included). Calendar resolution happens only
+inside Keep/Schedule mutations that actually need calendar metadata.
+
+BB keeps its last snapshot and pending Undo operations in memory across page
+navigation, coalesces concurrent reads, and refreshes automatic views after a
+15-second freshness window. Manual refresh and mutation reconciliation still
+request a fresh snapshot through the shared integration cache. No task data is
+persisted to browser storage by this change.
