@@ -407,7 +407,10 @@ export function TaskTriageDialog({
         searchInputRef.current?.focus();
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [currentTask, open, phase, embedded, hadReviewFocus]);
+    // Ownership is sampled before the keyed editor is replaced. A subsequent
+    // render must not cancel the focus restoration queued for that replacement.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentTask, open, phase, embedded]);
 
   React.useEffect(() => {
     if (!returningTask || (phase !== "priority" && returningTask.id !== currentTask?.id)) return;
