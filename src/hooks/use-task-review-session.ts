@@ -2,21 +2,34 @@
 
 import * as React from "react";
 import type { TodoistTask } from "@/lib/todoist";
+import {
+  emptyTaskReviewSession,
+  pendingTaskReviews,
+  previousSkippedTaskId,
+  previousTaskReview,
+  skipTaskReview,
+} from "@/lib/task-review-session";
 
 /** Skipping only defers review for this open session; provider tasks stay untouched. */
 export function useTaskReviewSession(tasks: TodoistTask[], open: boolean) {
-  const [session, setSession] = React.useState({ open, skippedIds: new Set<string>() });
+  const [session, setSession] = React.useState(() => ({ open, review: emptyTaskReviewSession() }));
   if (session.open !== open) {
-    setSession({ open, skippedIds: new Set() });
+    setSession({ open, review: emptyTaskReviewSession() });
   }
   const pendingTasks = React.useMemo(
-    () => session.open === open ? tasks.filter(({ id }) => !session.skippedIds.has(id)) : tasks,
+    () => session.open === open ? pendingTaskReviews(tasks, session.review) : tasks,
     [tasks, session, open],
   );
   const skipTask = React.useCallback((task: TodoistTask) => {
     setSession((current) => current.open
-      ? { ...current, skippedIds: new Set([...current.skippedIds, task.id]) }
+      ? { ...current, review: skipTaskReview(current.review, task.id) }
       : current);
   }, []);
-  return { pendingTasks, skipTask };
+  const previousTask = React.useCallback(() => {
+    setSession((current) => current.open
+      ? { ...current, review: previousTaskReview(current.review, tasks) }
+      : current);
+  }, [tasks]);
+  const canGoBack = open && session.open === open && previousSkippedTaskId(session.review, tasks) !== null;
+  return { pendingTasks, skipTask, previousTask, canGoBack };
 }

@@ -1,6 +1,6 @@
 import { invalidateTriageCounts } from "@/lib/triage-revision";
 import { enforceRateLimit } from "@/lib/request-rate-limit";
-import { readTaskRefreshState, saveTaskRefreshSettings, secretMatches } from "@/lib/task-refresh-server";
+import { readTaskTriageState, saveTaskRefreshSettings, secretMatches } from "@/lib/task-refresh-server";
 import { readTodoistProviderResponse, todoistTokenFetch } from "@/lib/todoist-server";
 import { createTriageService } from "@/lib/triage-service";
 import { createTriageCalendar } from "@/lib/triage-calendar-server";
@@ -21,9 +21,10 @@ async function handle(request: Request, write: boolean) {
   try {
     const signal = AbortSignal.any([request.signal, AbortSignal.timeout(60000)]);
     const calendar = createTriageCalendar(signal);
+    const extraBucketIds = (process.env.ATTENTION_TODOIST_BUCKET_IDS ?? "").split(",").map((id) => id.trim()).filter(Boolean);
     const service = createTriageService({
-      readState: () => readTaskRefreshState(token), saveSettings: (s) => saveTaskRefreshSettings(token, s),
-      extraBucketIds: (process.env.ATTENTION_TODOIST_BUCKET_IDS ?? "").split(",").map((s) => s.trim()).filter(Boolean),
+      readState: () => readTaskTriageState(token, extraBucketIds), saveSettings: (s) => saveTaskRefreshSettings(token, s),
+      extraBucketIds,
       calendars: async () => (await calendar.calendars()).filter((c) => c.writable), schedule: calendar.schedule,
       todoist: async (path, body, method = "POST") => readTodoistProviderResponse(await todoistTokenFetch(token, path, {
         method, ...(body !== undefined ? { body: JSON.stringify(body) } : {}), signal,

@@ -4,6 +4,7 @@ import { collectTodoistPages, normalizeTodoistTask, type TodoistTaskPayload, typ
 import { todoistTokenFetch, readTodoistProviderResponse } from "./todoist-server";
 import { findTaskExtractionProject } from "./task-extraction";
 import { isFollowUpTask } from "./todoist-follow-ups";
+import { readTriageState } from "./triage-state";
 import { refreshTasks } from "./task-refresh";
 import { isTaskRefreshSettingsTask, latestTaskRefreshSettings, TASK_REFRESH_SETTINGS_PREFIX, type TaskRefreshSettings } from "./task-refresh-settings";
 
@@ -24,6 +25,10 @@ export async function readTaskRefreshState(token: string) {
   ]);
   const normalized = tasks.map(normalizeTodoistTask);
   return { tasks: normalized, projects: projects.map((p) => ({ id: String(p.id), name: p.name, inbox: !!p.inbox_project, parentId: p.parent_id ?? null })), record: latestTaskRefreshSettings(normalized) };
+}
+
+export function readTaskTriageState(token: string, extraBucketIds: string[] = []) {
+  return readTriageState(<T>(path: string) => requestTodoist<T>(token, path), extraBucketIds);
 }
 
 export async function saveTaskRefreshSettings(token: string, settings: TaskRefreshSettings) {

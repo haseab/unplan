@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "name": "app",
+  "frontend": {
+    "cwd": ".",
+    "command": [
+      "node",
+      "scripts/dev-session.mjs",
+      "proxy"
+    ],
+    "healthPath": "/api/__dev_session_probe"
+  },
+  "backend": {
+    "cwd": ".",
+    "command": [
+      "node",
+      "scripts/dev-session.mjs",
+      "app"
+    ],
+    "healthPath": "/api/__dev_session_probe"
+  },
+  "preflight": {
+    "command": [
+      "node",
+      "scripts/check-dev-session.mjs"
+    ]
+  },
+  "verification": {
+    "path": "/api/google/accounts",
+    "authenticated": false
+  }
+}

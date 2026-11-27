@@ -203,7 +203,7 @@ import { useTodoistGroupPreferences } from "@/hooks/use-todoist-group-preference
 import { useTaskTriagePhase } from "@/hooks/use-task-triage-phase";
 import { useTaskReviewSession } from "@/hooks/use-task-review-session";
 import { priorityTaskContentRefreshedNow, priorityTaskContentWithReviewAt } from "@/lib/priority-task-review";
-import { isNormalTaskTriageTask, taskTriageKeepContent, taskTriageShortcutMode } from "@/lib/task-triage";
+import { orderTaskTriageTasks, isNormalTaskTriageTask, taskTriageKeepContent, taskTriageShortcutMode } from "@/lib/task-triage";
 import {
   crossSurfaceMoveShortcut,
   eventIdsForKeyboardAction,
@@ -1091,11 +1091,11 @@ export function CalendarApp({ demo = false }: { demo?: boolean } = {}) {
   );
   const { groupParents: taskGroupParents } = useTodoistGroupPreferences();
   const ungroupedTodoistTasks = React.useMemo(
-    () => visibleTodoistTasks.filter((task) => isNormalTaskTriageTask(task, taskGroupParents, now)),
+    () => orderTaskTriageTasks(visibleTodoistTasks.filter((task) => isNormalTaskTriageTask(task, taskGroupParents, now))),
     [visibleTodoistTasks, taskGroupParents, now],
   );
   const { pendingTasks: extractedReviewTasks, skipTask: skipExtractedTask } = useTaskReviewSession(extractedTasks, showTaskTriage);
-  const { pendingTasks: normalReviewTasks, skipTask: skipNormalTask } = useTaskReviewSession(ungroupedTodoistTasks, showTaskTriage);
+  const { pendingTasks: normalReviewTasks, skipTask: skipNormalTask, previousTask: previousNormalTask, canGoBack: canGoBackNormal } = useTaskReviewSession(ungroupedTodoistTasks, showTaskTriage);
   const { phase: triagePhase, completeFollowUp: completeTaskFollowUpPhase } = useTaskTriagePhase({
     open: showTaskTriage,
     initialMode: taskTriageMode,
@@ -6572,6 +6572,7 @@ export function CalendarApp({ demo = false }: { demo?: boolean } = {}) {
         extractedTasks={extractedReviewTasks}
         onSkipExtracted={skipExtractedTask}
         onSkipNormal={skipNormalTask}
+        onPreviousNormal={canGoBackNormal ? previousNormalTask : undefined}
         groups={todoistGroups}
         phase={triagePhase}
         onCompleteFollowUp={completeTaskFollowUpTriage}

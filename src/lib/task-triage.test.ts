@@ -4,7 +4,7 @@ import {
   describeTaskFollowUpInterval,
   orderTaskTriageTasks,
   isTaskTriageCalendarShortcut,
-  isTaskTriageSkipShortcut,
+  taskTriageNavigationAction,
   taskTriageFolders,
   taskTriagePhase,
   taskTriagePreviousFolder,
@@ -226,17 +226,20 @@ test("Cmd/Ctrl Shift Left schedules extraction and task triage; Cmd/Ctrl Left st
   assert.equal(isTaskTriageCalendarShortcut({ ...key, metaKey: true }, "priority", false), false);
 });
 
-test("plain Tab skips filing without taking over editing or modified navigation", () => {
+test("Tab skips and Shift Tab goes back without taking over editing or system shortcuts", () => {
   const key = {
     key: "Tab", metaKey: false, ctrlKey: false, altKey: false,
     shiftKey: false, repeat: false, isComposing: false,
   };
-  assert.equal(isTaskTriageSkipShortcut(key, false), true);
-  assert.equal(isTaskTriageSkipShortcut(key, true), false);
+  assert.equal(taskTriageNavigationAction(key, false), "skip");
+  assert.equal(taskTriageNavigationAction({ ...key, shiftKey: true }, false), "previous");
+  assert.equal(taskTriageNavigationAction(key, true), null);
+  assert.equal(taskTriageNavigationAction({ ...key, shiftKey: true }, true), null);
   for (const change of [
     { key: "Enter" }, { metaKey: true }, { ctrlKey: true }, { altKey: true },
-    { shiftKey: true }, { repeat: true }, { isComposing: true },
+    { repeat: true }, { isComposing: true },
   ]) {
-    assert.equal(isTaskTriageSkipShortcut({ ...key, ...change }, false), false);
+    assert.equal(taskTriageNavigationAction({ ...key, ...change }, false), null);
+    assert.equal(taskTriageNavigationAction({ ...key, ...change, shiftKey: true }, false), null);
   }
 });

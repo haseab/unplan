@@ -1,7 +1,7 @@
 import type { CalendarSource } from "./calendar-types";
 import type { TodoistTask, TodoistProject } from "./todoist";
 import type { TaskRefreshSettings } from "./task-refresh-settings";
-import { attentionVisibleTasks } from "./attention-triage-counts";
+import { attentionVisibleTasks, attentionTriageQueues } from "./attention-triage-counts";
 import { calendarEventDetailsFromTodoistContent, todoistContentWithCalendar, todoistContentWithGroupChange, todoistContentWithTitle } from "./todoist-calendar";
 import { resolveTaskExtractionDestination } from "./task-extraction";
 import { taskTriageKeepContent } from "./task-triage";
@@ -35,14 +35,15 @@ export function createTriageService(deps: TriageDependencies) {
   async function snapshot(): Promise<TriageSnapshot> {
     const state = await deps.readState();
     const data = taskData(state);
-    let calendars: CalendarSource[] = [], calendarError: string | null = null;
-    try { calendars = await deps.calendars(); } catch { calendarError = "Reconnect Google Calendar in Unplan to schedule tasks."; }
-    const defaultCalendar = calendars.find((c) => c.id === data.settings.triage?.defaultCalendarId)
-      ?? calendars.find((c) => c.name.toLowerCase() === "technicalities") ?? calendars.find((c) => c.primary) ?? calendars[0];
-    return { tasks: data.tasks, extractedTasks: data.extractedTasks, groups: data.groups,
+    const queues = attentionTriageQueues(state.tasks, state.projects, data.settings.parents, new Date(), deps.extraBucketIds);
+    const tasks = [...new Map([...queues.normal, ...queues.followUps].map((task) => [task.id, task])).values()];
+    return { tasks, extractedTasks: queues.extracted, groups: data.groups,
       groupOrder: data.settings.triage?.groupOrder ?? [], groupParents: data.settings.parents,
-      calendars, calendarError, defaultCalendarId: defaultCalendar?.id ?? null, checkedAt: new Date().toISOString() };
+      // Retain the wire fields for older consumers; reading triage never contacts Google.
+      calendars: [], calendarError: null, defaultCalendarId: data.settings.triage?.defaultCalendarId ?? null,
+      checkedAt: new Date().toISOString() };
   }
+
   async function mutate(action: TriageAction) {
     const state = await deps.readState();
     const data = taskData(state);
