@@ -1,5 +1,2 @@
-import { parseISO } from "date-fns";
-import type { CalendarEvent } from "@/lib/calendar-types";
-
-export const isEventPast = (event: CalendarEvent, now: Date) =>
-  parseISO(event.end).getTime() < now.getTime();
+// Shared implementation is owned by the frontend package.
+export * from "@unplan/frontend/lib/event-time";

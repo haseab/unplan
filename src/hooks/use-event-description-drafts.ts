@@ -1,7 +1,3 @@
 "use client";
-import { useSyncExternalStore } from "react";
-import { getNotesSnapshot, getServerNotesSnapshot, subscribeNotes } from "@/lib/event-description-drafts";
-
-export function useEventDescriptionDrafts() {
-  return useSyncExternalStore(subscribeNotes, getNotesSnapshot, getServerNotesSnapshot);
-}
+// Shared implementation is owned by the frontend package.
+export * from "@unplan/frontend/hooks/use-event-description-drafts";

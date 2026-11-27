@@ -1,1 +1,2 @@
-export const DEFAULT_TASK_CALENDAR_STORAGE_KEY = "unplan:default-task-calendar";
+// Shared implementation is owned by the frontend package.
+export * from "@unplan/frontend/lib/task-calendar-preferences";

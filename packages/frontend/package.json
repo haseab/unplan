@@ -1,0 +1,83 @@
+{
+  "name": "@unplan/frontend",
+  "version": "0.1.2",
+  "type": "module",
+  "description": "Shared Unplan calendar and task review frontend.",
+  "files": [
+    "dist",
+    "assets",
+    "README.md"
+  ],
+  "exports": {
+    "./components/*": {
+      "types": "./dist/components/*.d.ts",
+      "default": "./dist/components/*.js"
+    },
+    "./hooks/*": {
+      "types": "./dist/hooks/*.d.ts",
+      "default": "./dist/hooks/*.js"
+    },
+    "./lib/*": {
+      "types": "./dist/lib/*.d.ts",
+      "default": "./dist/lib/*.js"
+    },
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./runtime": {
+      "types": "./dist/runtime.d.ts",
+      "default": "./dist/runtime.js"
+    },
+    "./styles.css": "./dist/styles.css",
+    "./embedded.css": "./dist/embedded.css",
+    "./package.json": "./package.json",
+    "./triage.css": "./dist/triage.css"
+  },
+  "sideEffects": [
+    "**/*.css",
+    "./dist/lib/action-toast.js"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json && node scripts/build-styles.mjs",
+    "prepack": "npm run build",
+    "test": "node --test tests/*.test.mjs"
+  },
+  "dependencies": {
+    "chrono-node": "^2.10.1",
+    "date-fns": "^4.4.0",
+    "lucide-react": "^1.28.0",
+    "tinycolor2": "^1.6.0",
+    "@tiptap/react": "^3.30.5",
+    "@tiptap/markdown": "^3.30.5",
+    "@tiptap/extension-placeholder": "^3.30.5",
+    "@tiptap/starter-kit": "^3.30.5",
+    "@tiptap/pm": "^3.30.5"
+  },
+  "peerDependencies": {
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "sonner": "^1.7.4 || ^2.0.0"
+  },
+  "devDependencies": {
+    "postcss": "^8.5.6"
+  },
+  "types": "./dist/index.d.ts",
+  "main": "./dist/index.js",
+  "typesVersions": {
+    "*": {
+      "lib/*": [
+        "dist/lib/*.d.ts"
+      ],
+      "components/*": [
+        "dist/components/*.d.ts"
+      ],
+      "hooks/*": [
+        "dist/hooks/*.d.ts"
+      ],
+      "runtime": [
+        "dist/runtime.d.ts"
+      ]
+    }
+  }
+}
