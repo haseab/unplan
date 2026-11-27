@@ -1,4 +1,5 @@
 "use client";
+import { useEventCalendarDefaults } from "@/hooks/use-event-calendar-defaults";
 
 import { DEFAULT_TASK_CALENDAR_STORAGE_KEY } from "@/lib/task-calendar-preferences";
 import { AppInformationLinks } from "@/components/app-information-links";
@@ -469,7 +470,6 @@ type TodoistCalendarDropPoint = {
 };
 
 const hours = Array.from({ length: 24 }, (_, index) => index);
-const DEFAULT_CALENDAR_STORAGE_KEY = "unplan:default-event-calendar";
 
 const EVENT_CREATION_DRAG_THRESHOLD = 5;
 const CROSS_SERVICE_DRAG_THRESHOLD = 12;
@@ -664,11 +664,6 @@ export function CalendarApp({ demo = false }: { demo?: boolean } = {}) {
     setCreationCalendarId(null);
     setCreationPreviewTitle("");
   }, []);
-  const [preferredCalendarId, setPreferredCalendarId] = React.useState<string | null>(() =>
-    typeof window === "undefined"
-      ? null
-      : window.localStorage.getItem(DEFAULT_CALENDAR_STORAGE_KEY),
-  );
   const [preferredTaskCalendarId, setPreferredTaskCalendarId] = React.useState<string | null>(() =>
     typeof window === "undefined"
       ? null
@@ -1040,12 +1035,13 @@ export function CalendarApp({ demo = false }: { demo?: boolean } = {}) {
     enabled: google.connected,
     onEvents: rememberRecentEventTitles,
   });
-  const defaultCalendar = React.useMemo(
-    () => writableCalendars.find((calendar) => calendar.id === preferredCalendarId)
-      ?? writableCalendars[0]
-      ?? null,
-    [preferredCalendarId, writableCalendars],
-  );
+  const {
+    pastCalendar: defaultPastCalendar,
+    futureCalendar: defaultCalendar,
+    setPastCalendarId,
+    setFutureCalendarId: setDefaultCalendarId,
+    calendarForStart,
+  } = useEventCalendarDefaults(writableCalendars);
   const technicalitiesCalendar = React.useMemo(
     () => findTechnicalitiesCalendar(writableCalendars),
     [writableCalendars],
@@ -1071,14 +1067,16 @@ export function CalendarApp({ demo = false }: { demo?: boolean } = {}) {
     const dates = mode === "now"
       ? currentEventCreationDates(new Date())
       : adjacentEventCreationDates(selectedEvents[0], mode);
+    const calendar = calendarForStart(dates.start);
+    if (!calendar) return false;
     createEventRef.current(
       "New event",
-      defaultCalendar.id,
-      { calendarId: defaultCalendar.id, ...dates },
+      calendar.id,
+      { calendarId: calendar.id, ...dates },
       { focusTitle: true, scrollIntoView: true },
     );
     return true;
-  }, [defaultCalendar, selectedEvents]);
+  }, [calendarForStart, defaultCalendar, selectedEvents]);
   const visibleTodoistTasks = React.useMemo(
     () => todoistTasks.filter((task) => !isFollowUpTask(task) && !isTaskRefreshSettingsTask(task) && (
       isLocalTask(task)
@@ -1211,11 +1209,6 @@ export function CalendarApp({ demo = false }: { demo?: boolean } = {}) {
     await followUps.advance(current);
     scheduledFollowUpOccurrences.current.delete(occurrence);
   };
-
-  const setDefaultCalendarId = React.useCallback((calendarId: string) => {
-    setPreferredCalendarId(calendarId);
-    window.localStorage.setItem(DEFAULT_CALENDAR_STORAGE_KEY, calendarId);
-  }, []);
 
   const setDefaultTaskCalendarId = React.useCallback((calendarId: string) => {
     setPreferredTaskCalendarId(calendarId);
@@ -2353,6 +2346,11 @@ export function CalendarApp({ demo = false }: { demo?: boolean } = {}) {
             creationRef.current.anchorMinute,
           );
           creationRef.current.range = anchorRange;
+          const calendar = calendarForStart(eventCreationDates(anchorRange, renderedDays).start);
+          if (calendar) {
+            creationRef.current.calendarId = calendar.id;
+            setCreationCalendarId(calendar.id);
+          }
           setCreationRange(anchorRange);
           return;
         }
@@ -2361,6 +2359,11 @@ export function CalendarApp({ demo = false }: { demo?: boolean } = {}) {
           (pointer.clientY - gridRect.top) / pixelsPerMinute,
         );
         creationRef.current.range = range;
+        const calendar = calendarForStart(eventCreationDates(range, renderedDays).start);
+        if (calendar) {
+          creationRef.current.calendarId = calendar.id;
+          setCreationCalendarId(calendar.id);
+        }
         setCreationRange(range);
       }
 
@@ -2428,9 +2431,12 @@ export function CalendarApp({ demo = false }: { demo?: boolean } = {}) {
         creationRef.current = null;
         if (!isEventCreationAnchor(creation.range)) {
           setRightSidebarTab("events");
+          const dates = eventCreationDates(creation.range, renderedDays);
+          const calendarId = calendarForStart(dates.start)?.id ?? creation.calendarId;
+          setCreationCalendarId(calendarId);
           setCreationDraft({
-            calendarId: creation.calendarId,
-            ...eventCreationDates(creation.range, renderedDays),
+            calendarId,
+            ...dates,
           });
         } else {
           setCreationRange(null);
@@ -2856,7 +2862,7 @@ export function CalendarApp({ demo = false }: { demo?: boolean } = {}) {
       clearTodoistDropFeedback();
       clearActionToastResourceHold("calendar-pointer");
     };
-  }, [calendars, chooseGuestNotifications, clearEventMutationOrigins, clearPendingEventCreation, clearTodoistDropFeedback, commitStagedTodoistTask, confirmBulkAction, finishOperation, gridHeight, persistMovedEvents, persistTodoistTaskOrder, pixelsPerMinute, registerPendingEventCreation, rememberEventMutationOrigins, removeLocalTodoistTasks, renderStart, renderedDayCount, renderedDays, stageTodoistTasks, toastDuration, todoistConnected, updateCalendarTaskDropProjection]);
+  }, [calendarForStart, calendars, chooseGuestNotifications, clearEventMutationOrigins, clearPendingEventCreation, clearTodoistDropFeedback, commitStagedTodoistTask, confirmBulkAction, finishOperation, gridHeight, persistMovedEvents, persistTodoistTaskOrder, pixelsPerMinute, registerPendingEventCreation, rememberEventMutationOrigins, removeLocalTodoistTasks, renderStart, renderedDayCount, renderedDays, stageTodoistTasks, toastDuration, todoistConnected, updateCalendarTaskDropProjection]);
 
   const beginEventDrag = (pointer: React.PointerEvent, event: CalendarEvent) => {
     if (pointer.button !== 0) return;
@@ -2989,7 +2995,9 @@ export function CalendarApp({ demo = false }: { demo?: boolean } = {}) {
       );
       const session: ActiveEventCreation = {
         anchorMinute: point.minute,
-        calendarId: defaultCalendar.id,
+        calendarId: calendarForStart(eventCreationDates(
+          eventCreationAnchorRange(point.dayIndex, point.minute), renderedDays,
+        ).start)!.id,
         dayIndex: point.dayIndex,
         hasMoved: false,
         range: eventCreationAnchorRange(point.dayIndex, point.minute),
@@ -6739,6 +6747,8 @@ export function CalendarApp({ demo = false }: { demo?: boolean } = {}) {
         calendars={writableCalendars}
         defaultCalendarId={defaultCalendar?.id ?? null}
         defaultTaskCalendarId={defaultTaskCalendar?.id ?? null}
+        defaultPastCalendarId={defaultPastCalendar?.id ?? null}
+        onDefaultPastCalendarChange={setPastCalendarId}
         onDefaultCalendarChange={setDefaultCalendarId}
         onDefaultTaskCalendarChange={setDefaultTaskCalendarId}
         open={showSettings}
