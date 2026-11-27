@@ -1,0 +1,224 @@
+"use client";
+
+
+import { formatDistanceToNowStrict } from "date-fns";
+import { Clock3, X } from "lucide-react";
+import * as React from "react";
+import {
+  EventTitleField,
+  type EventTitleFieldProps,
+} from "./event-title-field.js";
+import type { CalendarSource } from "../lib/calendar-types.js";
+import {
+  RECENT_EVENT_DURATION_MINUTES,
+  recentEventTitleKey,
+  searchRecentEventTitles,
+  type RecentEventTitle,
+} from "../lib/recent-event-titles.js";
+
+type EventTitleEditorProps = EventTitleFieldProps & {
+  calendars: CalendarSource[];
+  cancelOnEscape?: boolean;
+  currentCalendarId?: string;
+  excludeCurrentTitle?: boolean;
+  onRecentTitleNavigation?: () => void;
+  onRecentTitleRankingReset: (entry: RecentEventTitle) => void;
+  onRecentTitleUsed: (entry: RecentEventTitle) => void;
+  recentTitles: RecentEventTitle[];
+};
+
+export const EventTitleEditor = React.forwardRef<
+  HTMLTextAreaElement,
+  EventTitleEditorProps
+>(function EventTitleEditor({
+  calendars,
+  cancelOnEscape = false,
+  currentCalendarId,
+  excludeCurrentTitle = false,
+  onBlur,
+  onFocus,
+  onKeyDown,
+  onRecentTitleNavigation,
+  onRecentTitleRankingReset,
+  onRecentTitleUsed,
+  onValueChange,
+  recentTitles,
+  value,
+  ...props
+}, forwardedRef) {
+  const inputRef = React.useRef<HTMLTextAreaElement>(null);
+  const optionRefs = React.useRef(new Map<number, HTMLDivElement>());
+  const [activeIndex, setActiveIndex] = React.useState(-1);
+  const [dismissed, setDismissed] = React.useState(false);
+  const [focused, setFocused] = React.useState(false);
+  const [touched, setTouched] = React.useState(false);
+  const listboxId = React.useId();
+
+  React.useImperativeHandle(forwardedRef, () => inputRef.current!, []);
+
+  const results = React.useMemo(() => searchRecentEventTitles(
+    recentTitles,
+    value,
+    {
+      excludeCalendarId: currentCalendarId,
+      excludeTitle: excludeCurrentTitle && !touched ? value : undefined,
+      limit: 20,
+    },
+  ), [currentCalendarId, excludeCurrentTitle, recentTitles, touched, value]);
+  const open = focused && !dismissed && results.length > 0;
+  const calendarNames = React.useMemo(
+    () => new Map(calendars.map((calendar) => [calendar.id, calendar.name])),
+    [calendars],
+  );
+
+  React.useEffect(() => {
+    if (activeIndex >= results.length) setActiveIndex(results.length - 1);
+  }, [activeIndex, results.length]);
+
+  React.useEffect(() => {
+    if (activeIndex < 0) return;
+    optionRefs.current.get(activeIndex)?.scrollIntoView({ block: "nearest" });
+  }, [activeIndex]);
+
+  const choose = (entry: RecentEventTitle) => {
+    onValueChange(entry.title);
+    onRecentTitleUsed(entry);
+    setTouched(true);
+    setDismissed(true);
+    setActiveIndex(-1);
+    window.requestAnimationFrame(() => {
+      const input = inputRef.current;
+      if (!input) return;
+      input.focus({ preventScroll: true });
+      input.setSelectionRange(entry.title.length, entry.title.length);
+    });
+  };
+
+  return (
+    <div className="event-title-editor" data-open={open ? "true" : undefined}>
+      <EventTitleField
+        {...props}
+        aria-activedescendant={open && activeIndex >= 0
+          ? `${listboxId}-option-${activeIndex}`
+          : undefined}
+        aria-controls={open ? listboxId : undefined}
+        aria-expanded={open}
+        aria-haspopup="listbox"
+        onBlur={(event) => {
+          setFocused(false);
+          setActiveIndex(-1);
+          onBlur?.(event);
+        }}
+        onFocus={(event) => {
+          setFocused(true);
+          setDismissed(false);
+          onFocus?.(event);
+        }}
+        onKeyDown={(event) => {
+          if (open && event.key === "Escape" && !cancelOnEscape) {
+            event.preventDefault();
+            event.stopPropagation();
+            setDismissed(true);
+            setActiveIndex(-1);
+            onKeyDown?.(event);
+            return;
+          }
+          if (open && (event.key === "ArrowDown" || event.key === "ArrowUp")) {
+            event.preventDefault();
+            onRecentTitleNavigation?.();
+            const delta = event.key === "ArrowDown" ? 1 : -1;
+            setActiveIndex((current) => {
+              const start = current < 0 ? (delta > 0 ? -1 : 0) : current;
+              return (start + delta + results.length) % results.length;
+            });
+            return;
+          }
+          if (
+            open
+            && event.key === "Enter"
+            && activeIndex >= 0
+            && !event.metaKey
+            && !event.ctrlKey
+            && !event.altKey
+            && !event.shiftKey
+          ) {
+            event.preventDefault();
+            event.stopPropagation();
+            choose(results[activeIndex]);
+            return;
+          }
+          if (event.key === "Tab") {
+            setDismissed(true);
+            setActiveIndex(-1);
+          }
+          onKeyDown?.(event);
+        }}
+        onValueChange={(nextValue) => {
+          setTouched(true);
+          setDismissed(false);
+          setActiveIndex(0);
+          onValueChange(nextValue);
+        }}
+        ref={inputRef}
+        value={value}
+      />
+
+      {open && (
+        <section className="recent-event-titles" aria-label="Recent timers">
+          <header><Clock3 size={12} /><span>Recent timers</span><small>↑↓ to browse</small></header>
+          <div id={listboxId} role="listbox" aria-label="Recent event titles">
+            {results.map((entry, index) => (
+              <div
+                aria-selected={index === activeIndex}
+                className="recent-event-title-option"
+                id={`${listboxId}-option-${index}`}
+                key={recentEventTitleKey(entry.calendarId, entry.normalizedTitle)}
+                onMouseEnter={() => setActiveIndex(index)}
+                ref={(element) => {
+                  if (element) optionRefs.current.set(index, element);
+                  else optionRefs.current.delete(index);
+                }}
+                role="option"
+              >
+                <button
+                  className="recent-event-title-select"
+                  onClick={() => choose(entry)}
+                  onMouseDown={(event) => event.preventDefault()}
+                  tabIndex={-1}
+                  type="button"
+                >
+                  <span
+                    className="recent-event-title-color"
+                    style={{ backgroundColor: entry.calendarColor }}
+                  />
+                  <span className="recent-event-title-copy">
+                    <strong>{entry.title}</strong>
+                    <small>
+                      {calendarNames.get(entry.calendarId) ?? "Calendar"}
+                      <span aria-hidden="true"> · </span>
+                      {formatDistanceToNowStrict(entry.lastUsedAt, { addSuffix: true })}
+                    </small>
+                  </span>
+                  <em>{RECENT_EVENT_DURATION_MINUTES}m</em>
+                </button>
+                <button
+                  aria-label={`Reset ranking for ${entry.title}`}
+                  className="recent-event-title-reset"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onRecentTitleRankingReset(entry);
+                  }}
+                  onMouseDown={(event) => event.preventDefault()}
+                  title="Reset ranking"
+                  type="button"
+                >
+                  <X aria-hidden="true" size={13} />
+                </button>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+    </div>
+  );
+});

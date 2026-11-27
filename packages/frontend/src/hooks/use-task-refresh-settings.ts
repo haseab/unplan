@@ -1,0 +1,114 @@
+"use client";
+
+import { frontendFetch } from "../runtime.js";
+
+
+import * as React from "react";
+import { TODOIST_PROJECT_STORAGE_KEY, TODOIST_TOKEN_HEADER } from "../lib/todoist.js";
+import { parseTaskFolderActivity, TASK_FOLDER_ACTIVITY_STORAGE_KEY } from "../lib/task-folder-activity.js";
+import { readTodoistFolderPreferences, TODOIST_GROUP_PARENTS_STORAGE_KEY, TODOIST_CUSTOM_GROUPS_STORAGE_KEY, TODOIST_GROUP_ORDER_STORAGE_KEY } from "../lib/todoist-folder-backup.js";
+import { TASK_FOLDERS_CHANGED } from "../lib/task-folder-creation.js";
+import { parseTaskRefreshSettings, TASK_REFRESH_SETTINGS_UPDATED_AT, type TaskRefreshSettings } from "../lib/task-refresh-settings.js";
+import { DEFAULT_TASK_CALENDAR_STORAGE_KEY } from "../lib/task-calendar-preferences.js";
+import { readJsonResponse } from "../lib/http-client.js";
+
+const fingerprint = (settings: TaskRefreshSettings) => JSON.stringify([settings.activity, settings.parents, settings.timeZone, settings.triage]);
+const readNames = (key: string): string[] => {
+  try { const v: unknown = JSON.parse(localStorage.getItem(key) ?? "[]"); return Array.isArray(v) ? v.filter((s): s is string => typeof s === "string") : []; } catch { return []; }
+};
+const readLocal = (): TaskRefreshSettings => {
+  const activity = parseTaskFolderActivity(localStorage.getItem(TASK_FOLDER_ACTIVITY_STORAGE_KEY));
+  const dates = Object.values(activity).map((entry) => Date.parse(entry.changedAt));
+  const latest = Math.max(0, ...dates);
+  return {
+    triage: { customGroups: readNames(TODOIST_CUSTOM_GROUPS_STORAGE_KEY), groupOrder: readNames(TODOIST_GROUP_ORDER_STORAGE_KEY), defaultCalendarId: localStorage.getItem(DEFAULT_TASK_CALENDAR_STORAGE_KEY), preferredProjectId: localStorage.getItem(TODOIST_PROJECT_STORAGE_KEY) },
+    activity, parents: readTodoistFolderPreferences(localStorage).groupParents,
+    timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    updatedAt: localStorage.getItem(TASK_REFRESH_SETTINGS_UPDATED_AT) ?? new Date(latest).toISOString(),
+  };
+};
+const applyLocal = (settings: TaskRefreshSettings) => {
+  localStorage.setItem(TASK_FOLDER_ACTIVITY_STORAGE_KEY, JSON.stringify(settings.activity));
+  localStorage.setItem(TODOIST_GROUP_PARENTS_STORAGE_KEY, JSON.stringify(settings.parents));
+  localStorage.setItem(TASK_REFRESH_SETTINGS_UPDATED_AT, settings.updatedAt);
+  if (settings.triage) {
+    localStorage.setItem(TODOIST_CUSTOM_GROUPS_STORAGE_KEY, JSON.stringify(settings.triage.customGroups));
+    localStorage.setItem(TODOIST_GROUP_ORDER_STORAGE_KEY, JSON.stringify(settings.triage.groupOrder));
+    if (settings.triage.defaultCalendarId) localStorage.setItem(DEFAULT_TASK_CALENDAR_STORAGE_KEY, settings.triage.defaultCalendarId);
+    else localStorage.removeItem(DEFAULT_TASK_CALENDAR_STORAGE_KEY);
+    if (settings.triage.preferredProjectId) localStorage.setItem(TODOIST_PROJECT_STORAGE_KEY, settings.triage.preferredProjectId);
+    else localStorage.removeItem(TODOIST_PROJECT_STORAGE_KEY);
+  }
+  window.dispatchEvent(new Event(TASK_FOLDERS_CHANGED));
+};
+
+type SettingsResponse = { settings: TaskRefreshSettings | null; serverManaged: boolean; serverConfigured?: boolean };
+
+/** Sync the browser's existing folder rules to the same Todoist account as its tasks. */
+export function useTaskRefreshSettings(token: string) {
+  React.useEffect(() => {
+    if (!token) return;
+    let disposed = false;
+    let queue = Promise.resolve();
+    let observed = fingerprint(readLocal());
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const sync = async () => {
+      if (disposed) return;
+      try {
+        const headers = { [TODOIST_TOKEN_HEADER]: token };
+        const response = await readJsonResponse<SettingsResponse>(await frontendFetch("/api/task-refresh/settings", { headers, cache: "no-store" }), "Could not read refresh settings");
+        if (disposed) return;
+        if (!response.serverManaged && !response.serverConfigured) return;
+        const local = readLocal();
+        let remote = parseTaskRefreshSettings(response.settings);
+        // Migrate existing browser preferences without replacing newer server folder rules.
+        if (remote && !remote.triage) {
+          const merged = { ...remote, triage: local.triage, updatedAt: new Date().toISOString() };
+          const saved = await readJsonResponse<SettingsResponse>(await frontendFetch("/api/task-refresh/settings", {
+            method: "PUT", headers: { ...headers, "Content-Type": "application/json" }, body: JSON.stringify(merged),
+          }), "Could not share triage settings");
+          remote = parseTaskRefreshSettings(saved.settings);
+        }
+        const localWins = !remote || Date.parse(local.updatedAt) > Date.parse(remote.updatedAt);
+        let chosen = remote;
+        if (localWins && (!remote || fingerprint(local) !== fingerprint(remote))) {
+          if (!remote && Date.parse(local.updatedAt) === 0) local.updatedAt = new Date().toISOString();
+          const saved = await readJsonResponse<SettingsResponse>(await frontendFetch("/api/task-refresh/settings", {
+            method: "PUT", headers: { ...headers, "Content-Type": "application/json" }, body: JSON.stringify(local),
+          }), "Could not save refresh settings");
+          chosen = parseTaskRefreshSettings(saved.settings);
+        }
+        if (disposed) return;
+        if (chosen) {
+          observed = fingerprint(chosen);
+          // Do not overwrite an edit made while the request was running.
+          if (Date.parse(readLocal().updatedAt) <= Date.parse(chosen.updatedAt)) applyLocal(chosen);
+        }
+      } catch (error) {
+        if (!disposed) console.warn("[TASK-REFRESH:SETTINGS]", error instanceof Error ? error.message : "Settings sync failed");
+      }
+    };
+    const enqueue = () => { queue = queue.then(sync).catch(() => undefined); };
+    const changed = () => {
+      const current = fingerprint(readLocal());
+      if (current === observed) return;
+      observed = current;
+      localStorage.setItem(TASK_REFRESH_SETTINGS_UPDATED_AT, new Date().toISOString());
+      clearTimeout(timer);
+      timer = setTimeout(enqueue, 350);
+    };
+    const visible = () => { if (document.visibilityState === "visible") enqueue(); };
+    enqueue();
+    window.addEventListener(TASK_FOLDERS_CHANGED, changed);
+    window.addEventListener("storage", changed);
+    document.addEventListener("visibilitychange", visible);
+    const poll = setInterval(visible, 60_000);
+    return () => {
+      disposed = true;
+      clearTimeout(timer); clearInterval(poll);
+      window.removeEventListener(TASK_FOLDERS_CHANGED, changed);
+      window.removeEventListener("storage", changed);
+      document.removeEventListener("visibilitychange", visible);
+    };
+  }, [token]);
+}

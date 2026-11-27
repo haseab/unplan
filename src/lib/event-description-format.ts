@@ -1,9 +1,2 @@
-const HTML_ELEMENT_PATTERN = /<(?:\/?[a-z][^>]*|!--[\s\S]*?--)>/i;
-
-export type EventDescriptionContentType = "html" | "markdown";
-
-export const eventDescriptionContentType = (
-  description: string,
-): EventDescriptionContentType => HTML_ELEMENT_PATTERN.test(description)
-  ? "html"
-  : "markdown";
+// Shared implementation is owned by the frontend package.
+export * from "@unplan/frontend/lib/event-description-format";

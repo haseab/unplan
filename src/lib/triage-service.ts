@@ -62,6 +62,7 @@ export function createTriageService(deps: TriageDependencies) {
     const path = `/tasks/${encodeURIComponent(task.id)}`;
     const extracted = task.projectId === data.extractionId;
     if (action.action === "extract" && !extracted) throw new TriageError("This task is no longer in extraction triage", 409);
+    if (action.action === "complete") { await deps.todoist(`${path}/close`, {}, "POST"); return; }
     if (action.action === "delete" || (action.action === "extract" && action.resolution === "delete")) { await deps.todoist(path, undefined, "DELETE"); return; }
     const calendarForTask = async () => {
       const calendars = await deps.calendars();

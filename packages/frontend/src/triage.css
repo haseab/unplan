@@ -1,0 +1,1463 @@
+/* Scoped Unplan triage styles, adapted to BB theme tokens. */
+.unplan-triage {
+  --ink: var(--foreground, #eee);
+  --text-soft: var(--muted-foreground, #999);
+  --text-faint: var(--muted-foreground, #999);
+  --surface: var(--background, #171717);
+  --surface-elevated: var(--card, var(--background, #1c1c1c));
+  --surface-muted: color-mix(in srgb, var(--ink) 4%, var(--surface));
+  --surface-hover: color-mix(in srgb, var(--ink) 8%, var(--surface));
+  --line: color-mix(in srgb, var(--ink) 10%, transparent);
+  --line-strong: color-mix(in srgb, var(--ink) 16%, transparent);
+  --blue-ink: #5898ee;
+  --blue-soft: color-mix(in srgb, #5898ee 12%, transparent);
+  --blue-border: color-mix(in srgb, #5898ee 35%, transparent);
+  --muted: var(--text-soft);
+  --shadow-color: transparent;
+  height: 100%;
+  overflow-y: auto;
+  min-width: 0;
+  color: var(--ink);
+  background: var(--surface);
+  font: inherit;
+  line-height: 1.5;
+  * {
+    box-sizing: border-box;
+  }
+  button,
+  input,
+  textarea,
+  select {
+    font-family: inherit;
+  }
+  button {
+    cursor: pointer;
+    touch-action: manipulation;
+  }
+  button:disabled {
+    opacity: 0.45;
+    cursor: default;
+  }
+  button:focus-visible,
+  a:focus-visible {
+    outline: 2px solid var(--blue-ink);
+    outline-offset: 3px;
+  }
+  kbd {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    vertical-align: middle;
+    font: inherit;
+    font-size: 10px;
+    color: var(--text-faint);
+  }
+  .task-triage-modal {
+    width: min(520px, 100%);
+    max-height: calc(100vh - 32px);
+    overflow-y: auto;
+    padding: 20px 22px 18px;
+    border: 1px solid var(--line-strong);
+    border-radius: 18px;
+    background: var(--surface-elevated);
+    box-shadow: 0 28px 90px var(--shadow-color);
+    animation: modal-in 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+  .task-triage-heading {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 18px;
+  }
+  .task-triage-heading > div {
+    min-width: 0;
+  }
+  .task-triage-eyebrow {
+    display: block;
+    margin-bottom: 7px;
+    color: var(--blue-ink);
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+  }
+  .task-triage-heading h2 {
+    margin: 0;
+    color: var(--ink);
+    font-size: 22px;
+    font-weight: 570;
+    line-height: 1.15;
+    letter-spacing: -0.035em;
+  }
+  .task-triage-heading p {
+    margin: 6px 0 0;
+    color: var(--text-soft);
+    font-size: 10px;
+  }
+  .task-triage-heading > button {
+    display: grid;
+    width: 31px;
+    height: 31px;
+    flex: 0 0 auto;
+    place-items: center;
+    border: 0;
+    border-radius: 9px;
+    background: var(--surface-muted);
+    color: var(--text-soft);
+    cursor: pointer;
+  }
+  .task-triage-heading > button:hover {
+    background: var(--surface-hover);
+    color: var(--ink);
+  }
+
+  .task-triage-extracted,
+  .task-triage-normal {
+    margin-top: 20px;
+  }
+  .task-triage-task-card {
+    display: flex;
+    min-height: 168px;
+    flex-direction: column;
+    padding: 18px 20px;
+    border: 1px solid var(--line-strong);
+    border-radius: 15px;
+    background: var(--surface);
+  }
+  .task-triage-task-card[data-returning="true"] {
+    animation: triage-task-return 560ms cubic-bezier(0.16, 0.82, 0.2, 1);
+  }
+  .task-triage-card-meta {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    color: var(--text-faint);
+    font-size: 9px;
+    font-weight: 620;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+  .task-triage-task-card h3 {
+    max-width: 420px;
+    margin: auto;
+    color: var(--ink);
+    font-size: clamp(18px, 3.4vw, 24px);
+    font-weight: 540;
+    line-height: 1.18;
+    letter-spacing: -0.035em;
+    text-align: center;
+    overflow-wrap: anywhere;
+  }
+  .task-triage-task-card > p a,
+  .task-triage-task-card h3 a,
+  .task-triage-markdown-title a {
+    color: var(--blue-ink);
+    text-decoration: underline;
+    text-decoration-color: color-mix(in oklab, currentColor 55%, transparent);
+    text-underline-offset: 0.14em;
+  }
+  .task-triage-task-card > p a:hover,
+  .task-triage-task-card h3 a:hover,
+  .task-triage-markdown-title a:hover {
+    text-decoration-color: currentColor;
+  }
+  .task-triage-task-card > p {
+    display: -webkit-box;
+    max-width: 390px;
+    margin: 0 auto 2px;
+    overflow: hidden;
+    color: var(--muted);
+    font-size: 10.5px;
+    line-height: 1.45;
+    text-align: center;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+  .task-triage-refresh-context {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 8px 0 12px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    background: rgba(255, 159, 10, 0.12);
+    color: #ffb85c;
+  }
+  .task-triage-refresh-context > svg {
+    flex: 0 0 auto;
+  }
+  .task-triage-refresh-context > span {
+    display: grid;
+    gap: 1px;
+    min-width: 0;
+  }
+  .task-triage-refresh-context strong {
+    font-size: 10px;
+    font-weight: 680;
+    letter-spacing: 0.015em;
+  }
+  .task-triage-refresh-context small {
+    overflow: hidden;
+    color: var(--text-soft);
+    font-size: 9px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .task-triage-error {
+    margin: 10px 5px 0;
+    color: #ef8982;
+    font-size: 10px;
+    text-align: center;
+  }
+  .task-triage-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 9px;
+    margin-top: 12px;
+  }
+  .task-triage-extracted-actions {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .task-triage-extracted-dates {
+    display: grid;
+    gap: 4px;
+    margin: 12px 0 8px;
+    color: var(--muted);
+    font-size: 11px;
+    line-height: 1.4;
+    text-align: center;
+  }
+  .task-triage-extracted-dates > div {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 4px 6px;
+  }
+  .task-triage-extracted-dates dt {
+    color: var(--text-faint);
+  }
+  .task-triage-extracted-dates dd {
+    margin: 0;
+  }
+  .task-triage-actions button {
+    display: grid;
+    height: 43px;
+    grid-template-columns: 17px auto 25px;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    border: 1px solid var(--line-strong);
+    border-radius: 11px;
+    background: var(--surface-muted);
+    color: var(--muted);
+    font-size: 11px;
+    font-weight: 620;
+    cursor: pointer;
+  }
+  .task-triage-actions button:hover:not(:disabled) {
+    background: var(--surface-hover);
+    color: var(--ink);
+  }
+  .task-triage-actions button:disabled {
+    opacity: 0.55;
+    cursor: default;
+  }
+  .task-triage-extracted-actions button {
+    display: flex;
+    min-width: 0;
+    gap: 6px;
+  }
+  .task-triage-actions .task-triage-keep {
+    border-color: var(--blue-border);
+    background: var(--blue-soft);
+    color: var(--blue-ink);
+  }
+  .task-triage-actions kbd {
+    height: 21px;
+    min-width: 21px;
+    font-size: 9px;
+  }
+  .task-triage-shortcuts {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    margin: 11px 0 0;
+    color: var(--text-faint);
+    font-size: 8.5px;
+  }
+  .task-triage-shortcuts span {
+    width: 1px;
+    height: 10px;
+    margin: 0 4px;
+    background: var(--line-strong);
+  }
+
+  .task-triage-task-preview {
+    padding: 20px;
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    background: var(--surface-muted);
+  }
+  .task-triage-created-at {
+    display: block;
+    margin-top: 8px;
+    color: var(--muted);
+    font-size: 11px;
+    line-height: 1.4;
+  }
+  .task-triage-task-preview > span {
+    color: var(--text-soft);
+    font-size: 10px;
+    font-weight: 680;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+  .task-triage-task-preview textarea {
+    display: block;
+    width: 100%;
+    min-height: 25px;
+    max-height: 150px;
+    margin-top: 6px;
+    overflow-y: auto;
+    resize: none;
+    border: 0;
+    outline: 0;
+    background: transparent;
+    color: var(--ink);
+    font: inherit;
+    font-size: 15px;
+    font-weight: 560;
+    line-height: 1.3;
+    letter-spacing: -0.025em;
+  }
+  .task-triage-task-preview textarea:focus {
+    box-shadow: inset 0 -1px var(--blue-ink);
+  }
+  .task-triage-task-preview textarea:disabled {
+    opacity: 0.6;
+  }
+  .task-triage-markdown-title {
+    min-height: 25px;
+    margin-top: 8px;
+    color: var(--ink);
+    font-size: 18px;
+    font-weight: 600;
+    line-height: 1.4;
+    letter-spacing: -0.025em;
+    overflow-wrap: anywhere;
+    cursor: text;
+  }
+  .task-triage-markdown-title:focus-visible {
+    outline: 1px solid var(--blue-ink);
+    outline-offset: 3px;
+    border-radius: 3px;
+  }
+  .task-triage-folder-picker {
+    display: grid;
+    gap: 8px;
+    margin-top: 12px;
+    animation: triage-folder-picker-in 220ms cubic-bezier(0.2, 0.78, 0.2, 1) both;
+  }
+  .task-triage-folder-picker > label {
+    display: grid;
+    height: 46px;
+    grid-template-columns: 17px minmax(0, 1fr) 17px;
+    align-items: center;
+    gap: 8px;
+    padding: 0 13px;
+    border: 1px solid var(--line-strong);
+    border-radius: 11px;
+    background: var(--surface);
+    color: var(--text-soft);
+  }
+  .task-triage-folder-picker > label:focus-within {
+    border-color: var(--blue-border);
+    color: var(--blue-ink);
+    box-shadow: 0 0 0 3px var(--blue-soft);
+  }
+  .task-triage-folder-picker input {
+    min-width: 0;
+    border: 0;
+    outline: 0;
+    background: transparent;
+    color: var(--ink);
+    font: inherit;
+    font-size: 13px;
+  }
+  .task-triage-folder-picker input::placeholder {
+    color: var(--text-faint);
+  }
+  .task-triage-folder-picker > div {
+    display: grid;
+    min-height: 0;
+    max-height: 286px;
+    align-content: start;
+    gap: 3px;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 4px;
+    border: 1px solid var(--line);
+    border-radius: 11px;
+    background: var(--surface-muted);
+    scrollbar-color: var(--line-strong) transparent;
+    scrollbar-width: thin;
+    touch-action: pan-y;
+  }
+  .task-triage-folder-picker .task-folder-option {
+    display: grid;
+    min-height: 42px;
+    grid-template-columns: 18px minmax(0, 1fr) 24px;
+    align-items: center;
+    gap: 8px;
+    padding-top: 5px;
+    padding-right: 9px;
+    padding-bottom: 5px;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--muted);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+  .task-triage-folder-picker .task-folder-option:hover,
+  .task-triage-folder-picker .task-folder-option[data-highlighted="true"] {
+    background: var(--blue-soft);
+    color: var(--blue-ink);
+  }
+  .task-triage-folder-picker .task-folder-option > span {
+    display: grid;
+    min-width: 0;
+    gap: 2px;
+  }
+  .task-triage-folder-picker .task-folder-option strong {
+    overflow: hidden;
+    color: inherit;
+    font-size: 12px;
+    font-weight: 550;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .task-triage-folder-picker .task-folder-option small {
+    overflow: hidden;
+    color: var(--text-faint);
+    font-size: 10px;
+    font-weight: 450;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .task-triage-folder-picker .task-folder-option kbd {
+    justify-self: end;
+  }
+  .task-triage-folder-picker > div > p {
+    margin: 0;
+    padding: 18px;
+    color: var(--text-faint);
+    font-size: 9px;
+    text-align: center;
+  }
+  .task-triage-secondary-actions {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    margin-top: 10px;
+  }
+  .task-triage-secondary-actions > button {
+    display: inline-flex;
+    min-height: 30px;
+    align-items: center;
+    gap: 6px;
+    padding: 0 9px;
+    border: 1px solid var(--line-strong);
+    border-radius: 8px;
+    background: var(--surface-muted);
+    color: var(--text-soft);
+    font: inherit;
+    font-size: 9px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .task-triage-secondary-actions > button:hover:not(:disabled) {
+    background: var(--surface-hover);
+    color: var(--ink);
+  }
+  .task-triage-secondary-actions > .task-triage-open-original:hover:not(:disabled) {
+    border-color: var(--blue-border);
+    color: var(--blue-ink);
+  }
+  .task-triage-secondary-actions > .task-triage-delete-task:hover:not(:disabled) {
+    border-color: color-mix(in oklab, #ef8982 45%, var(--line-strong));
+    background: color-mix(in oklab, #ef8982 9%, var(--surface));
+    color: #ef8982;
+  }
+  .task-triage-secondary-actions > button:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+  .task-triage-secondary-actions > button kbd {
+    height: 19px;
+    min-width: 25px;
+    padding: 0 4px;
+    font-size: 8px;
+  }
+
+  .task-triage-complete {
+    display: grid;
+    min-height: 300px;
+    place-content: center;
+    text-align: center;
+  }
+  .task-triage-complete > svg {
+    width: 52px;
+    height: 52px;
+    margin: 0 auto;
+    padding: 12px;
+    border-radius: 50%;
+    background: color-mix(in oklab, #58c98c 14%, var(--surface));
+    color: #78dba5;
+  }
+  .task-triage-complete h2 {
+    margin: 18px 0 0;
+    color: var(--ink);
+    font-size: 26px;
+    font-weight: 590;
+    letter-spacing: -0.04em;
+  }
+  .task-triage-complete > p {
+    margin: 7px 0 0;
+    color: var(--text-soft);
+    font-size: 10px;
+  }
+
+  /* Priority triage keeps the upcoming calendar blocks clipped inside the queue. */
+  .priority-review-section-heading {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 0;
+    color: var(--ink);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+  .priority-review-section-heading::after {
+    content: "";
+    height: 1px;
+    flex: 1;
+    background: var(--line);
+  }
+  .priority-review-window {
+    height: 282px;
+    margin-top: 12px;
+    overflow-y: auto;
+    overflow-x: hidden;
+    overscroll-behavior: contain;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: var(--surface-muted);
+  }
+  .priority-review-track {
+    display: grid;
+    gap: 12px;
+    padding: 18px;
+    animation: priority-review-rise var(--priority-review-duration) cubic-bezier(0.2, 0.78, 0.2, 1)
+      both;
+  }
+  .calendar-event.priority-review-block {
+    position: relative;
+    inset: auto;
+    display: flex;
+    width: 100%;
+    height: 94px;
+    min-height: 94px;
+    flex-direction: column;
+    gap: 10px;
+    padding: 14px 16px;
+    border-radius: 7px;
+    box-shadow: none;
+    opacity: 0.75;
+    cursor: pointer;
+    animation: none;
+  }
+  .calendar-event.priority-review-block[data-active="true"] {
+    outline: 1px solid white;
+    outline-offset: -1px;
+    opacity: 1;
+    pointer-events: auto;
+    touch-action: pan-y;
+    user-select: none;
+    cursor: pointer;
+  }
+  .priority-review-block .event-primary-line {
+    align-items: flex-start;
+    gap: 12px;
+  }
+  .priority-review-block .event-primary-line strong {
+    font-size: 15px;
+    line-height: 1.3;
+    white-space: normal;
+    -webkit-line-clamp: 2;
+  }
+  .priority-review-block .event-time {
+    flex-shrink: 0;
+    font-size: 10px;
+  }
+  .calendar-event.priority-review-block small {
+    font-size: 10px;
+  }
+  .calendar-event.priority-review-block[data-departure="left"] {
+    animation: priority-review-left var(--priority-review-duration) ease-in forwards;
+  }
+  .calendar-event.priority-review-block[data-departure="right"] {
+    animation: priority-review-right var(--priority-review-duration) ease-in forwards;
+  }
+  .calendar-event.priority-review-block[data-departure="up"] {
+    animation: priority-review-up var(--priority-review-duration) ease-in forwards;
+  }
+  .calendar-event.priority-review-block[data-returning="up"] {
+    animation: priority-review-return-up var(--priority-review-duration) ease-out both;
+  }
+  .priority-review-track[data-returning="true"] {
+    animation: none;
+  }
+  .calendar-event.priority-review-block[data-returning="left"] {
+    animation: priority-review-return-left var(--priority-review-duration) ease-out both;
+  }
+  .calendar-event.priority-review-block[data-returning="right"] {
+    animation: priority-review-return-right var(--priority-review-duration) ease-out both;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .priority-review-track {
+      animation: none;
+    }
+    .calendar-event.priority-review-block[data-departure],
+    .calendar-event.priority-review-block[data-returning] {
+      animation-duration: 1ms;
+    }
+  }
+
+  .task-folder-create-trigger {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 11px;
+    border: 1px solid var(--line-strong);
+    border-radius: 8px;
+    background: var(--surface-muted);
+    color: var(--blue-ink);
+    font: inherit;
+    font-size: 11px;
+    cursor: pointer;
+  }
+  .task-folder-option-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 30px;
+    gap: 3px;
+  }
+  .task-triage-folder-picker .task-folder-option {
+    min-width: 0;
+  }
+  .task-folder-create-child {
+    display: grid;
+    place-items: center;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--text-faint);
+    cursor: pointer;
+  }
+  .task-folder-create-child:hover {
+    background: var(--blue-soft);
+    color: var(--blue-ink);
+  }
+  .task-folder-create-form {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px 8px;
+    padding: 12px;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: var(--surface-muted);
+    font: inherit;
+    font-size: 11px;
+    line-height: 1.4;
+  }
+  .task-folder-create-form label {
+    display: grid;
+    width: 100%;
+    min-width: 0;
+    gap: 6px;
+    color: var(--text-soft);
+    font-size: 10px;
+    font-weight: 500;
+  }
+  .task-folder-create-form input,
+  .task-folder-create-form select {
+    width: 100%;
+    min-width: 0;
+    height: 36px;
+    padding: 0 10px;
+    border: 1px solid var(--line-strong);
+    border-radius: 8px;
+    outline: none;
+    background: var(--surface);
+    color: var(--ink);
+    font: inherit;
+    font-size: 11px;
+    font-weight: 450;
+    line-height: 1.4;
+  }
+  .task-folder-create-form input:focus,
+  .task-folder-create-form select:focus-visible {
+    border-color: var(--blue-border);
+    box-shadow: 0 0 0 3px var(--blue-soft);
+  }
+  .task-folder-create-form button {
+    display: inline-flex;
+    height: 32px;
+    align-items: center;
+    justify-content: center;
+    padding: 0 12px;
+    border: 1px solid var(--line-strong);
+    border-radius: 8px;
+    background: var(--surface);
+    color: var(--muted);
+    font: inherit;
+    font-size: 11px;
+    font-weight: 560;
+    line-height: 1;
+    cursor: pointer;
+    transition:
+      background 140ms ease,
+      border-color 140ms ease;
+  }
+  .task-folder-create-form button[type="submit"] {
+    border-color: var(--blue-border);
+    background: var(--blue-soft);
+    color: var(--blue-ink);
+  }
+  .task-folder-create-form button:hover:not(:disabled) {
+    background: var(--surface-hover);
+    color: var(--ink);
+  }
+  .task-folder-create-form button:focus-visible {
+    outline: 2px solid var(--blue-ink);
+    outline-offset: 2px;
+  }
+  .task-folder-create-form button:disabled {
+    opacity: 0.45;
+    cursor: default;
+  }
+  .task-folder-create-form p {
+    width: 100%;
+    margin: 0;
+    color: #ef8982;
+    font-size: 10px;
+  }
+  .priority-review-follow-up {
+    display: grid;
+    gap: 8px;
+    margin: 20px 0 18px;
+  }
+  .priority-review-follow-up label {
+    color: var(--text-soft);
+    font-size: 11px;
+    font-weight: 550;
+  }
+  .priority-review-date-command {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 7px 6px 12px;
+    border: 1px solid var(--line-strong);
+    border-radius: 11px;
+    background: var(--surface);
+    color: var(--text-soft);
+    transition:
+      border-color 120ms,
+      box-shadow 120ms;
+  }
+  .priority-review-date-command:focus-within {
+    border-color: #b88bea;
+    box-shadow: 0 0 0 3px rgba(163, 94, 234, 0.12);
+  }
+  .priority-review-date-command > svg {
+    flex-shrink: 0;
+    color: #b88bea;
+  }
+  .priority-review-date-command input {
+    min-width: 0;
+    flex: 1;
+    height: 34px;
+    padding: 0;
+    border: 0;
+    outline: 0;
+    background: transparent;
+    color: var(--ink);
+    font: inherit;
+    font-size: 15px;
+  }
+  .priority-review-date-command button {
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    gap: 8px;
+    padding: 9px 11px;
+    border: 0;
+    border-radius: 7px;
+    background: rgba(163, 94, 234, 0.2);
+    color: #d8b4fe;
+    font-size: 11px;
+    font-weight: 550;
+    cursor: pointer;
+  }
+  .priority-review-date-command button:hover {
+    background: rgba(163, 94, 234, 0.3);
+  }
+  .priority-review-date-command button:disabled {
+    opacity: 0.4;
+    cursor: default;
+  }
+  .priority-review-follow-up p {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 5px;
+    margin: 0;
+    color: var(--text-faint);
+    font-size: 10px;
+    line-height: 1.6;
+  }
+  .priority-review-follow-up p strong {
+    color: var(--text-soft);
+    font-weight: 500;
+  }
+  &:where(:not(.dark *)) .priority-review-date-command button {
+    color: #6b21a8;
+    background: #eee0fc;
+  }
+  .priority-review-modal .priority-review-window {
+    height: clamp(110px, calc(100dvh - 360px), 282px);
+  }
+
+  .priority-review-select {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+    width: 100%;
+    min-width: 0;
+    padding: 0 22px 0 0;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+  .priority-review-select:focus-visible {
+    outline: none;
+  }
+  .priority-review-delete {
+    position: absolute;
+    top: 7px;
+    right: 7px;
+    display: grid;
+    width: 24px;
+    height: 24px;
+    place-items: center;
+    border: 0;
+    border-radius: 6px;
+    background: color-mix(in srgb, var(--surface) 65%, transparent);
+    color: var(--ink);
+    opacity: 0;
+    pointer-events: none;
+    cursor: pointer;
+    transition:
+      opacity 120ms,
+      background 120ms;
+  }
+  .priority-review-block:hover .priority-review-delete,
+  .priority-review-block:focus-within .priority-review-delete {
+    opacity: 1;
+    pointer-events: auto;
+  }
+  .priority-review-delete:hover {
+    background: var(--surface-hover);
+  }
+  .priority-review-delete:focus-visible {
+    outline: 2px solid var(--ink);
+    outline-offset: 2px;
+  }
+  .priority-review-delete:disabled {
+    pointer-events: none;
+  }
+  @media (hover: none) {
+    .priority-review-delete {
+      opacity: 1;
+      pointer-events: auto;
+    }
+  }
+
+  .calendar-event.priority-review-block {
+    height: auto;
+    max-height: none;
+  }
+  .priority-review-title-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    min-width: 0;
+  }
+  .priority-review-title-row .event-time {
+    flex-shrink: 0;
+    padding-top: 2px;
+  }
+  .calendar-event.priority-review-block .priority-review-title {
+    display: -webkit-box;
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    overflow-wrap: anywhere;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 4;
+    white-space: normal;
+    font-size: 15px;
+    line-height: 1.35;
+  }
+  .priority-review-title-editor {
+    width: 100%;
+    min-height: 40px;
+    max-height: 162px;
+    padding: 6px 26px 6px 8px;
+    overflow-y: auto;
+    resize: none;
+    border: 1px solid var(--line-strong);
+    border-radius: 6px;
+    outline: 1px solid var(--focus-ring, #a4bdfc);
+    background: transparent;
+    color: var(--ink);
+    font: inherit;
+    font-size: 15px;
+    font-weight: 550;
+    line-height: 1.35;
+    overflow-wrap: anywhere;
+  }
+  .calendar-event.priority-review-block[data-editing] {
+    user-select: text;
+  }
+  .task-triage-modal {
+    width: 100%;
+    max-height: none;
+    padding: 24px;
+    border-radius: 14px;
+    box-shadow: none;
+    animation: none;
+  }
+  .priority-review-modal .priority-review-window {
+    height: clamp(160px, 32dvh, 320px);
+  }
+  .task-triage-heading p,
+  .task-triage-created-at,
+  .task-triage-task-card > p {
+    font-size: 12px;
+  }
+  .task-triage-secondary-actions > button {
+    min-height: 36px;
+    font-size: 11px;
+  }
+  .task-triage-shortcuts {
+    flex-wrap: wrap;
+    font-size: 10px;
+  }
+  .task-triage-task-card > p {
+    -webkit-line-clamp: 6;
+    white-space: pre-line;
+    margin-top: 14px;
+  }
+  .priority-review-date-command button {
+    color: var(--ink);
+  }
+  .priority-review-delete {
+    opacity: 1;
+    pointer-events: auto;
+  }
+  .calendar-event {
+    background: var(--event-surface-light, var(--surface-muted));
+    color: var(--event-text, var(--ink));
+    border-left: 3px solid var(--event-accent);
+  }
+  .priority-review-block .event-primary-line {
+    display: flex;
+  }
+  .priority-review-block small {
+    color: inherit;
+    opacity: 0.7;
+  }
+  .spin {
+    animation: triage-spin 1s linear infinite;
+  }
+  @media (max-width: 560px) {
+    .task-triage-modal {
+      padding: 16px;
+    }
+    .task-triage-secondary-actions {
+      flex-wrap: wrap;
+    }
+    .task-triage-secondary-actions > button {
+      flex: 1;
+      justify-content: center;
+    }
+    .priority-review-date-command {
+      flex-wrap: wrap;
+    }
+    .priority-review-date-command button {
+      width: 100%;
+      justify-content: center;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+@keyframes triage-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.unplan-triage .triage-page-inner {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 40px 28px max(28px, env(safe-area-inset-bottom));
+}
+.unplan-triage .triage-page-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 28px;
+}
+.unplan-triage .triage-page-eyebrow {
+  margin: 0 0 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-size: 10px;
+  font-weight: 650;
+  color: var(--text-faint);
+}
+.unplan-triage h1 {
+  margin: 0;
+  font-size: 28px;
+  font-weight: 600;
+  letter-spacing: -0.04em;
+  line-height: 1.2;
+}
+.unplan-triage .triage-page-heading > div > p:last-child {
+  margin: 9px 0 0;
+  color: var(--text-soft);
+  font-size: 13px;
+}
+.unplan-triage .triage-refresh {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-soft);
+  font-size: 12px;
+}
+.unplan-triage .triage-queues {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+.unplan-triage .triage-queues button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text-soft);
+  font-size: 12px;
+}
+.unplan-triage .triage-queues button[data-color="blue"] {
+  --queue-color: #5898ee;
+}
+.unplan-triage .triage-queues button[data-color="orange"] {
+  --queue-color: #db941e;
+}
+.unplan-triage .triage-queues button[data-color="purple"] {
+  --queue-color: #a77ce0;
+}
+.unplan-triage .triage-queues button[aria-current] {
+  border-color: color-mix(in srgb, var(--queue-color) 50%, transparent);
+  background: color-mix(in srgb, var(--queue-color) 9%, transparent);
+  color: var(--ink);
+}
+.unplan-triage .triage-queues strong {
+  color: var(--queue-color);
+  background: color-mix(in srgb, var(--queue-color) 13%, transparent);
+  border-radius: 100px;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.unplan-triage .triage-save-status {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  min-height: 40px;
+  align-items: center;
+  color: var(--text-faint);
+  font-size: 11px;
+}
+.unplan-triage .triage-save-status button {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--blue-ink);
+  font-size: inherit;
+}
+.unplan-triage .triage-notice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 16px;
+  margin-bottom: 18px;
+  border: 1px solid color-mix(in srgb, #df9c54 35%, transparent);
+  border-radius: 10px;
+  font-size: 13px;
+}
+.unplan-triage .triage-notice p {
+  margin: 0;
+}
+.unplan-triage .triage-notice button,
+.unplan-triage .triage-empty button {
+  padding: 7px 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 7px;
+  color: var(--ink);
+  background: var(--surface-muted);
+}
+.unplan-triage .triage-calendar-notice {
+  color: var(--text-soft);
+  font-size: 12px;
+  margin: 0 0 16px;
+}
+.unplan-triage .triage-empty {
+  display: grid;
+  min-height: 280px;
+  align-content: center;
+  justify-items: center;
+  gap: 16px;
+  color: var(--text-soft);
+}
+.unplan-triage .triage-empty h2 {
+  margin: 0;
+  font-size: 20px;
+  color: var(--ink);
+}
+.unplan-triage .triage-page-footer {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 20px;
+  color: var(--text-faint);
+  font-size: 10px;
+}
+@media (max-width: 560px) {
+  .unplan-triage .triage-page-inner {
+    padding: 24px 14px;
+  }
+  .unplan-triage .triage-refresh span {
+    display: none;
+  }
+  .unplan-triage .triage-queues {
+    gap: 5px;
+  }
+  .unplan-triage .triage-queues button {
+    padding: 10px 8px;
+    font-size: 11px;
+  }
+}
+
+.dark .unplan-triage .calendar-event {
+  background: var(--event-surface-dark, var(--surface-muted));
+}
+@keyframes triage-task-return {
+  from {
+    opacity: 0;
+    transform: translateX(42px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes triage-folder-picker-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes priority-review-up {
+  to {
+    transform: translateY(-130%);
+    opacity: 0;
+  }
+}
+@keyframes priority-review-return-up {
+  from {
+    transform: translateY(-130%);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+@keyframes priority-review-return-left {
+  from {
+    transform: translateX(-115%) rotate(-5deg);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+@keyframes priority-review-return-right {
+  from {
+    transform: translateX(115%) rotate(5deg);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+@keyframes priority-review-rise {
+  from {
+    transform: translateY(106px);
+    opacity: 0.25;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+@keyframes priority-review-left {
+  to {
+    transform: translateX(-115%) rotate(-5deg);
+    opacity: 0;
+  }
+}
+@keyframes priority-review-right {
+  to {
+    transform: translateX(115%) rotate(5deg);
+    opacity: 0;
+  }
+}
+
+.unplan-triage .calendar-event.priority-review-block[data-active="true"] {
+  outline-color: var(--ink);
+}
+
+.unplan-triage [data-reader-list]:focus-visible {
+  outline: none;
+}
+
+.unplan-triage
+  [data-reader-list]:focus-visible
+  :is(
+    .task-triage-task-card,
+    .task-triage-task-preview,
+    .priority-review-block[data-active="true"]
+  ) {
+  outline: 2px solid #fff;
+  outline-offset: 3px;
+}
+
+/* Keep the column selector visible after Command-arrow focus moves. */
+.unplan-triage [data-triage-queue]:focus {
+  outline: 2px solid #fff;
+  outline-offset: 3px;
+}
+
+/* Present the original single-card triage dialog inside the retained panel. */
+.unplan-triage {
+  container-type: size;
+  --blue-ink: #a9b6fc;
+  --blue-soft: color-mix(in srgb, #a9b6fc 12%, transparent);
+  --blue-border: color-mix(in srgb, #a9b6fc 35%, transparent);
+}
+.unplan-triage .triage-page-inner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  width: 100%;
+  max-width: none;
+  height: 100%;
+  min-height: 0;
+  padding: 24px;
+}
+.unplan-triage :is(.triage-page-heading, .triage-save-status, .triage-page-footer) {
+  display: none;
+}
+.unplan-triage .triage-embedded {
+  display: flex;
+  flex: 0 1 680px;
+  width: min(520px, 100%);
+  min-height: 0;
+  max-height: 100%;
+}
+.unplan-triage .triage-embedded .task-triage-modal {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  max-height: 100%;
+  padding: 22px;
+  overflow: auto;
+  border-radius: 18px;
+  background: var(--surface-muted);
+}
+.unplan-triage .task-triage-heading {
+  flex-shrink: 0;
+}
+.unplan-triage .task-triage-heading h2 {
+  font-size: 22px;
+}
+.unplan-triage .task-triage-heading p {
+  font-size: 10px;
+}
+.unplan-triage .task-triage-normal {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  margin-top: 20px;
+}
+.unplan-triage .task-triage-task-preview {
+  flex-shrink: 0;
+  max-height: min(180px, 27cqh);
+  overflow: auto;
+  padding: 18px 14px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--surface);
+}
+.unplan-triage .task-triage-markdown-title {
+  font-size: 15px;
+}
+.unplan-triage .task-triage-created-at,
+.unplan-triage .task-triage-open-original {
+  display: none;
+}
+.unplan-triage .task-triage-folder-picker {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 92px;
+  gap: 8px;
+  margin-top: 12px;
+}
+.unplan-triage .task-triage-folder-picker > label {
+  flex-shrink: 0;
+}
+.unplan-triage .task-triage-folder-picker > div[role="group"] {
+  flex: 1;
+  min-height: 36px;
+  max-height: 286px;
+}
+.unplan-triage .task-folder-create-trigger {
+  flex-shrink: 0;
+  min-height: 40px;
+}
+.unplan-triage .task-folder-create-form {
+  flex-shrink: 0;
+}
+.unplan-triage .task-triage-secondary-actions {
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+.unplan-triage .task-triage-secondary-actions > button {
+  min-height: 30px;
+  font-size: 10px;
+  padding: 0 7px;
+}
+@container (max-height: 600px) {
+  .unplan-triage .triage-page-inner {
+    padding: 12px;
+  }
+  .unplan-triage .triage-embedded .task-triage-modal {
+    padding: 16px;
+  }
+  .unplan-triage .task-triage-normal {
+    margin-top: 12px;
+  }
+  .unplan-triage .task-triage-task-preview {
+    padding: 12px;
+  }
+}
+
+/* A compact section switcher above the original dialog. */
+.unplan-triage .triage-queues {
+  display: grid;
+  flex: 0 0 auto;
+  width: min(520px, 100%);
+  gap: 3px;
+  margin-bottom: 10px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: var(--surface-muted);
+}
+.unplan-triage .triage-queues button {
+  padding: 7px 10px;
+  border-color: transparent;
+  border-radius: 7px;
+  font-size: 11px;
+}
+.unplan-triage .triage-queues button[aria-current] {
+  border-color: var(--line-strong);
+  background: var(--surface-hover);
+}
+.unplan-triage .triage-queues strong {
+  font-size: 10px;
+}
+
+/* All three sections share one card height; Follow-up gives spare room to its list. */
+.unplan-triage .triage-follow-up .priority-review-follow-up {
+  flex-shrink: 0;
+  margin-bottom: 0;
+}
+.unplan-triage .triage-follow-up .priority-review-window {
+  flex: 1 1 0;
+  height: auto;
+  min-height: 80px;
+}

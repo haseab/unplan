@@ -1,0 +1,44 @@
+name: Release shared frontend
+on:
+  push:
+    tags: ['frontend-v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing frontend-vX.Y.Z tag to release
+        required: true
+permissions:
+  contents: write
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm install --global npm@11.17.0
+      - run: npm ci --ignore-scripts
+      - name: Validate version and build
+        env:
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          node --input-type=module -e 'import fs from "node:fs"; const p=JSON.parse(fs.readFileSync("packages/frontend/package.json")); if (process.env.RELEASE_TAG !== `frontend-v${p.version}`) throw new Error("Tag must match package version");'
+          npm run build:frontend
+          npm run test:frontend
+          mkdir -p frontend-release
+          npm pack --workspace @unplan/frontend --pack-destination frontend-release --ignore-scripts
+          cd frontend-release
+          sha256sum *.tgz > SHA256SUMS
+      - name: Attach versioned package
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          if ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release create "$RELEASE_TAG" --verify-tag --title "Shared frontend ${RELEASE_TAG#frontend-v}" --notes "Versioned Unplan frontend package, declarations, styles, and assets."
+          fi
+          gh release upload "$RELEASE_TAG" frontend-release/*

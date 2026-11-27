@@ -83,3 +83,10 @@ test("invalid folder parents and malformed operations are rejected", async () =>
   assert.throws(() => parseTriageAction({ ...identity(task()), action: "follow-up", date: "invalid" }));
   assert.throws(() => parseTriageAction({ ...identity(task()), action: "follow-up", date: new Date().toISOString(), period: { amount: -1, unit: "day" } }));
 });
+
+
+test("completion closes a task without deleting it or loading calendars", async () => {
+  const { service, calls } = setup({ calendars: async () => { throw new Error("Calendar must not be loaded"); } });
+  await service.mutate({ taskId: "t", expectedContent: "Review proposal", expectedProjectId: "inbox", action: "complete" });
+  assert.deepEqual(calls, [{ path: "/tasks/t/close", body: {}, method: "POST" }]);
+});

@@ -2,12 +2,13 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { handlePriorityReviewKeyDown } from "./priority-review-keyboard";
 
-function press(key: string, options: Partial<KeyboardEvent> = {}, editing: boolean | "button" | "textarea" = false, inputValue = "7d", undoAvailable = true) {
+function press(key: string, options: Partial<KeyboardEvent> = {}, editing: boolean | "button" | "textarea" = false, inputValue = "7d", undoAvailable = true, allowShellShortcuts = false) {
   const calls: string[] = [];
   const target = Object.assign(new EventTarget(), { tagName: editing === "textarea" ? "TEXTAREA" : editing === "button" ? "BUTTON" : editing ? "INPUT" : "SECTION", value: inputValue });
   target.addEventListener("keydown", (event) => handlePriorityReviewKeyDown(event as KeyboardEvent, {
+    allowShellShortcuts,
     confirm: () => calls.push("confirm"),
-    deleteTask: () => calls.push("delete"),
+    completeTask: () => calls.push("complete"),
     scheduleTask: () => calls.push("schedule"),
     undo: () => { calls.push("undo"); return undoAvailable; },
     submit: () => calls.push("submit"),
@@ -83,10 +84,10 @@ test("empty-field Undo falls back to native editing when there is no pending tas
   assert.deepEqual(press("z", { metaKey: true, shiftKey: true }, true, ""), { calls: [], prevented: false });
 });
 
-test("Cmd/Ctrl Backspace deletes the current follow-up task even from the date field", () => {
+test("Cmd/Ctrl Backspace completes the current follow-up task even from the date field", () => {
   for (const modifier of [{ metaKey: true }, { ctrlKey: true }]) {
     for (const key of ["Backspace", "Delete"]) {
-      assert.deepEqual(press(key, modifier, true, "61 min"), { calls: ["delete"], prevented: true });
+      assert.deepEqual(press(key, modifier, true, "61 min"), { calls: ["complete"], prevented: true });
       assert.deepEqual(press(key, { ...modifier, repeat: true }, true), { calls: [], prevented: true });
       assert.deepEqual(press(key, { ...modifier, shiftKey: true }, true), { calls: [], prevented: false });
       assert.deepEqual(press(key, { ...modifier, altKey: true }, true), { calls: [], prevented: false });
@@ -115,4 +116,10 @@ test("title editing keeps Enter, Escape and shortcuts inside the editor", () => 
   for (const [key, options] of [["Enter", {}], ["Escape", {}], ["Backspace", { metaKey: true }], ["ArrowLeft", { metaKey: true }], ["ArrowLeft", { metaKey: true, shiftKey: true }], ["z", { metaKey: true }]] as const) {
     assert.deepEqual(press(key, options, "textarea"), { calls: ["background"], prevented: false });
   }
+});
+
+
+test("embedded review lets shell navigation through while website dialogs keep navigation trapped", () => {
+  assert.deepEqual(press("ArrowRight", { metaKey: true }, true, "", true, true), { calls: ["background"], prevented: false });
+  assert.deepEqual(press("ArrowRight", { metaKey: true }), { calls: [], prevented: true });
 });
