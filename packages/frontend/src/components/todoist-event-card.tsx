@@ -222,6 +222,7 @@ export function TodoistEventCard({
             modifier
             && !event.altKey
             && (event.key === "ArrowDown" || event.key === "ArrowUp")
+            && !(event.key === "ArrowDown" && !event.shiftKey)
           ) {
             event.preventDefault();
             event.stopPropagation();

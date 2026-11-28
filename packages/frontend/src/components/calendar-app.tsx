@@ -4064,11 +4064,11 @@ export function CalendarApp({ demo = false, taskTriage }: { demo?: boolean; task
         modifier
         && !event.shiftKey
         && !event.altKey
-        && (event.key === "ArrowLeft" || event.key === "ArrowRight")
+        && (event.key === "ArrowDown" || event.key === "ArrowRight")
         && !frontendDocument.querySelector(".modal-backdrop")
       ) {
         event.preventDefault();
-        if (event.key === "ArrowLeft") {
+        if (event.key === "ArrowDown") {
           focusCalendarSurface();
         } else if (rightSidebarTab === "events" && selected.size) {
           frontendDocument.querySelector<HTMLElement>(".event-sidebar-panel")?.focus({ preventScroll: true });
@@ -6547,7 +6547,7 @@ export function CalendarApp({ demo = false, taskTriage }: { demo?: boolean; task
               <span>Fill gap to previous / next event</span><span><kbd>⌥ ⇧ ⌘ ↑</kbd> <kbd>⌥ ⇧ ⌘ ↓</kbd></span>
               <span>Move task to adjacent folder</span><span><kbd>⌥ ⇧ ↑</kbd> <kbd>⌥ ⇧ ↓</kbd></span>
               <span>Move task to parent / first child</span><span><kbd>⌥ ⇧ ←</kbd> <kbd>⌥ ⇧ →</kbd></span>
-              <span>Focus calendar / sidebar</span><span><kbd>⌘ ←</kbd> <kbd>⌘ →</kbd></span>
+              <span>Focus calendar / sidebar</span><span><kbd>⌘ ↓</kbd> <kbd>⌘ →</kbd></span>
               <span>Toggle left sidebar</span><kbd>⌘ \\</kbd>
               <span>Schedule sidebar task now</span><kbd>⌘ ⇧ ←</kbd>
               <span>Add selected events to task folder</span><kbd>{frontendHost().timelineHistory?.altKey === false ? "⌘ ⌥ ⇧ P" : "⌘ ⇧ P"}</kbd>
